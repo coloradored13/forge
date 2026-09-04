@@ -1,0 +1,121 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forge.local/schema/finding.schema.json",
+  "title": "Gate verdict",
+  "description": "The one shape every gate returns — arithmetic checks, Discovery reviewers and Delivery judges alike. One shape means one verdict rule, one renderer, one place severity policy lives. The model supplies findings, deferred, checked and skipped (the output contract is derived from here — never retyped); the runner supplies everything else.",
+  "type": "object",
+  "required": ["gate", "verdict", "findings", "deferred", "checked", "skipped"],
+  "additionalProperties": false,
+  "properties": {
+    "gate": {
+      "type": "string",
+      "x-runner": true,
+      "description": "Stable gate id: hash-integrity, story-reviewer, design-judge, sdd-judge, acceptance-oracle."
+    },
+    "verdict": {
+      "enum": ["pass", "block", "advise"],
+      "x-runner": true,
+      "description": "Derived from the findings by shared/judge/verdict.mjs, never read from the model: certain + high blocks; any other finding advises; none passes."
+    },
+    "findings": {
+      "type": "array",
+      "description": "At most k in-scope findings, ranked by severity × confidence (R7). Empty when clean, never null.",
+      "items": { "$ref": "#/$defs/finding" }
+    },
+    "deferred": {
+      "type": "array",
+      "description": "What you noticed beyond the MVP line (R2). A deferral costs nothing now and seeds the next round; it is never a finding and never counts against k. Empty when there is none.",
+      "items": { "$ref": "#/$defs/deferral" }
+    },
+    "checked": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "How many items you actually examined. With skipped, this makes silent truncation visible — a gate that judged 3 of 40 and returned pass is not a pass."
+    },
+    "skipped": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Items deliberately not examined. Reported, never hidden."
+    },
+    "dropped": {
+      "type": "integer",
+      "minimum": 0,
+      "x-runner": true,
+      "description": "Findings the runner cut to reach k. A judge that keeps over-enumerating is a funnel signal (R8)."
+    },
+    "judged": {
+      "type": "array",
+      "x-runner": true,
+      "description": "What this verdict is ABOUT: the content hash of every artifact the judge saw, pinned at judging time. A verdict whose pins no longer match is superseded — presence is never evidence.",
+      "items": {
+        "type": "object",
+        "required": ["id", "path", "content_hash"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string" },
+          "path": { "type": "string", "description": "Root-relative path of the artifact judged." },
+          "content_hash": { "type": "string" }
+        }
+      }
+    },
+    "cost": {
+      "type": "object",
+      "x-runner": true,
+      "description": "What the verdict cost (R1): recorded by the agent-call ledger, copied here so a verdict is self-describing.",
+      "required": ["model", "usd", "ms"],
+      "additionalProperties": false,
+      "properties": {
+        "model": { "type": "string" },
+        "usd": { "type": "number", "minimum": 0 },
+        "ms": { "type": "integer", "minimum": 0 }
+      }
+    }
+  },
+  "$defs": {
+    "finding": {
+      "type": "object",
+      "required": ["severity", "confidence", "rule", "subject", "summary", "evidence"],
+      "additionalProperties": false,
+      "properties": {
+        "severity": {
+          "enum": ["high", "medium", "low"],
+          "description": "high: the item fails a criterion or a rule outright. medium: it will fail one under conditions you can name. low: it is worse than it should be and still passes."
+        },
+        "confidence": {
+          "enum": ["certain", "likely"],
+          "description": "certain only when the evidence is literal and you can point at it. This decides authority: certain + high blocks, everything else advises. Do not inflate it to make a finding land harder."
+        },
+        "rule": {
+          "type": "string",
+          "description": "The rule broken, named — not a description of the problem. A judge that cannot name the rule it applied is guessing."
+        },
+        "subject": {
+          "type": "string",
+          "description": "The id or path this is about — REQ-3, STORY-7, SCREEN-2, src/foo.ts:42 — so the finding is addressable."
+        },
+        "summary": { "type": "string", "maxLength": 400 },
+        "evidence": {
+          "type": "string",
+          "description": "Quote the line that fails and the criterion it fails. A human must be able to check it in ten seconds; an unfalsifiable finding is noise."
+        },
+        "remedy": {
+          "type": "string",
+          "description": "The smallest change that clears it."
+        }
+      }
+    },
+    "deferral": {
+      "type": "object",
+      "required": ["subject", "summary", "beyond"],
+      "additionalProperties": false,
+      "properties": {
+        "subject": { "type": "string", "description": "The id or path it concerns." },
+        "summary": { "type": "string", "maxLength": 400 },
+        "beyond": {
+          "type": "string",
+          "description": "Which line it sits past — the MVP line, a deferred surface, a ruled-out requirement — quoted from the scope you were given."
+        }
+      }
+    }
+  }
+}

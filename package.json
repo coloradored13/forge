@@ -4,10 +4,16 @@
   "description": "Forge v2 — Discovery produces what humans sign; Delivery produces what machines prove.",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "evals": "node evals/run-all.mjs",
     "import-rule": "node tools/import-rule.mjs",
     "owns": "node tools/owns.mjs"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.3.261",
+    "ajv": "^8.20.0"
   }
 }

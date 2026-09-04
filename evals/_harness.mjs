@@ -25,16 +25,25 @@ export function suite(name) {
   return { check, done };
 }
 
-/** Run fn with a fresh temp root seeded from {relpath: content}; always cleaned. */
+/**
+ * Run fn with a fresh temp root seeded from {relpath: content}; always cleaned. fn may
+ * be async — the root lives until its promise settles.
+ */
 export function withRoot(files, fn) {
   const root = mkdtempSync(join(tmpdir(), "forge-eval-"));
+  const clean = () => rmSync(root, { recursive: true, force: true });
+  let out;
   try {
     for (const [rel, content] of Object.entries(files)) {
       mkdirSync(join(root, dirname(rel)), { recursive: true });
       writeFileSync(join(root, rel), content);
     }
-    return fn(root);
-  } finally {
-    rmSync(root, { recursive: true, force: true });
+    out = fn(root);
+  } catch (e) {
+    clean();
+    throw e;
   }
+  if (out && typeof out.then === "function") return out.finally(clean);
+  clean();
+  return out;
 }
