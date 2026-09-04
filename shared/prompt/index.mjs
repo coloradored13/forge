@@ -1,0 +1,86 @@
+// owns: R10 · shared — two halves per agent, one authoring surface. The identity half is
+// a .md a person writes: role, craft floor, declared standard, what is not a finding.
+// The mechanics half is generated here from the schema, the verdict rule, and the run
+// config: output contract, k, severity policy, scope, rulings. Nothing in the identity
+// file is substituted — a placeholder in it is a hole a model fills by guessing, so it
+// is refused. There is no _shared.md.
+
+import { readFileSync } from "node:fs";
+import { fields } from "../schema/index.mjs";
+import { K_DEFAULT, SEVERITY, CONFIDENCE } from "../judge/verdict.mjs";
+
+const PLACEHOLDER = /\{\{[^}]*\}\}/g;
+const FIELD = /`(\/[^`\s]+)`/g;
+
+/** Every contract field a rendered mechanics names — the eval joins this to the schema. */
+export function namedFields(text) {
+  return [...new Set([...text.matchAll(FIELD)].map((m) => m[1]))];
+}
+
+/** The authored half, read as-is. Empty or holed is refused. */
+export function identity(path) {
+  const text = readFileSync(path, "utf8").trim();
+  if (!text) throw new Error(`identity: ${path} is empty`);
+  const holes = [...new Set(text.match(PLACEHOLDER) ?? [])];
+  if (holes.length) {
+    throw new Error(`identity: ${path} has placeholder(s) ${holes.join(", ")} — identity is authored, mechanics are generated; nothing is substituted`);
+  }
+  return text;
+}
+
+/**
+ * The generated half.
+ * @param kind        judge | reviewer | writer — judges and reviewers get the ranking and
+ *                    deferral sections; writers get the artifact contract and scope
+ * @param schema      the schema name whose output contract this agent produces
+ * @param k           the finding cap (R7)
+ * @param scope       { mvp: string, deferred: string[] } — the line and what sits past it (R2)
+ * @param rulings     [{ id, question, answer }] — settled; never re-raised (R3)
+ * @param arithmetic  rule names checked mechanically elsewhere — not this agent's to report (R10)
+ */
+export function mechanics({ kind, schema, k = K_DEFAULT, scope, rulings = [], arithmetic = [] }) {
+  if (!["judge", "reviewer", "writer"].includes(kind)) throw new Error(`mechanics: unknown kind ${kind}`);
+  if (!schema) throw new Error("mechanics: a schema name is required — the output contract is derived, never typed");
+  const judging = kind !== "writer";
+  const out = [];
+
+  out.push(`# Mechanics\n\nGenerated from the schema and the run's configuration. The contract below is validated after you answer; an answer that does not fit it is discarded, not repaired.`);
+
+  out.push(`## Output contract — \`${schema}\`\n\n` + fields(schema).map(({ path, required, description, enum: e }) => {
+    const bits = [`- \`${path}\``, required ? "(required)" : "(optional)"];
+    if (e) bits.push(`one of ${e.map((x) => `\`${x}\``).join(", ")}`);
+    if (description) bits.push(`— ${description}`);
+    return bits.join(" ");
+  }).join("\n"));
+
+  if (judging) {
+    const sev = Object.keys(SEVERITY).join(" > ");
+    const conf = Object.keys(CONFIDENCE).join(" > ");
+    out.push(`## Ranking\n\nReturn at most ${k} in-scope findings, ranked by severity (${sev}) then confidence (${conf}). If you have more, keep the ${k} that matter most and let the rest go — the runner cuts to ${k} and counts what it cut. Every finding quotes the line that fails and the criterion it fails.\n\nThe verdict is derived from your findings, never stated by you: a finding at \`high\` + \`certain\` blocks; any other finding advises; none passes. Report \`checked\` and \`skipped\` honestly — a verdict over items you did not read is not a verdict.`);
+  }
+
+  if (scope) {
+    const lines = [`## Scope`, ``, `The MVP line: ${scope.mvp}`];
+    if (scope.deferred?.length) lines.push(``, `Past the line already:`, ...scope.deferred.map((d) => `- ${d}`));
+    lines.push(``, judging
+      ? `Anything you notice past the line goes in \`deferred\`, quoting which line it sits past — never in \`findings\`. A deferral costs nothing and seeds the next round.`
+      : `Produce nothing past the line. If the work needs something past it, say so in your notes and stop at the line.`);
+    out.push(lines.join("\n"));
+  }
+
+  if (rulings.length) {
+    out.push(`## Rulings — settled, not to be re-raised\n\n` + rulings.map((r) => `- **${r.id}** ${r.question}\n  → ${r.answer}`).join("\n"));
+  }
+
+  if (arithmetic.length) {
+    out.push(`## Checked elsewhere\n\nThese are verified mechanically and are not yours to report: ${arithmetic.map((a) => `\`${a}\``).join(", ")}.`);
+  }
+
+  return out.join("\n\n");
+}
+
+/** The system prompt: identity first, then mechanics, one rule between them. */
+export function assemble({ identity: id, mechanics: mech }) {
+  if (!id?.trim() || !mech?.trim()) throw new Error("assemble: both halves are required");
+  return `${id.trim()}\n\n---\n\n${mech.trim()}\n`;
+}

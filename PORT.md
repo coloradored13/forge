@@ -8,10 +8,10 @@ Check an item only when its eval is green in this repo. The v1 path is the sourc
 
 | v1 | lands in | milestone | done |
 |---|---|---|---|
-| `tools/hash.mjs` — chain and pins | `shared/hash.mjs` | M1 | [ ] |
+| `tools/hash.mjs` — chain and pins | `shared/hash.mjs` | M1 | [x] |
 | `tools/run.mjs` door table + `flagsAfterStart` | `delivery/state/` — seed of the transition table | M2 | [ ] |
-| `tools/judges.mjs` — `deriveVerdict`, `verdictFreshness`, `renderFindingsForAgent` | `shared/judge/` | M1 | [ ] |
-| `tools/stage.mjs` + `tools/usage.mjs` — the agent-call chokepoint | `shared/agent-call/` | M1 | [ ] |
+| `tools/judges.mjs` — `deriveVerdict`, `verdictFreshness`, `renderFindingsForAgent` | `shared/judge/` | M1 | [x] |
+| `tools/stage.mjs` + `tools/usage.mjs` — the agent-call chokepoint | `shared/agent-call/` | M1 | [x] |
 | `tools/provenance.mjs` + verifier | `delivery/release/` | M3 | [ ] |
 | `tools/containment.mjs` | `delivery/build/` | M3 | [ ] |
 | `tests/browser` | `delivery/qa/` | M3 | [ ] |
@@ -21,10 +21,10 @@ Check an item only when its eval is green in this repo. The v1 path is the sourc
 | prompt `dev` (identity half — the largest upgrade; containment lines drop, they are mechanical) | `delivery/build/` | M3 | [ ] |
 | prompt `acceptance-oracle` (identity half) | `delivery/qa/` | M3 | [ ] |
 | `lib/workshop.ts` — grows shape and the MVP line | `discovery/workshop/` | M1 | [ ] |
-| eval `coherence` | `evals/coherence.mjs` | M1 | [ ] |
+| eval `coherence` | `evals/coherence.mjs` | M1 | [x] |
 | eval `provenance` | `evals/provenance.mjs` | M3 | [ ] |
 | eval `door-table` | folded into `evals/transition-table.mjs` | M2 | [ ] |
-| eval `module-graph` | folded into `evals/coherence.mjs` | M1 | [ ] |
+| eval `module-graph` | folded into `evals/coherence.mjs` | M1 | [x] |
 
 ## Redesign
 

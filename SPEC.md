@@ -103,7 +103,7 @@ A field lives in one schema under `shared/` and is derived into prompt, output c
 
 **R11 · Brownfield is the main mode.** `both`
 Delivery's intake takes what exists — repo and prior manifest — and every stage produces deltas; QA re-runs the prior manifest's tests as regression. Discovery in brownfield mode elicits the delta against the manifest. Greenfield is the case where what exists is empty.
-*evidence* task #8 never built; a product's second release is the first real test. *enforcer* intake `existing` · eval `brownfield`
+*evidence* task #8 never built; a product's second release is the first real test. *enforcer* intake `existing` · eval `provenance`
 
 **R12 · Shape before scope.** `discovery`
 The workshop elicits the whole product's lifecycles, vocabularies, attribution, and clock boundaries before the MVP line is drawn; unknowns are marked "unowned — expect discovery."
@@ -177,7 +177,7 @@ What both halves stand on, and nothing else.
 - **Judge runner** — ranked, capped, scoped output; verdict derivation; hash-pinned freshness (R7).
 - **Prompts** — two halves per agent. *Identity* is authored: role, craft floor, declared standard, what is not a finding. *Mechanics* are generated from schema, rule registry, and run config: output contract, k, severity, rulings, MVP line. One authoring surface; no `_shared.md` (R10). v1 was ~1:1 expertise-to-process; the defect was three surfaces, not the ratio.
 - **Console** — six views: setup · workshop · discovery board (artifacts, reviews, doors, staleness, cost) · export · delivery run (state, liveness, cost, round n of cap, findings, funnel) · release. Anything else is cut.
-- **Evals, ten** — `transition-table` (R9) · `economics` (R1, R6, R7) · `seam` (R14) · `scope` (R2) · `rulings` (R3) · `amendment-audit` (R4) · `rejudge` (R5) · `funnel` (R8, R13) · `coherence` (R10; absorbs v1's prompts, schema-coverage, module-graph) · `provenance`. Temp roots and seeded fixtures only (R15).
+- **Evals, ten** — `transition-table` (R9) · `economics` (R1, R6, R7) · `seam` (R14) · `scope` (R2) · `rulings` (R3) · `amendment-audit` (R4) · `rejudge` (R5) · `funnel` (R8, R13) · `coherence` (R10; absorbs v1's prompts, schema-coverage, module-graph) · `provenance` (R11; the manifest verifier). Temp roots and seeded fixtures only (R15).
 
 ## §7 Transfer
 
