@@ -222,7 +222,7 @@ The pipeline's disease was a loop with no cost function. The rebuild gets one.
 - **Scaffolding-to-prompt ratio reported in CI.** v1 ended at 33 : 1. A trend, not a gate.
 - **Every gate added after M2 states its cost per run and what it displaces.**
 - **No instance fixes mid-run.** A defect gets a rule or a catalog line; a second instance of a ruled class is a regression in the rule.
-- **This document stays under 3,500 words.** Draft 1 set 3,000 for one pipeline; the split added a stage table and the seam. Raised once; not again.
+- **This document stays under 3,500 words.** Draft 1 set 3,000 for one pipeline; the split added a stage table and the seam. Red means trim first — history moves out as rules become mechanical. Raising it is a door (R6): a reason on the record, here.
 
 ## §9 Milestones
 
