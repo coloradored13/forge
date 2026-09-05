@@ -68,7 +68,7 @@ function workshopPage(v, key) {
     }) };
   }
   const c = v.current;
-  const sections = `<p>${v.sections.map((s) => `<a href="/workshop/${esc(s.key)}"${s.key === c.key ? ' class="current"' : ""}>${esc(s.label)}</a> ${badge(s.status, STATUS[s.status] ?? "muted")}${s.turns ? ` <span class="muted">${s.turns} turns</span>` : ""}`).join(" &nbsp;·&nbsp; ")}</p>`;
+  const sections = `<p>${v.sections.map((s) => `<a href="/workshop/${esc(s.key)}"${s.key === c.key ? ' class="current"' : ""}>${esc(s.label)}</a> ${badge(s.status, STATUS[s.status] ?? "muted")}${s.turns ? ` <span class="muted">${s.turns} ${s.turns === 1 ? "turn" : "turns"}</span>` : ""}`).join(" &nbsp;·&nbsp; ")}</p>`;
   const transcript = v.transcript.length
     ? `<div class="transcript">${v.transcript.map((r) => `<p class="${esc(r.from)}"><span class="who">${esc(r.from)} · ${when(r.at)}${r.mode ? ` · ${esc(r.mode)}` : ""}${r.usd != null ? ` · ${usd(r.usd)}` : ""}${r.signals?.length ? ` · ${esc(r.signals.join(" "))}` : ""}</span>${esc(r.text)}</p>`).join("")}</div>`
     : `<p class="muted">no turns yet</p>`;

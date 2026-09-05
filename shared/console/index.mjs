@@ -39,15 +39,17 @@ export function dl(pairs) {
  */
 export function form({ action, fields = [], submit, note }) {
   const one = (f) => {
-    const id = `${action}-${f.name}`.replace(/\W+/g, "-");
+    // Boxes in a list share a name, so the value keeps each id its own — the label toggles the box it names.
+    const id = `${action}-${f.name}${f.type === "checkbox" ? `-${f.value ?? "1"}` : ""}`.replace(/\W+/g, "-");
     const req = f.required ? " required" : "";
     if (f.type === "hidden") return `<input type="hidden" name="${esc(f.name)}" value="${esc(f.value)}">`;
+    const text = `<span>${esc(f.label ?? f.name)}</span>`;
     let control;
     if (f.type === "textarea") control = `<textarea id="${id}" name="${esc(f.name)}" rows="${f.rows ?? 3}"${req}>${esc(f.value)}</textarea>`;
     else if (f.type === "select") control = `<select id="${id}" name="${esc(f.name)}"${req}>${(f.options ?? []).map(([v, l]) => `<option value="${esc(v)}"${String(v) === String(f.value ?? "") ? " selected" : ""}>${esc(l ?? v)}</option>`).join("")}</select>`;
-    else if (f.type === "checkbox") control = `<input type="checkbox" id="${id}" name="${esc(f.name)}" value="${esc(f.value ?? "1")}"${f.checked ? " checked" : ""}>`;
+    else if (f.type === "checkbox") return `<label class="check" for="${id}"><input type="checkbox" id="${id}" name="${esc(f.name)}" value="${esc(f.value ?? "1")}"${f.checked ? " checked" : ""}>${text}</label>`;
     else control = `<input type="${esc(f.type ?? "text")}" id="${id}" name="${esc(f.name)}" value="${esc(f.value)}"${req}${f.step ? ` step="${esc(f.step)}"` : ""}>`;
-    return `<label for="${id}"><span>${esc(f.label ?? f.name)}</span>${control}</label>`;
+    return `<label for="${id}">${text}${control}</label>`;
   };
   return `<form method="post" action="${esc(action)}">${fields.map(one).join("")}${note ? `<p class="note">${note}</p>` : ""}<button type="submit">${esc(submit)}</button></form>`;
 }
@@ -78,6 +80,7 @@ dl{display:grid;grid-template-columns:max-content 1fr;gap:.25rem 1rem}dt{color:v
 .badge{display:inline-block;padding:0 .45em;border-radius:3px;font-size:.8rem;border:1px solid currentColor}.badge.ok{color:var(--ok)}.badge.warn{color:var(--warn)}.badge.bad{color:var(--bad)}.badge.muted{color:var(--muted)}
 .muted{color:var(--muted)}.note{color:var(--muted);font-size:.9rem}code{font-size:.9em}pre{white-space:pre-wrap;background:#fff;border:1px solid var(--rule);padding:.75rem;overflow-x:auto;font-size:.85rem}
 form{display:grid;gap:.5rem;margin:.75rem 0 1rem;padding:.75rem;border:1px solid var(--rule);background:#fff}form label{display:grid;gap:.15rem}form label span{color:var(--muted);font-size:.85rem}
+form label.check{grid-template-columns:auto 1fr;align-items:center;gap:.5rem}form label.check span{color:var(--ink);font-size:.95rem}input[type=checkbox]{margin:0;width:1rem;height:1rem;padding:0}
 input,textarea,select{font:inherit;padding:.35rem .5rem;border:1px solid var(--rule);border-radius:3px;background:var(--paper);color:var(--ink)}button{font:inherit;justify-self:start;padding:.4rem .9rem;border:1px solid var(--accent);background:var(--accent);color:#fff;border-radius:3px;cursor:pointer}button:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .quote{margin:.25rem 0;font-size:.9rem;color:var(--muted)}.quote.over{color:var(--bad)}.refusal{padding:.75rem;border-left:4px solid var(--bad);background:#fff}.log{font-size:.85rem;min-height:4rem}
 .transcript p{margin:.5rem 0;padding:.5rem .75rem;background:#fff;border:1px solid var(--rule)}.transcript p.pm{border-left:3px solid var(--accent)}.transcript .who{color:var(--muted);font-size:.8rem;display:block}
