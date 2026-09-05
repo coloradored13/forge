@@ -47,13 +47,13 @@ Two bars, because two executors. The seam is a snapshot.
 | staleness | a badge and a diff; the PM decides | re-judge, regenerate only on block |
 | state | document status: draft → reviewed → signed | one state machine with liveness |
 | may amend the PRD | yes, audited | never — it may only ask |
-| output | Jira (ideas, epics, stories) + the handoff | a product + its provenance manifest |
+| output | the handoff and its rendering; a tracker projection (GitHub Issues or Jira) when set | a product + its provenance manifest |
 
-**The seam.** The **handoff** is a snapshot, not a set of references: the contract, stories, design, and prototype embedded as they stood at export, hashed per item, with the Jira keys they were exported to. Discovery writes it whichever exit the PM picks. Delivery reads nothing else and must start cold from a handoff file with the Discovery code absent.
+**The seam.** The **handoff** is a snapshot, not a set of references: the contract, stories, design, and prototype embedded as they stood at export, hashed per item, with the tracker keys they were exported to. Discovery writes it whichever exit the PM picks. Delivery reads nothing else and must start cold from a handoff file with the Discovery code absent.
 
-After export, drift enters from either side — the PM in Discovery, the team in Jira. Intake diffs the snapshot against whatever is live and reports per ID: unchanged, changed with the diff, added, removed. The door is the PM's: proceed on the snapshot, or re-export a new handoff version. The prototype rides as record only — nothing in Delivery reads it; the design is the binding referent.
+After export, drift enters from either side — the PM in Discovery, the team in its tracker. Intake diffs the snapshot against whatever is live and reports per ID: unchanged, changed with the diff, added, removed. The door is the PM's: proceed on the snapshot, or re-export a new handoff version. The prototype rides as record only — nothing in Delivery reads it; the design is the binding referent.
 
-**The stopping spot.** Discovery's export door has three exits: **hand off to a team** (Jira), **send to Delivery**, or both. Because the handoff persists, stopping is a pause, not a fork — a team that took the Jira export can start Delivery from it a month later.
+**The stopping spot.** Discovery's export door has three exits: **hand off to a team** (the rendered handoff, plus GitHub Issues or Jira when a tracker is set), **send to Delivery**, or both. Because the handoff persists, stopping is a pause, not a fork — a team that took the handoff can start Delivery from it a month later.
 
 **One repo.** `discovery/`, `delivery/`, `shared/`. One import rule — `delivery/` imports from `shared/` only — and one cold-intake eval keep the halves from re-fusing under pressure.
 
@@ -64,7 +64,7 @@ After export, drift enters from either side — the PM in Discovery, the team in
 The traps as constraints: evidence, enforcer, home. The registry is `shared/rules.json`.
 
 **R1 · Economics are visible before they are spent.** `both`
-Every model call goes through one chokepoint that records model, tokens, cost, and duration by half, stage, and role; the model is chosen per role in one config. Discovery shows "this refine ≈ $X; you're at $Y of $Z" before each trigger; Delivery pauses at the budget, never degrades. Cost rides into the Jira export and the manifest.
+Every model call goes through one chokepoint that records model, tokens, cost, and duration by half, stage, and role; the model is chosen per role in one config. Discovery shows "this refine ≈ $X; you're at $Y of $Z" before each trigger; Delivery pauses at the budget, never degrades. Cost rides into the handoff and the manifest.
 *evidence* "folks may not want a $100 PRD." *enforcer* `shared/agent-call` · eval `economics`
 
 **R2 · Scope is a gate input.** `both`
@@ -100,7 +100,7 @@ State is written by the thing that changes it — the wrapper records its own co
 *evidence* two misdiagnosed "wrapper deaths"; rows 1, 17, 25; class C. *enforcer* one transition table read by every door · eval `transition-table`, exhaustive
 
 **R10 · One home per concept, one enforcer per rule.** `both`
-A field lives in one schema under `shared/` and is derived into prompt, output contract, assembly, console, and Jira mapping — never retyped. Arithmetic rules belong to drift, judgment rules to judges, and nothing is checked by both.
+A field lives in one schema under `shared/` and is derived into prompt, output contract, assembly, console, and tracker mapping — never retyped. Arithmetic rules belong to drift, judgment rules to judges, and nothing is checked by both.
 *evidence* class A: PRs #22 / #23, rows 5, 10, 26; task #20's double enforcement. *enforcer* generated sections · rule registry with an `enforcer` field · eval `coherence`
 
 **R11 · Brownfield is the main mode.** `both`
@@ -150,7 +150,7 @@ The original intent. Four artifacts a PM signs, then a door.
 
 **The loop is the PM.** Generate → review (≤ k ranked findings and deferrals) → the PM acts: **accept** · **edit** · **answer** (ruling → criterion) · **amend** (edit + blast radius) · **defer** · **refine** (regenerate with the PM's notes — cost shown first). Nothing regenerates without a human trigger. When the PRD moves, downstream artifacts wear a stale badge with the diff; the PM refreshes what matters.
 
-**Jira.** Crux and objective → a Jira Product Discovery idea with the PRD attached; requirements → epics; stories → stories under their epics. REQ-n / AC-n / SCREEN-n ride as fields, so every issue links to its PRD section. Jira is a projection of the handoff with the same IDs — never a chain link.
+**Trackers.** Every export writes the handoff and a rendering a team reads; a tracker is optional. GitHub Issues (the project's own repository, through the `gh` the PM already has): requirements → issues, stories → issues under them. Jira: crux and objective → a Jira Product Discovery idea with the PRD attached; requirements → epics; stories → stories under their epics. REQ-n / AC-n / SCREEN-n ride as labels, so every issue links to its PRD section. A tracker is a projection of the handoff with the same IDs — never a chain link.
 
 ## §5 Delivery
 
@@ -203,7 +203,7 @@ What crosses from v1 as code, as lessons, what is rebuilt, what stays. The check
 - The state machine and liveness (R9)
 - Amend with blast radius (R4); answers that write criteria (R3)
 - Staleness as re-judge (R5); ranked judges (R7)
-- Setup with estimate, both halves; Jira export — new
+- Setup with estimate, both halves; tracker export (GitHub Issues, Jira) — new
 
 **Stays behind**
 
@@ -229,7 +229,7 @@ The pipeline's disease was a loop with no cost function. The rebuild gets one.
 Done-bars, not phases. Every bar is a claim about the pipeline; Bakehouse only exercises it. Discovery ships first — the original intent.
 
 - **M0 · Spec approved; repo seeded.** SPEC.md with the rules as R-numbers; §7 as the port checklist; three directories and the import rule on day one.
-- **M1 · Discovery produces a backlog a team could take today** *(the original intent)*. Workshop → PRD → prototype → stories → design → Jira export and a handoff snapshot, with cost shown per artifact and per run and the model chosen per role. Test case: Bakehouse.
+- **M1 · Discovery produces a backlog a team could take today** *(the original intent)*. Workshop → PRD → prototype → stories → design → a handoff snapshot with a tracker projection, with cost shown per artifact and per run and the model chosen per role. Test case: Bakehouse.
 - **M2 · Delivery core on fixtures.** State machine, doors, cap, re-judge, metering; a cold intake from a handoff in a temp root with Discovery absent, drift reported against a seeded edit. Judges stubbed — no model calls.
 - **M3 · Delivery ships a product that carries its proof** *(the exhibit)*. From the M1 handoff: ≤ 2 rounds per stage on average, ≤ 3 hours of compute, a product matching the signed design, the manifest verified in a fresh clone, cost known, zero Delivery-origin amendments or each a logged gate-miss. k, cap, liveness calibrated here. Test case: the Bakehouse MVP.
 - **M4 · The pipeline runs against its own output.** A delta PRD against the M3 manifest; prior criteria pass as regression; the manifest extends. Test case: one deferred Bakehouse surface.

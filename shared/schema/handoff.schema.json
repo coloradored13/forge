@@ -2,16 +2,16 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://forge.local/schema/handoff.schema.json",
   "title": "Handoff",
-  "description": "The seam (R14, SPEC §2): a snapshot, not a set of references. The contract the PRD compiled to, the backlog, the design and the prototype embedded as they stood at export, an index of every item with its own hash, the Jira keys the items were exported to, and what Discovery cost. Versioned — a re-export is a new version beside the last. Delivery reads nothing else.",
+  "description": "The seam (R14, SPEC §2): a snapshot, not a set of references. The contract the PRD compiled to, the backlog, the design and the prototype embedded as they stood at export, an index of every item with its own hash, the tracker keys the items were exported to, and what Discovery cost. Versioned — a re-export is a new version beside the last; a rendering for humans sits beside each. Delivery reads nothing else.",
   "type": "object",
-  "required": ["id", "version", "exported_at", "by", "exit", "project", "contract", "prototype", "stories", "design", "items", "jira", "cost", "meta", "x-drift-checked"],
+  "required": ["id", "version", "exported_at", "by", "exit", "project", "contract", "prototype", "stories", "design", "items", "tracker", "cost", "meta", "x-drift-checked"],
   "additionalProperties": false,
   "properties": {
     "id": { "type": "string", "x-runner": true },
     "version": { "type": "integer", "x-runner": true, "description": "1 for the first export of a project, then one more each export." },
     "exported_at": { "type": "string", "x-runner": true },
     "by": { "type": "string", "x-runner": true, "description": "The named person who opened the door." },
-    "exit": { "enum": ["team", "delivery", "both"], "x-runner": true, "description": "Which exit the PM took: hand off to a team through Jira, send to Delivery, or both." },
+    "exit": { "enum": ["team", "delivery", "both"], "x-runner": true, "description": "Which exit the PM took: hand off to a team (the rendering, and a tracker when one is set), send to Delivery, or both." },
     "project": {
       "type": "object",
       "x-runner": true,
@@ -45,16 +45,27 @@
         }
       }
     },
-    "jira": {
+    "tracker": {
       "x-runner": true,
-      "description": "Where the projection went: the site, the projects, the issue types used, and the key of every item exported — carried forward from the last handoff so a re-export updates rather than duplicates. Null when nothing has gone to Jira yet.",
+      "description": "Where the backlog was projected, if anywhere: the tracker's kind, where in it, and the key of every item exported — carried forward from the last handoff so a re-export updates rather than duplicates. Null when the backlog has only ever gone to files.",
       "oneOf": [
         { "type": "null" },
         {
           "type": "object",
-          "required": ["site", "project", "ideas", "types", "keys"],
+          "required": ["kind", "repo", "keys"],
           "additionalProperties": false,
           "properties": {
+            "kind": { "const": "github" },
+            "repo": { "type": "string", "description": "owner/name — the project's own repository unless told otherwise." },
+            "keys": { "type": "object", "additionalProperties": { "type": "integer" }, "description": "Item id to issue number." }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["kind", "site", "project", "ideas", "types", "keys"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": { "const": "jira" },
             "site": { "type": "string", "description": "The Jira Cloud site, as a URL." },
             "project": { "type": "string", "description": "The software project key epics and stories go to." },
             "ideas": { "type": ["string", "null"], "description": "The Jira Product Discovery project key the idea goes to, or null for no idea." },
