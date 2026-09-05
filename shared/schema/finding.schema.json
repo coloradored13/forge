@@ -19,12 +19,12 @@
     },
     "findings": {
       "type": "array",
-      "description": "At most k in-scope findings, ranked by severity × confidence (R7). Empty when clean, never null.",
+      "description": "Every in-scope finding, ranked by severity × confidence (R7) — the PM disposes of each; none is withheld. Empty when clean, never null.",
       "items": { "$ref": "#/$defs/finding" }
     },
     "deferred": {
       "type": "array",
-      "description": "What you noticed beyond the MVP line (R2). A deferral costs nothing now and seeds the next round; it is never a finding and never counts against k. Empty when there is none.",
+      "description": "What you noticed beyond the MVP line (R2). A deferral costs nothing now and seeds the next round; it is never a finding. Empty when there is none.",
       "items": { "$ref": "#/$defs/deferral" }
     },
     "checked": {
@@ -36,12 +36,6 @@
       "type": "integer",
       "minimum": 0,
       "description": "Items deliberately not examined. Reported, never hidden."
-    },
-    "dropped": {
-      "type": "integer",
-      "minimum": 0,
-      "x-runner": true,
-      "description": "Findings the runner cut to reach k. A judge that keeps over-enumerating is a funnel signal (R8)."
     },
     "reraised": {
       "type": "integer",

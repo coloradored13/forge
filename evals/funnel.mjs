@@ -193,7 +193,7 @@ await withRoot({}, async (parent) => {
   check("a backlog that does not fit the contract is refused", wrong?.code === "stories-invalid", wrong?.message);
   check("nothing refused reached the record", eq(readDoc(root, STORIES_FILE), doc));
 
-  // The reviewer: 8 findings — one re-raises the ruling, seven stand; k = 5 keeps five and the funnel hears about the rest.
+  // The reviewer: 8 findings — one re-raises the ruling, seven stand and all seven reach the PM, ranked; nothing is withheld for a later round.
   const findings = [
     f("OQ-1", "high", "certain", { summary: "the truck question is still open" }),
     f("STORY-1", "high", "certain", { rule: "imperative-step" }),
@@ -211,12 +211,12 @@ await withRoot({}, async (parent) => {
     eq(ro.tools, ["Read", "Glob", "Grep"]) && eq(ro.outputFormat, { type: "json_schema", schema: outputContract("finding") }) && verdict.cost.model === "claude-opus-5" && /^# Story reviewer/.test(ro.systemPrompt) && /RUL-1/.test(ro.systemPrompt) && STORY_RULES.every((x) => ro.systemPrompt.includes(x)) && readFileSync(ledgerPath(root), "utf8").trim().split("\n").map((l) => JSON.parse(l)).at(-1).role === "reviewer", ro.systemPrompt.slice(0, 200));
   check("it is shown the requirements inside the line with their criteria, the vocabulary, the screens and the stories",
     /## Requirements inside the line[\s\S]*REQ-1\/AC-3: An exception cannot be recorded/.test(r.calls[0].prompt) && /## Vocabulary[\s\S]*\*\*exception\*\*/.test(r.calls[0].prompt) && /## Prototype screens[\s\S]*SCREEN-2/.test(r.calls[0].prompt) && /## Stories[\s\S]*### STORY-1 \(EPIC-1\)/.test(r.calls[0].prompt) && !/REQ-3/.test(r.calls[0].prompt.split("## Vocabulary")[0]));
-  check("the verdict: the re-raise removed and counted, five kept by rank, two dropped, block on the certain highs; filed with three pins and fresh",
-    verdict.reraised === 1 && verdict.dropped === 2 && verdict.findings.length === 5 && verdict.findings[0].rule === "imperative-step" && verdict.verdict === "block" && eq(readVerdict(root, REVIEW_GATE), verdict) && verdict.judged.length === 3 && freshVerdict(root, REVIEW_GATE) !== null && validate("finding", verdict).ok, JSON.stringify(verdict.findings.map((x) => x.rule)));
+  check("the verdict: the re-raise removed and counted, all seven kept by rank with the lightest last, block on the certain highs; filed with three pins and fresh",
+    verdict.reraised === 1 && !("dropped" in verdict) && verdict.findings.length === 7 && verdict.findings[0].rule === "imperative-step" && verdict.findings[6].subject === "STORY-1" && verdict.findings[6].severity === "low" && verdict.findings[6].confidence === "likely" && verdict.verdict === "block" && eq(readVerdict(root, REVIEW_GATE), verdict) && verdict.judged.length === 3 && freshVerdict(root, REVIEW_GATE) !== null && validate("finding", verdict).ok, JSON.stringify(verdict.findings.map((x) => x.rule)));
   const funnel = rows(funnelPath(root));
   const m = meter(funnel);
-  check("the meter: one re-raise row naming the ruling, one dropped row carrying its count; totals by signal and by gate (R8)",
-    funnel.length === 2 && funnel[0].signal === "reraised" && funnel[0].ruling === "RUL-1" && funnel[0].gate === REVIEW_GATE && funnel[1].signal === "dropped" && funnel[1].count === 2 && eq(m, { total: 2, by_signal: { reraised: 1, dropped: 2 }, by_gate: { [REVIEW_GATE]: 3 } }), JSON.stringify({ funnel, m }));
+  check("the meter: one re-raise row naming the ruling and nothing else — no cap, so no cut to count; totals by signal and by gate (R8)",
+    funnel.length === 1 && funnel[0].signal === "reraised" && funnel[0].ruling === "RUL-1" && funnel[0].gate === REVIEW_GATE && eq(m, { total: 1, by_signal: { reraised: 1 }, by_gate: { [REVIEW_GATE]: 1 } }), JSON.stringify({ funnel, m }));
 
   // The fresh verdict rides into the next rewrite; after the PRD moves it is nothing, though the file is still there.
   const q3 = scripted({ structured: backlog });
@@ -236,7 +236,7 @@ await withRoot({}, (root) => {
   const path = funnelPath(root);
   let threw = null;
   try { record(path, { signal: "vibes", gate: "x" }); } catch (e) { threw = e; }
-  check("an unnamed signal is refused — every row measures a rule", threw instanceof Error && /unknown signal vibes/.test(threw.message) && !existsSync(path) && eq(Object.values(SIGNALS), ["R3", "R7", "R8"]));
+  check("an unnamed signal is refused — every row measures a rule", threw instanceof Error && /unknown signal vibes/.test(threw.message) && !existsSync(path) && eq(Object.values(SIGNALS), ["R3", "R8"]));
   record(path, { signal: "delivery-amendment", id: "AMD-1", material: true }, () => new Date("2026-09-04T12:00:00Z"));
   check("a row is dated and read back as written", eq(rows(path), [{ at: "2026-09-04T12:00:00.000Z", signal: "delivery-amendment", id: "AMD-1", material: true }]) && eq(meter(rows(path)), { total: 1, by_signal: { "delivery-amendment": 1 }, by_gate: {} }));
 });

@@ -1,8 +1,8 @@
 // owns: R8 · shared — the funnel meter. One append-only file per project where the
 // runners record the signals that say whether the funnel is narrowing: a reviewer
-// re-raising a settled ruling, a judge over-enumerating past k, an amendment arriving
-// from Delivery. Nothing here decides anything; it is read back so calibration is not
-// write-only. Rows are plain JSON lines a person can grep.
+// re-raising a settled ruling, an amendment arriving from Delivery. Nothing here decides
+// anything; it is read back so calibration is not write-only. Rows are plain JSON lines a
+// person can grep.
 
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -10,7 +10,7 @@ import { dirname, join } from "node:path";
 export const FUNNEL = join("forge", "discovery", "funnel.jsonl");
 
 /** The signals a runner may record, and the rule each one measures. */
-export const SIGNALS = { reraised: "R3", dropped: "R7", "delivery-amendment": "R8" };
+export const SIGNALS = { reraised: "R3", "delivery-amendment": "R8" };
 
 export function funnelPath(root) { return join(root, FUNNEL); }
 

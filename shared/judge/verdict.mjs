@@ -1,7 +1,9 @@
 // owns: R7 · shared — the verdict rule and the ranking rule, pure. Every gate derives
-// its verdict here, never from the model; every judge is cut to k findings here, never
-// asked nicely. The severity and confidence vocabularies are read from the finding
-// schema — its enums are ordered heaviest first — so the words have one home.
+// its verdict here, never from the model; every judge's findings are ordered here, never
+// by the model's say-so. There is no cap: a cap does not spare the PM, it withholds
+// findings and surfaces them a few per round, a regeneration each (Bakehouse, 2026-09-05).
+// The severity and confidence vocabularies are read from the finding schema — its enums
+// are ordered heaviest first — so the words have one home.
 
 import schema from "../schema/finding.schema.json" with { type: "json" };
 
@@ -9,7 +11,6 @@ const ladder = (list) => Object.fromEntries(list.map((w, i) => [w, list.length -
 
 export const SEVERITY = ladder(schema.$defs.finding.properties.severity.enum);
 export const CONFIDENCE = ladder(schema.$defs.finding.properties.confidence.enum);
-export const K_DEFAULT = 5;
 
 const [BLOCKING_SEVERITY] = Object.keys(SEVERITY);
 const [BLOCKING_CONFIDENCE] = Object.keys(CONFIDENCE);
@@ -32,15 +33,13 @@ export function weight(f) {
 }
 
 /**
- * Keep the k weightiest findings, stable for ties. What falls off is returned, not
- * lost: the run record counts it, and a judge that keeps over-enumerating is a funnel
- * signal (R8). Ranking by weight means a blocking finding is never dropped in favour
- * of a lighter one, so the verdict over `kept` is the verdict over all.
+ * Order the findings heaviest first, stable for ties. Everything is kept: the PM
+ * disposes of each — act, refute, or carry it as residual — and a finding withheld now
+ * is a regeneration later. Rank is how the PM reads, not what the PM is allowed to see.
  */
-export function rank(findings = [], k = K_DEFAULT) {
-  const ordered = findings
+export function rank(findings = []) {
+  return findings
     .map((f, i) => ({ f, i }))
     .sort((a, b) => weight(b.f) - weight(a.f) || a.i - b.i)
     .map((x) => x.f);
-  return { kept: ordered.slice(0, k), dropped: ordered.slice(k) };
 }
