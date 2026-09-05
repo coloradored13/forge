@@ -10,11 +10,11 @@
     { "id": "R7",  "half": "both",      "statement": "Reviewers and judges rank; they do not enumerate.",                  "enforcer": "judge output schema",                        "eval": "economics" },
     { "id": "R8",  "half": "both",      "statement": "The funnel narrows, and the seam is where it is measured.",          "enforcer": "run record origin · funnel meter",           "eval": "funnel" },
     { "id": "R9",  "half": "delivery",  "statement": "One state machine, one store, one reader.",                          "enforcer": "one transition table read by every door",    "eval": "transition-table" },
-    { "id": "R10", "half": "both",      "statement": "One home per concept, one enforcer per rule.",                       "enforcer": "generated sections · this registry",         "eval": "coherence" },
+    { "id": "R10", "half": "both",      "statement": "One home per concept, one enforcer per rule.",                       "enforcer": "generated sections · rule registry with an enforcer field",         "eval": "coherence" },
     { "id": "R11", "half": "both",      "statement": "Brownfield is the main mode.",                                       "enforcer": "intake existing",                            "eval": "provenance" },
     { "id": "R12", "half": "discovery", "statement": "Shape before scope.",                                                "enforcer": "PRD shape section · drift unowned-term",     "eval": null },
     { "id": "R13", "half": "discovery", "statement": "Stories are testable at the PM's bar.",                              "enforcer": "story reviewer rules · intake question budget", "eval": "funnel" },
-    { "id": "R14", "half": "both",      "statement": "The seam is a snapshot.",                                            "enforcer": "import rule · cold intake in a temp root",   "eval": "seam" },
+    { "id": "R14", "half": "both",      "statement": "The seam is a snapshot.",                                            "enforcer": "import rule · cold intake in a temp root · read containment",   "eval": "seam" },
     { "id": "R15", "half": "both",      "statement": "Tests never touch real records; fixtures never depend on history.",  "enforcer": "the eval harness",                           "eval": null }
   ],
   "halves": ["discovery", "delivery", "shared"]

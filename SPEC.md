@@ -57,6 +57,8 @@ After export, drift enters from either side — the PM in Discovery, the team in
 
 **One repo.** `discovery/`, `delivery/`, `shared/`. One import rule — `delivery/` imports from `shared/` only — and one cold-intake eval keep the halves from re-fusing under pressure.
 
+**One repo per project.** Discovery's `setup` creates it — `git init`, first commit, private remote — or attaches an existing one. It holds `discovery/` (the PM's artifacts and handoffs), `forge/` (run records, manifest, verifier) and the product. The pipeline checkout holds code, evals and fixtures only. Refused: a project path inside the pipeline checkout; a new project over an existing directory; an existing project without `.git`. Delivery agents run with the project repo as `cwd` and may not read `discovery/` — the chokepoint records every tool use; such a read is a refusal, like a judge's write.
+
 ## §3 Rules
 
 The traps as constraints: evidence, enforcer, home. The registry is `shared/rules.json`.
@@ -102,7 +104,7 @@ A field lives in one schema under `shared/` and is derived into prompt, output c
 *evidence* class A: PRs #22 / #23, rows 5, 10, 26; task #20's double enforcement. *enforcer* generated sections · rule registry with an `enforcer` field · eval `coherence`
 
 **R11 · Brownfield is the main mode.** `both`
-Delivery's intake takes what exists — repo and prior manifest — and every stage produces deltas; QA re-runs the prior manifest's tests as regression. Discovery in brownfield mode elicits the delta against the manifest. Greenfield is the case where what exists is empty.
+Delivery's intake takes what exists — repo and prior manifest — and every stage produces deltas; QA re-runs the prior manifest's tests as regression. Discovery in brownfield mode reads the repo and its manifest before its first question, and elicits the delta. Greenfield is the case where what exists is empty.
 *evidence* task #8 never built; a product's second release is the first real test. *enforcer* intake `existing` · eval `provenance`
 
 **R12 · Shape before scope.** `discovery`
@@ -115,7 +117,7 @@ Every Given names a concrete state; every Then something observable; every story
 
 **R14 · The seam is a snapshot.** `both`
 Delivery reads only the handoff, runs cold with Discovery absent, never edits a Discovery artifact, and reports drift against the snapshot rather than resolving it. This rule keeps one repo from re-fusing.
-*evidence* §1, the fusion. *enforcer* import rule · cold intake in a temp root · eval `seam`
+*evidence* §1, the fusion. *enforcer* import rule · cold intake in a temp root · read containment · eval `seam`
 
 **R15 · Tests never touch real records; fixtures never depend on history.** `both`
 Every eval seeds its own state in a temp root. The gate ledger proves it can say "no" on a seeded fixture, not on a sentinel that expires when the pipeline works.
@@ -136,7 +138,7 @@ Every eval seeds its own state in a temp root. The gate ledger proves it can say
 
 The original intent. Four artifacts a PM signs, then a door.
 
-`setup` (model per role · budget) → `workshop → prd` (shape, then the MVP line) → `prototype` (the PM reacts; amends the PRD) → `stories` (epics + stories, Given/When/Then) → `design` (refined to sign-off) → **`export`** (team · Delivery · both)
+`setup` (project repo: new or existing · model per role · budget) → `workshop → prd` (shape, then the MVP line) → `prototype` (the PM reacts; amends the PRD) → `stories` (epics + stories, Given/When/Then) → `design` (refined to sign-off) → **`export`** (team · Delivery · both)
 
 | Artifact | Owns | The reviewer asks | Arithmetic |
 |---|---|---|---|
@@ -154,7 +156,7 @@ The original intent. Four artifacts a PM signs, then a door.
 
 Forge proper. Starts from a snapshot, ends with a product that carries its proof.
 
-`setup` (existing · models · budget · cap · estimate) → `intake` (validate · diff · compile · slice · ask) → `sdd` → `build` → `qa` → **`release`** (manifest into the product repo) ↺ next round: a delta PRD in Discovery against the manifest (R11)
+`setup` (project repo verified · models · budget · cap · estimate) → `intake` (validate · diff · compile · slice · ask) → `sdd` → `build` → `qa` → **`release`** (manifest into the project repo) ↺ next round: a delta PRD in Discovery against the manifest (R11)
 
 | Stage | Owns | The judge asks | Arithmetic |
 |---|---|---|---|
@@ -162,7 +164,7 @@ Forge proper. Starts from a snapshot, ends with a product that carries its proof
 | sdd | Binding the signed design and the scenarios to tests and interfaces per work item, before code. sdd never invents an interface. | Does each test prove something? Do the interfaces agree across items? | Controls ⊂ design; tests ↔ criteria; shared interfaces verbatim, each writer verifying a neighbour's (peer ring) |
 | build | The code, contained per work item, accounted from base. | No judge — QA is the judge. | Containment; change set from base; manifest currency for $0 reuse |
 | qa | The proof: per-criterion verdicts from executed output; browser evidence against the signed design for surface criteria. | Is each criterion discharged by executed output? | Prior manifest's tests still pass |
-| release | The provenance manifest committed into the product repo with a vendored verifier: criteria → tests → commits → work items → design → stories → requirements → contract → PRD, plus verdicts, advisories, deferrals, drift, cost, argv. | — | `verify` passes in a fresh clone |
+| release | The provenance manifest committed into the project repo with a vendored verifier: criteria → tests → commits → work items → design → stories → requirements → contract → PRD, plus verdicts, advisories, deferrals, drift, cost, argv. | — | `verify` passes in a fresh clone |
 
 **The loop, per stage.** Writer → judge → door. Doors: **approve** (fresh, non-block verdict) · **ask** (across the seam) · **defer** · **escalate** (buy a round, reason required) · **reopen** · **stop**. No *amend* — Delivery cannot change the PRD (R5, R6).
 

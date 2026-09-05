@@ -38,6 +38,9 @@ Check an item only when its eval is green in this repo. The v1 path is the sourc
 | Staleness as re-judge | R5 | M2 | [ ] |
 | Ranked judges | R7 | M1 | [ ] |
 | Setup with estimate, both halves | R1 | M1, M2 | [ ] |
+| Project repo at Discovery setup (create or attach; refusals) — new | R11, R14 | M1 | [ ] |
+| Delivery read containment: no `discovery/` reads, tool uses recorded — new | R14 | M2 | [ ] |
+| Workshop reads the repo and manifest before its first question (brownfield) — new | R11 | M1 | [ ] |
 | Jira export — new | — | M1 | [ ] |
 
 ## Stays behind
