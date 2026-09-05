@@ -2,7 +2,7 @@
 // owns: R1, R7 · shared — eval: economics. Every model call is recorded with model,
 // tokens, cost and duration by half, stage and role; the budget refuses a call before
 // the model runs; the model is chosen per role from one config; a usage gap pauses;
-// and judges are ranked to k with the verdict derived, never read. R6 (the round cap)
+// and judges' findings are ranked, never cut, with the verdict derived, never read. R6 (the round cap)
 // joins this suite at M2 with the transition table. No model is ever called here — the
 // SDK is replaced by a scripted query.
 
@@ -130,11 +130,10 @@ await withRoot({}, async (parent) => {
     FINDING("low", "likely", 1), FINDING("high", "likely", 2), FINDING("medium", "certain", 3), FINDING("high", "certain", 4),
     FINDING("low", "certain", 5), FINDING("medium", "likely", 6), FINDING("high", "certain", 7),
   ];
-  const { kept, dropped } = rank(many, 5);
-  check("rank keeps k, ordered by severity × confidence, stable for ties",
-    kept.map((f) => f.subject).join(",") === "STORY-4,STORY-7,STORY-2,STORY-3,STORY-6" && dropped.map((f) => f.subject).join(",") === "STORY-5,STORY-1",
-    kept.map((f) => f.subject).join(","));
-  check("a blocking finding is never the one dropped", dropped.every((f) => !(f.severity === "high" && f.confidence === "certain")));
+  const ordered = rank(many);
+  check("rank orders by severity × confidence, stable for ties, and keeps everything — there is no cap for a finding to fall off",
+    ordered.map((f) => f.subject).join(",") === "STORY-4,STORY-7,STORY-2,STORY-3,STORY-6,STORY-5,STORY-1" && ordered.length === many.length,
+    ordered.map((f) => f.subject).join(","));
   check("weight has one definition", weight(FINDING("high", "certain")) > weight(FINDING("high", "likely")) && weight(FINDING("high", "likely")) > weight(FINDING("medium", "certain")));
   check("certain + high blocks", deriveVerdict([FINDING("high", "certain", 1)]) === "block");
   check("likely + high advises — a human converts it", deriveVerdict([FINDING("high", "likely", 1)]) === "advise");
@@ -168,16 +167,16 @@ await withRoot({ "prompts/reviewer.md": IDENTITY }, async (root) => {
   const v = await runJudge({
     gate: "story-reviewer", half: "discovery", stage: "stories", identity: join(root, "prompts", "reviewer.md"),
     sections: [["Stories", "…"]], artifacts: [{ id: "STORY-1", path: "stories/STORY-1.json", doc }],
-    k: 5, scope: { mvp: "run sheet only" }, cwd: root, ledger, _query: q.query,
+    scope: { mvp: "run sheet only" }, cwd: root, ledger, _query: q.query,
   });
-  check("the verdict is derived over the k kept, with the cut counted",
-    v.verdict === "block" && v.findings.length === 5 && v.dropped === 1 && v.findings[0].subject === "STORY-4", JSON.stringify(v.findings.map((f) => f.subject)));
-  check("deferrals ride through untouched and never count against k", v.deferred.length === 1 && v.deferred[0].subject === "SCREEN-9");
+  check("the verdict is derived over every finding returned, ranked, nothing cut and nothing counted as cut",
+    v.verdict === "block" && v.findings.length === 6 && !("dropped" in v) && v.findings[0].subject === "STORY-4" && v.findings[5].subject === "STORY-1", JSON.stringify(v.findings.map((f) => f.subject)));
+  check("deferrals ride through untouched and are never findings", v.deferred.length === 1 && v.deferred[0].subject === "SCREEN-9");
   check("the verdict pins what it judged", v.judged.length === 1 && v.judged[0].content_hash === doc.meta.content_hash && v.judged[0].path === "stories/STORY-1.json");
   check("the verdict carries its cost", v.cost.usd === 0.31 && v.cost.model === "claude-opus-5" && rows(ledger).length === 1 && rows(ledger)[0].role === "reviewer");
   const sys = q.calls[0].options.systemPrompt;
   check("the system prompt is identity then mechanics, and the output contract is on the wire",
-    sys.startsWith("# Story reviewer") && /\n---\n\n# Mechanics/.test(sys) && /at most 5 in-scope findings/.test(sys) && q.calls[0].options.outputFormat.schema.required.includes("deferred"));
+    sys.startsWith("# Story reviewer") && /\n---\n\n# Mechanics/.test(sys) && /every in-scope finding/.test(sys) && !/at most \d+/.test(sys) && q.calls[0].options.outputFormat.schema.required.includes("deferred"));
   check("a judge has no write surface", q.calls[0].options.allowedTools.join() === "Read,Glob,Grep");
 
   const wrote = scripted({ structured, toolUses: ["Write"] });

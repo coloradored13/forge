@@ -1,17 +1,17 @@
 // owns: R7 · shared — the one judge runner for every LLM gate, both halves. It assembles
 // the prompt, calls through the chokepoint with no write surface, drops what re-raises a
-// settled ruling, cuts the findings to k, derives the verdict, pins what was judged, and
-// validates the record before returning it. Four things are never the model's: the
-// verdict, the cap, the pins, and whether a ruling is open.
+// settled ruling, ranks the findings, derives the verdict, pins what was judged, and
+// validates the record before returning it. Three things are never the model's: the
+// verdict, the pins, and whether a ruling is open.
 
 import { call } from "../agent-call/index.mjs";
 import { outputContract, validate } from "../schema/index.mjs";
 import { identity, mechanics, assemble } from "../prompt/index.mjs";
 import { record } from "../funnel.mjs";
-import { deriveVerdict, rank, K_DEFAULT } from "./verdict.mjs";
+import { deriveVerdict, rank } from "./verdict.mjs";
 import { pin } from "./freshness.mjs";
 
-export { deriveVerdict, rank, weight, K_DEFAULT, SEVERITY, CONFIDENCE } from "./verdict.mjs";
+export { deriveVerdict, rank, weight, SEVERITY, CONFIDENCE } from "./verdict.mjs";
 export { pin, verdictFreshness } from "./freshness.mjs";
 export { renderFindingsForAgent } from "./render.mjs";
 
@@ -43,21 +43,21 @@ export function splitReraised(findings, rulings = []) {
  * @param identity   path to the authored identity .md
  * @param sections   ordered [heading, body] pairs — the judge's input
  * @param artifacts  [{ id, path, doc }] — what is being judged; pinned into `judged`
- * @param k, scope, rulings, arithmetic   → mechanics (see shared/prompt); rulings also
+ * @param scope, rulings, arithmetic   → mechanics (see shared/prompt); rulings also
  *                   filter the answer — a re-raised ruling is removed and counted (R3)
- * @param funnel     path to the project's funnel.jsonl; re-raises and cuts are recorded there (R8)
+ * @param funnel     path to the project's funnel.jsonl; re-raises are recorded there (R8)
  * @param cwd, ledger, budget, models, onEvent, _query, _sleep   → agent-call
  */
 export async function runJudge({
   gate, half, stage, role = JUDGE_ROLE[half],
   identity: identityPath, sections = [], artifacts = [],
-  k = K_DEFAULT, scope, rulings = [], arithmetic, funnel,
+  scope, rulings = [], arithmetic, funnel,
   cwd, ledger, budget, models, onEvent, _query, _sleep,
 }) {
   if (!gate) throw new Error("runJudge: a gate id is required");
   const system = assemble({
     identity: identity(identityPath),
-    mechanics: mechanics({ kind: half === "discovery" ? "reviewer" : "judge", schema: "finding", k, scope, rulings, arithmetic }),
+    mechanics: mechanics({ kind: half === "discovery" ? "reviewer" : "judge", schema: "finding", scope, rulings, arithmetic }),
   });
   const input = sections.map(([h, body]) => `## ${h}\n\n${body}`).join("\n\n");
   const judged = artifacts.map(pin);
@@ -74,19 +74,17 @@ export async function runJudge({
   if (!r.structured) throw new Error(`${gate}: the judge returned no structured output`);
 
   const { kept: open, reraised } = splitReraised(r.structured.findings ?? [], rulings);
-  const { kept, dropped } = rank(open, k);
+  const findings = rank(open);
   if (funnel) {
     for (const f of reraised) record(funnel, { signal: "reraised", gate, rule: f.rule, subject: f.subject, ruling: f.ruling });
-    if (dropped.length) record(funnel, { signal: "dropped", gate, count: dropped.length });
   }
   const verdict = {
     gate,
-    verdict: deriveVerdict(kept),
-    findings: kept,
+    verdict: deriveVerdict(findings),
+    findings,
     deferred: r.structured.deferred ?? [],
     checked: r.structured.checked ?? 0,
     skipped: r.structured.skipped ?? 0,
-    dropped: dropped.length,
     reraised: reraised.length,
     judged,
     cost: { model: r.model, usd: r.usd, ms: r.ms },
@@ -102,7 +100,7 @@ export async function runJudge({
  * finding, not a silence: nothing about it has been checked. Per-item verdicts ride
  * alongside for the record.
  */
-export async function runPerItemJudge({ gate, items, k = K_DEFAULT, onEvent, ...rest }) {
+export async function runPerItemJudge({ gate, items, onEvent, ...rest }) {
   const perItem = [];
   const all = [];
   const deferred = [];
@@ -111,7 +109,7 @@ export async function runPerItemJudge({ gate, items, k = K_DEFAULT, onEvent, ...
 
   for (const item of items) {
     try {
-      const v = await runJudge({ ...rest, gate, k, sections: item.sections, artifacts: item.artifacts ?? [], onEvent: (e) => onEvent?.(`${item.id} ${e}`) });
+      const v = await runJudge({ ...rest, gate, sections: item.sections, artifacts: item.artifacts ?? [], onEvent: (e) => onEvent?.(`${item.id} ${e}`) });
       perItem.push({ id: item.id, verdict: v });
       checked += v.checked; skipped += v.skipped; reraised += v.reraised; usd += v.cost.usd; ms += v.cost.ms; model ??= v.cost.model;
       all.push(...v.findings); deferred.push(...v.deferred); judged.push(...v.judged);
@@ -127,9 +125,9 @@ export async function runPerItemJudge({ gate, items, k = K_DEFAULT, onEvent, ...
     }
   }
 
-  const { kept, dropped } = rank(all, k);
+  const findings = rank(all);
   const verdict = {
-    gate, verdict: deriveVerdict(kept), findings: kept, deferred, checked, skipped, dropped: dropped.length, reraised, judged,
+    gate, verdict: deriveVerdict(findings), findings, deferred, checked, skipped, reraised, judged,
     cost: { model: model ?? "none", usd, ms },
   };
   const v = validate("finding", verdict);

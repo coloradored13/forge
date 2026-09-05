@@ -1,14 +1,14 @@
 // owns: R10 · shared — two halves per agent, one authoring surface. The identity half is
 // a .md a person writes: role, craft floor, declared standard, what is not a finding.
 // The mechanics half is generated here from the schema, the verdict rule, and the run
-// config: output contract, k, severity policy, scope, rulings. Nothing in the identity
+// config: output contract, severity policy, scope, rulings. Nothing in the identity
 // file is substituted — a placeholder in it is a hole a model fills by guessing, so it
 // is refused. There is no _shared.md. Text the repository supplies enters a prompt through
 // one door, `evidence`: quoted, framed as evidence, fenced so it cannot leave the quote.
 
 import { readFileSync } from "node:fs";
 import { fields, fieldsOf, partialContract } from "../schema/index.mjs";
-import { K_DEFAULT, SEVERITY, CONFIDENCE } from "../judge/verdict.mjs";
+import { SEVERITY, CONFIDENCE } from "../judge/verdict.mjs";
 
 export const KINDS = ["judge", "reviewer", "writer", "conversant"];
 
@@ -40,12 +40,11 @@ export function identity(path) {
  * @param schema      the schema name whose output contract this agent produces
  * @param only        top-level fields of that contract this agent is responsible for
  *                    (a workshop section); default: all of them
- * @param k           the finding cap (R7)
  * @param scope       { mvp: string, deferred: string[] } — the line and what sits past it (R2)
  * @param rulings     [{ id, question, answer }] — settled; never re-raised (R3)
  * @param arithmetic  rule names checked mechanically elsewhere — not this agent's to report (R10)
  */
-export function mechanics({ kind, schema, only, k = K_DEFAULT, scope, rulings = [], arithmetic = [] }) {
+export function mechanics({ kind, schema, only, scope, rulings = [], arithmetic = [] }) {
   if (!KINDS.includes(kind)) throw new Error(`mechanics: unknown kind ${kind}`);
   if (!schema) throw new Error("mechanics: a schema name is required — the output contract is derived, never typed");
   const judging = kind === "judge" || kind === "reviewer";
@@ -67,7 +66,7 @@ export function mechanics({ kind, schema, only, k = K_DEFAULT, scope, rulings = 
   if (judging) {
     const sev = Object.keys(SEVERITY).join(" > ");
     const conf = Object.keys(CONFIDENCE).join(" > ");
-    out.push(`## Ranking\n\nReturn at most ${k} in-scope findings, ranked by severity (${sev}) then confidence (${conf}). If you have more, keep the ${k} that matter most and let the rest go — the runner cuts to ${k} and counts what it cut. Every finding quotes the line that fails and the criterion it fails.\n\nThe verdict is derived from your findings, never stated by you: a finding at \`high\` + \`certain\` blocks; any other finding advises; none passes. Report \`checked\` and \`skipped\` honestly — a verdict over items you did not read is not a verdict.`);
+    out.push(`## Ranking\n\nReturn every in-scope finding, ranked by severity (${sev}) then confidence (${conf}). Rank means order, not trim: nothing you found is held back for a later round — the PM disposes of each one, and a finding withheld now is a regeneration later. Every finding quotes the line that fails and the criterion it fails; what you cannot quote failing is not a finding.\n\nThe verdict is derived from your findings, never stated by you: a finding at \`high\` + \`certain\` blocks; any other finding advises; none passes. Report \`checked\` and \`skipped\` honestly — a verdict over items you did not read is not a verdict.`);
   }
 
   if (scope) {

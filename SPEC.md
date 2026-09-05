@@ -87,9 +87,9 @@ When the handoff moves, each downstream stage is re-judged; the writer runs only
 Default 2 judged rounds per stage, ceiling 3. At the cap an advise proceeds with its findings as advisories on the manifest; a block at the cap is the human's call — accept on the record, or buy a round with a reason. Discovery has no automatic rounds to cap.
 *evidence* discovery exhausted by round 2 in both stages; n = 2, so defaults calibrate at M3. *enforcer* transition table · `escalate` · eval `economics`
 
-**R7 · Reviewers and judges rank; they do not enumerate.** `both`
-At most k in-scope findings (default 5) by severity × confidence, each quoting the line it fails and the criterion it would fail. Twenty findings in front of a PM is the same defect in human time. Block still requires certain + high.
-*evidence* a 12-finding block re-judged over a 5-finding advise. *enforcer* judge output schema · eval `economics`
+**R7 · Reviewers and judges rank; the PM disposes.** `both`
+Every in-scope finding, ranked by severity × confidence, each quoting the line it fails and the criterion — what cannot be quoted failing is not a finding. No cap: a cap withholds findings and surfaces them a few per round, a regeneration each. The PM disposes of each — act, refute, or carry as residual. Block still requires certain + high.
+*evidence* v1: a 12-finding block re-judged over a 5-finding advise. Bakehouse, k = 5: three of design round 2's five findings sat behind round 1's cap; the cut counter never fired in 17 reviews. *enforcer* `rank` · finding schema · eval `economics`
 
 **R8 · The funnel narrows, and the seam is where it is measured.** `both`
 Any amendment Delivery raises against a Discovery artifact is a gate-miss logged against the Discovery gate that should have caught it, with a postmortem field. The target is near zero — that number is what proves the split was right. Judges are in the funnel too: a finding QA later contradicts is a judge miss.
@@ -148,7 +148,7 @@ The original intent. Four artifacts a PM signs, then a door.
 | design | The canonical production design, two-faced: rendered for sign-off; structured (structure, tokens, states, viewport) for Delivery to bind to. | Direction decided? Crafted, not generic? Hero spend? One language across screens? | Every story screen designed; every design screen claimed |
 | export | The ready gate — all joins green — and the three-exit door. | — | Handoff snapshot, versioned, hashed per item |
 
-**The loop is the PM.** Generate → review (≤ k ranked findings and deferrals) → the PM acts: **accept** · **edit** · **answer** (ruling → criterion) · **amend** (edit + blast radius) · **defer** · **refine** (regenerate with the PM's notes — cost shown first). Nothing regenerates without a human trigger. When the PRD moves, downstream artifacts wear a stale badge with the diff; the PM refreshes what matters.
+**The loop is the PM.** Generate → review (ranked findings and deferrals) → the PM acts: **accept** · **edit** · **answer** (ruling → criterion) · **amend** (edit + blast radius) · **defer** · **refine** (regenerate with the PM's notes — cost shown first). Nothing regenerates without a human trigger. When the PRD moves, downstream artifacts wear a stale badge with the diff; the PM refreshes what matters.
 
 **Trackers.** Every export writes the handoff and a rendering a team reads; a tracker is optional. GitHub Issues (the project's own repository, through the `gh` the PM already has): requirements → issues, stories → issues under them. Jira: crux and objective → a Jira Product Discovery idea with the PRD attached; requirements → epics; stories → stories under their epics. REQ-n / AC-n / SCREEN-n ride as labels, so every issue links to its PRD section. A tracker is a projection of the handoff with the same IDs — never a chain link.
 
@@ -176,8 +176,8 @@ What both halves stand on, and nothing else.
 
 - **Schema** — the single home for PRD, contract, story, design, handoff, run, finding, manifest (R10).
 - **Agent call** — the only place a model is invoked: model per role from one config, metering, budget check, usage-pause (R1).
-- **Judge runner** — ranked, capped, scoped output; verdict derivation; hash-pinned freshness (R7).
-- **Prompts** — two halves per agent. *Identity* is authored: role, craft floor, declared standard, what is not a finding. *Mechanics* are generated from schema, rule registry, and run config: output contract, k, severity, rulings, MVP line. One authoring surface; no `_shared.md` (R10). v1 was ~1:1 expertise-to-process; the defect was three surfaces, not the ratio.
+- **Judge runner** — ranked, scoped output; verdict derivation; hash-pinned freshness (R7).
+- **Prompts** — two halves per agent. *Identity* is authored: role, craft floor, declared standard, what is not a finding. *Mechanics* are generated from schema, rule registry, and run config: output contract, severity, rulings, MVP line. One authoring surface; no `_shared.md` (R10). v1 was ~1:1 expertise-to-process; the defect was three surfaces, not the ratio.
 - **Console** — six views: setup · workshop · discovery board (artifacts, reviews, doors, staleness, cost) · export · delivery run (state, liveness, cost, round n of cap, findings, funnel) · release. Anything else is cut.
 - **Evals, ten** — `transition-table` (R9) · `economics` (R1, R6, R7) · `seam` (R14) · `scope` (R2) · `rulings` (R3) · `amendment-audit` (R4) · `rejudge` (R5) · `funnel` (R8, R13) · `coherence` (R10; absorbs v1's prompts, schema-coverage, module-graph) · `provenance` (R11; the manifest verifier). Temp roots and seeded fixtures only (R15).
 
@@ -231,7 +231,7 @@ Done-bars, not phases. Every bar is a claim about the pipeline; Bakehouse only e
 - **M0 · Spec approved; repo seeded.** SPEC.md with the rules as R-numbers; §7 as the port checklist; three directories and the import rule on day one.
 - **M1 · Discovery produces a backlog a team could take today** *(the original intent)*. Workshop → PRD → prototype → stories → design → a handoff snapshot with a tracker projection, with cost shown per artifact and per run and the model chosen per role. Test case: Bakehouse.
 - **M2 · Delivery core on fixtures.** State machine, doors, cap, re-judge, metering; a cold intake from a handoff in a temp root with Discovery absent, drift reported against a seeded edit. Judges stubbed — no model calls.
-- **M3 · Delivery ships a product that carries its proof** *(the exhibit)*. From the M1 handoff: ≤ 2 rounds per stage on average, ≤ 3 hours of compute, a product matching the signed design, the manifest verified in a fresh clone, cost known, zero Delivery-origin amendments or each a logged gate-miss. k, cap, liveness calibrated here. Test case: the Bakehouse MVP.
+- **M3 · Delivery ships a product that carries its proof** *(the exhibit)*. From the M1 handoff: ≤ 2 rounds per stage on average, ≤ 3 hours of compute, a product matching the signed design, the manifest verified in a fresh clone, cost known, zero Delivery-origin amendments or each a logged gate-miss. Cap, liveness calibrated here. Test case: the Bakehouse MVP.
 - **M4 · The pipeline runs against its own output.** A delta PRD against the M3 manifest; prior criteria pass as regression; the manifest extends. Test case: one deferred Bakehouse surface.
 - **M5 · Forge builds Forge.** One v2 feature through both halves. Optional, if M4 is clean.
 - **M6 · Public.** On the user's explicit word, at that moment.
@@ -244,7 +244,7 @@ Taken 2026-09-04 with M0 approval; each is the draft's recommendation.
 2. Prototype fidelity: clickable and deliberately rough — it exists to change the PRD, and polish invites the PM to sign a concept as if it were the design.
 3. Design sign-off: the AI judge plus a named human designer — the human is the taste gate v1 lacked when it shipped a wireframe.
 4. Default models per role: v1's until M1 and M3 calibrate; a cheaper Discovery reviewer is the first experiment worth measuring.
-5. Starting values: k = 5, cap 2 / ceiling 3, liveness window 5 minutes, intake question budget 2 per story. Revisited at M3 with the funnel data.
+5. Starting values: cap 2 / ceiling 3, liveness window 5 minutes, intake question budget 2 per story. Revisited at M3 with the funnel data.
 6. Writers declare their own standard and are judged against it plus a craft floor — v1's uxd pattern, never executed. Trialled on the design stage at M1 first.
 
 ---

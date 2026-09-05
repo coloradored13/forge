@@ -94,7 +94,7 @@ await withRoot({}, async (parent) => {
   writeFileSync(identity, "# Reviewer\n\nYou hold stories to the bar a PM would.");
   const verdict = await runJudge({ gate: "story-reviewer", half: "discovery", stage: "stories", identity, sections: [["Stories", "…"]], artifacts: [{ id: "prd-dock", path: PRD_FILE, doc: loadPrd(root) }], rulings, funnel: funnelPath(root), cwd: root, ledger: ledgerPath(root), _query: q.query });
   check("runJudge removes the three re-raises, keeps the two real findings, and the verdict is the real findings'",
-    verdict.reraised === 3 && verdict.findings.map((x) => x.subject).join() === "REQ-1/AC-3,STORY-2" && verdict.verdict === "block" && verdict.dropped === 0, JSON.stringify(verdict.findings.map((x) => x.subject)));
+    verdict.reraised === 3 && verdict.findings.map((x) => x.subject).join() === "REQ-1/AC-3,STORY-2" && verdict.verdict === "block" && !("dropped" in verdict), JSON.stringify(verdict.findings.map((x) => x.subject)));
   check("the verdict validates with reraised on it", validate("finding", verdict).ok && verdict.judged[0].content_hash === loadPrd(root).meta.content_hash);
   const funnel = rows(funnelPath(root));
   check("each re-raise is a funnel row naming the gate, the rule, the subject and the ruling (R8)",
