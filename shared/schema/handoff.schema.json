@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forge.local/schema/handoff.schema.json",
+  "title": "Handoff",
+  "description": "The seam (R14, SPEC §2): a snapshot, not a set of references. The contract the PRD compiled to, the backlog, the design and the prototype embedded as they stood at export, an index of every item with its own hash, the Jira keys the items were exported to, and what Discovery cost. Versioned — a re-export is a new version beside the last. Delivery reads nothing else.",
+  "type": "object",
+  "required": ["id", "version", "exported_at", "by", "exit", "project", "contract", "prototype", "stories", "design", "items", "jira", "cost", "meta", "x-drift-checked"],
+  "additionalProperties": false,
+  "properties": {
+    "id": { "type": "string", "x-runner": true },
+    "version": { "type": "integer", "x-runner": true, "description": "1 for the first export of a project, then one more each export." },
+    "exported_at": { "type": "string", "x-runner": true },
+    "by": { "type": "string", "x-runner": true, "description": "The named person who opened the door." },
+    "exit": { "enum": ["team", "delivery", "both"], "x-runner": true, "description": "Which exit the PM took: hand off to a team through Jira, send to Delivery, or both." },
+    "project": {
+      "type": "object",
+      "x-runner": true,
+      "required": ["slug", "title", "remote"],
+      "additionalProperties": false,
+      "properties": {
+        "slug": { "type": "string" },
+        "title": { "type": "string" },
+        "remote": { "type": ["string", "null"], "description": "The project repository's remote, when it has one." }
+      }
+    },
+    "contract": { "$ref": "contract.schema.json", "description": "The contract compiled from the PRD at export." },
+    "prototype": { "$ref": "prototype.schema.json", "description": "The prototype record as it stood — record only; nothing in Delivery reads it." },
+    "stories": { "$ref": "story.schema.json", "description": "The backlog as it stood." },
+    "design": {
+      "description": "The design as it stood, with its sign-off if one was on this exact content — or null when a team took the backlog before a design existed. Delivery requires it signed.",
+      "oneOf": [{ "type": "null" }, { "$ref": "design.schema.json" }]
+    },
+    "items": {
+      "type": "array",
+      "x-runner": true,
+      "description": "Every item in the snapshot by id and kind with a hash over its own fields — what intake diffs against whatever is live, per id.",
+      "items": {
+        "type": "object",
+        "required": ["id", "kind", "hash"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string" },
+          "kind": { "enum": ["requirement", "surface", "ruling", "amendment", "epic", "story", "screen"] },
+          "hash": { "type": "string" }
+        }
+      }
+    },
+    "jira": {
+      "x-runner": true,
+      "description": "Where the projection went: the site, the projects, the issue types used, and the key of every item exported — carried forward from the last handoff so a re-export updates rather than duplicates. Null when nothing has gone to Jira yet.",
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "required": ["site", "project", "ideas", "types", "keys"],
+          "additionalProperties": false,
+          "properties": {
+            "site": { "type": "string", "description": "The Jira Cloud site, as a URL." },
+            "project": { "type": "string", "description": "The software project key epics and stories go to." },
+            "ideas": { "type": ["string", "null"], "description": "The Jira Product Discovery project key the idea goes to, or null for no idea." },
+            "types": {
+              "type": "object",
+              "required": ["idea", "epic", "story"],
+              "additionalProperties": false,
+              "properties": {
+                "idea": { "type": "string" },
+                "epic": { "type": "string" },
+                "story": { "type": "string" }
+              }
+            },
+            "keys": { "type": "object", "additionalProperties": { "type": "string" }, "description": "Item id to Jira key. The idea is filed under the id PRD." }
+          }
+        }
+      ]
+    },
+    "cost": {
+      "type": "object",
+      "x-runner": true,
+      "description": "What Discovery spent to reach this handoff, from the ledger (R1).",
+      "required": ["usd", "calls", "by_stage"],
+      "additionalProperties": false,
+      "properties": {
+        "usd": { "type": "number" },
+        "calls": { "type": "integer" },
+        "by_stage": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "required": ["usd", "calls"],
+            "additionalProperties": false,
+            "properties": { "usd": { "type": "number" }, "calls": { "type": "integer" } }
+          }
+        }
+      }
+    },
+    "meta": {
+      "type": "object",
+      "x-runner": true,
+      "required": ["content_hash", "hash_algorithm"],
+      "additionalProperties": false,
+      "properties": {
+        "content_hash": { "type": "string" },
+        "hash_algorithm": { "type": "string" }
+      }
+    },
+    "x-drift-checked": {
+      "type": "array",
+      "x-runner": true,
+      "const": ["/contract", "/prototype", "/stories", "/design"],
+      "items": { "type": "string" }
+    }
+  }
+}

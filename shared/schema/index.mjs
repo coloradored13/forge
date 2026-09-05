@@ -23,7 +23,7 @@ const compiled = new Map();
 function validator(name) {
   if (!compiled.has(name)) {
     const ajv = new Ajv({ allErrors: true, strict: false });
-    compiled.set(name, ajv.compile(load(name)));
+    compiled.set(name, ajv.compile(inlineRefs(load(name))));
   }
   return compiled.get(name);
 }
@@ -44,21 +44,43 @@ function report(v, doc) {
   return { ok, errors: ok ? [] : (v.errors ?? []).map((e) => `${e.instancePath || "/"} ${e.message}`) };
 }
 
-/** Local `#/$defs/x` references replaced by their definitions, so the result stands alone. */
+/**
+ * References replaced by their definitions, so the result stands alone. Local
+ * `#/$defs/x`, or a sibling schema's field — `prd.schema.json#/properties/problem` — which
+ * is how a document that embeds another (the contract the PRD compiles to, the handoff)
+ * carries its fields without retyping one (R10). Keywords beside a `$ref` stay, so an
+ * embedding can re-describe a field for its own reader.
+ */
 export function inlineRefs(schema, defs = schema.$defs ?? {}) {
   const walk = (node) => {
     if (Array.isArray(node)) return node.map(walk);
     if (!node || typeof node !== "object") return node;
     if (typeof node.$ref === "string") {
-      const m = node.$ref.match(/^#\/\$defs\/([^/]+)$/);
-      if (!m || !(m[1] in defs)) throw new Error(`inlineRefs: cannot resolve ${node.$ref}`);
-      return walk(defs[m[1]]);
+      const { $ref, ...rest } = node;
+      return { ...walk(target($ref, defs)), ...walk(rest) };
     }
     const out = {};
     for (const [k, v] of Object.entries(node)) if (k !== "$defs") out[k] = walk(v);
     return out;
   };
   return walk(schema);
+}
+
+function target(ref, defs) {
+  const local = ref.match(/^#\/\$defs\/([^/]+)$/);
+  if (local) {
+    if (!(local[1] in defs)) throw new Error(`inlineRefs: cannot resolve ${ref}`);
+    return defs[local[1]];
+  }
+  const sibling = ref.match(/^([a-z-]+)\.schema\.json(?:#((?:\/[^/]+)*))?$/);
+  if (!sibling || !names().includes(sibling[1])) throw new Error(`inlineRefs: cannot resolve ${ref}`);
+  let node = inlineRefs(load(sibling[1]));
+  for (const step of (sibling[2] ?? "").split("/").slice(1)) {
+    node = node?.[step];
+    if (node === undefined) throw new Error(`inlineRefs: cannot resolve ${ref}`);
+  }
+  // The sibling's identity and its own runner marking belong to it, not to the field embedding it.
+  return Object.fromEntries(Object.entries(node).filter(([k]) => !["$schema", "$id", "title", "x-runner"].includes(k)));
 }
 
 /**
