@@ -9,18 +9,15 @@ import { dirname, join } from "node:path";
 import { validate } from "../../shared/schema/index.mjs";
 import { stamp } from "../../shared/hash.mjs";
 import { verdictFreshness } from "../../shared/judge/index.mjs";
+import { Refused } from "../../shared/refused.mjs";
 import { PRD_FILE, loadPrd } from "../workshop/index.mjs";
 
-export { PRD_FILE };
+export { PRD_FILE, Refused };
 export const PROTOTYPE_FILE = join("discovery", "prototype.json");
 export const HTML_FILE = join("discovery", "prototype", "index.html");
 export const STORIES_FILE = join("discovery", "stories.json");
 export const DESIGN_FILE = join("discovery", "design.json");
 export const REVIEWS = join("discovery", "reviews");
-
-export class Refused extends Error {
-  constructor(code, message, detail) { super(message); this.code = code; if (detail !== undefined) this.detail = detail; }
-}
 
 // ── documents ──
 

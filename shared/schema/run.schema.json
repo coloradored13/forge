@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forge.local/schema/run.schema.json",
+  "title": "Delivery run",
+  "description": "The one record of a project's Delivery (R9): which handoff it runs from, the setup a human gave it, one state per stage written only by the thing that changed it, and the append-only flags of every decision taken outside the arithmetic. No model writes a byte of this — every field is the runner's, so the output contract derived from it is empty.",
+  "type": "object",
+  "required": ["id", "handoff", "created_at", "by", "cap", "ceiling", "liveness_ms", "budget", "models", "stages", "flags"],
+  "additionalProperties": false,
+  "properties": {
+    "id": { "type": "string", "x-runner": true, "description": "The project's slug. One run per project: a new handoff is adopted and moves the approved stages stale; it never starts a second run." },
+    "handoff": {
+      "type": "object",
+      "x-runner": true,
+      "description": "The snapshot this run reads — the only Discovery artifact Delivery ever reads (R14), pinned by content hash so a moved handoff is detected, never assumed.",
+      "required": ["version", "path", "content_hash"],
+      "additionalProperties": false,
+      "properties": {
+        "version": { "type": "integer", "minimum": 1 },
+        "path": { "type": "string", "description": "Root-relative path of the handoff file." },
+        "content_hash": { "type": "string" }
+      }
+    },
+    "created_at": { "type": "string", "x-runner": true },
+    "by": { "type": "string", "x-runner": true, "description": "Who set the run up." },
+    "cap": { "type": "integer", "minimum": 1, "x-runner": true, "description": "Judged rounds a stage gets before a block is the human's call (R6). Starts at 2 (§10.5)." },
+    "ceiling": { "type": "integer", "minimum": 1, "x-runner": true, "description": "The most rounds an escalation can buy up to (R6). Starts at 3. Never below the cap." },
+    "liveness_ms": { "type": "integer", "minimum": 1000, "x-runner": true, "description": "A running stage silent longer than this reads as dead (R9). Starts at five minutes." },
+    "budget": { "type": ["number", "null"], "minimum": 0, "x-runner": true, "description": "USD the run may spend, checked against the ledger before every call (R1). Null is uncapped — the subscription is the cap." },
+    "models": { "type": "object", "x-runner": true, "additionalProperties": { "type": "string" }, "description": "Per-role model overrides for this run, keyed `delivery.<role>`; a role the config does not know is refused at setup." },
+    "stages": {
+      "type": "object",
+      "x-runner": true,
+      "description": "One state per stage, in pipeline order. The status enum is the state machine's vocabulary — `dead` is not in it: dead is read from the heartbeat by the one reader, never written.",
+      "required": ["intake", "sdd", "build", "qa", "release"],
+      "additionalProperties": false,
+      "properties": {
+        "intake": { "$ref": "#/$defs/stage" },
+        "sdd": { "$ref": "#/$defs/stage" },
+        "build": { "$ref": "#/$defs/stage" },
+        "qa": { "$ref": "#/$defs/stage" },
+        "release": { "$ref": "#/$defs/stage" }
+      }
+    },
+    "flags": {
+      "type": "array",
+      "x-runner": true,
+      "description": "Append-only: every door a human took with its reason, every override named as one with the guard it passed, every restart over a dead stage, every handoff adopted. Nothing here is ever removed or rewritten.",
+      "items": { "$ref": "#/$defs/flag" }
+    }
+  },
+  "$defs": {
+    "stage": {
+      "type": "object",
+      "required": ["status", "round", "started_at", "heartbeat_at", "finished_at", "verdict"],
+      "additionalProperties": false,
+      "properties": {
+        "status": { "enum": ["pending", "running", "review", "approved", "blocked", "stale", "rejudging", "stopped"] },
+        "round": { "type": "integer", "minimum": 0, "description": "Judged rounds in the current episode. A finish counts one; a pin refresh never does (R5); a stop, a reopen or a moved handoff opens a new episode at zero." },
+        "started_at": { "type": ["string", "null"] },
+        "heartbeat_at": { "type": ["string", "null"], "description": "Written by the wrapper while it runs. Its age against liveness_ms is the only thing that says dead." },
+        "finished_at": { "type": ["string", "null"] },
+        "verdict": { "type": ["string", "null"], "description": "Root-relative path of the verdict the last round filed — a finding document pinned to what it judged. Read back by the approve door; presence is never evidence, the pins are." }
+      }
+    },
+    "flag": {
+      "type": "object",
+      "required": ["at", "stage", "event", "by", "reason", "override"],
+      "additionalProperties": false,
+      "properties": {
+        "at": { "type": "string" },
+        "stage": { "type": "string" },
+        "event": { "type": "string" },
+        "by": { "type": "string" },
+        "reason": { "type": "string" },
+        "override": { "type": "boolean", "description": "True when a human's word passed a guard that would otherwise have refused." },
+        "guard": { "type": "string", "description": "The guard overridden, by its refusal code — judge-blocked, verdict-stale." },
+        "note": { "type": "string", "description": "What the runner has to say about it: the finding overridden, the silence that read as dead." }
+      }
+    }
+  }
+}

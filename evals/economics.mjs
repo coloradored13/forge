@@ -1,15 +1,17 @@
 #!/usr/bin/env node
-// owns: R1, R7 · shared — eval: economics. Every model call is recorded with model,
+// owns: R1, R7, R6 · shared — eval: economics. Every model call is recorded with model,
 // tokens, cost and duration by half, stage and role; the budget refuses a call before
 // the model runs; the model is chosen per role from one config; a usage gap pauses;
-// and judges' findings are ranked, never cut, with the verdict derived, never read. R6 (the round cap)
-// joins this suite at M2 with the transition table. No model is ever called here — the
-// SDK is replaced by a scripted query.
+// judges' findings are ranked, never cut, with the verdict derived, never read; and rounds
+// are capped by the transition table — the cap lands a block in `blocked`, where the human's
+// moves are escalate with a reason (to the ceiling), approve on the record, or stop (R6).
+// No model is ever called here — the SDK is replaced by a scripted query.
 
 import { join } from "node:path";
 import { suite, withRoot, scripted } from "./_harness.mjs";
 import { call, BudgetError, rows, quote, modelFor, TOOLS } from "../shared/agent-call/index.mjs";
 import { runJudge, runPerItemJudge, rank, deriveVerdict, weight, renderFindingsForAgent } from "../shared/judge/index.mjs";
+import { apply, DEFAULTS } from "../delivery/state/index.mjs";
 import { stamp } from "../shared/hash.mjs";
 import { setupProject } from "../discovery/setup/index.mjs";
 import { openPrd, quoteTurn, turn } from "../discovery/workshop/index.mjs";
@@ -210,5 +212,23 @@ await withRoot({ "prompts/j.md": IDENTITY }, async (root) => {
     JSON.stringify(verdict));
   check("per-item verdicts ride alongside", items.length === 2 && items.map((i) => i.id).join() === "SCREEN-1,SCREEN-3");
 });
+
+// ── R6: rounds are capped and the cap is a door — the economics of a stage that keeps blocking ──
+{
+  const refusal = (fn) => { try { fn(); return null; } catch (e) { return e; } };
+  const stages = Object.fromEntries(["intake", "sdd", "build", "qa", "release"].map((s) => [s, { status: "pending", round: 0, started_at: null, heartbeat_at: null, finished_at: null, verdict: null }]));
+  let run = { id: "p", handoff: { version: 1, path: "h", content_hash: "x" }, created_at: "2026-09-05T12:00:00.000Z", by: "Brad", ...DEFAULTS, budget: null, models: {}, stages, flags: [] };
+  const block = { verdict: "block", path: "forge/delivery/reviews/build-block.json" };
+  const go = (event, ctx = {}) => { run = apply(run, { stage: "build", event, by: "wrapper", verdict: block, fresh: true, ...ctx }).run; return run.stages.build; };
+  go("start"); go("finish"); go("regenerate"); go("finish");
+  check("R6: with the §10.5 cap of 2, two blocking rounds is the most the arithmetic spends on its own — the third is refused at-cap",
+    run.stages.build.round === 2 && refusal(() => go("regenerate"))?.code === "at-cap" && run.stages.build.status === "review");
+  check("the cap lands in blocked, a state with no automatic exit: regenerate is not a transition from it",
+    go("cap", { by: "runner" }).status === "blocked" && refusal(() => go("regenerate"))?.code === "no-transition");
+  check("an escalation with a reason buys exactly one more round, to the ceiling of 3; the ceiling refuses the next",
+    go("escalate", { by: "Brad", reason: "the judge read the fixture, not the change" }).status === "running" && go("finish").round === 3 && go("cap", { by: "runner" }).status === "blocked" && refusal(() => go("escalate", { by: "Brad", reason: "again" }))?.code === "at-ceiling");
+  check("at the ceiling the block is the human's call: approve on the record leaves a flag naming the guard; stop takes a reason",
+    go("approve", { by: "Brad", reason: "the residual is documented in the manifest", override: true }).status === "approved" && run.flags.filter((f) => f.override).length === 1 && run.flags.at(-1).guard === "judge-blocked" && run.flags.map((f) => f.event).join() === "escalate,approve");
+}
 
 done();
