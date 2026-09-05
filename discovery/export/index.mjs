@@ -1,30 +1,31 @@
 // owns: R14 · discovery — the export door: the ready gate — every join green, every hash
-// whole — and the three exits: hand off to a team through Jira, send to Delivery, or both.
-// Whichever exit, the door writes the same thing: a versioned handoff snapshot — the
-// contract the PRD compiles to, the backlog, the design and the prototype as they stood,
-// hashed per item. Jira is a projection of that snapshot with the same ids, its keys
-// written back onto it, never a chain link. What goes to Delivery carries a signed
-// design; what goes to a team carries the design as it stands, with its state on record.
+// whole — and the three exits: hand off to a team, send to Delivery, or both. Whichever
+// exit, the door writes the same thing: a versioned handoff snapshot — the contract the
+// PRD compiles to, the backlog, the design and the prototype as they stood, hashed per
+// item — and a rendering of it a human reads. A team may also get the backlog projected
+// to a tracker (GitHub Issues or Jira) with the same ids, its keys written back onto the
+// snapshot, never a chain link. What goes to Delivery carries a signed design; what goes
+// to a team carries the design as it stands, with its state on record.
 
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { validate } from "../../shared/schema/index.mjs";
 import { verify } from "../../shared/hash.mjs";
 import { pin, deriveVerdict } from "../../shared/judge/index.mjs";
 import { checkScope, lineDrawn } from "../../shared/scope.mjs";
 import { totals } from "../../shared/agent-call/ledger.mjs";
 import { handoffFile, latestHandoff, itemsOf } from "../../shared/handoff.mjs";
-import { loadProject, ledgerPath } from "../setup/index.mjs";
+import { loadProject, ledgerPath, exec } from "../setup/index.mjs";
 import { loadPrd, savePrd, PRD_FILE } from "../workshop/index.mjs";
-import { Refused, readDoc, saveDoc, saveVerdict, isSigned, renderPrd, PROTOTYPE_FILE, STORIES_FILE, DESIGN_FILE } from "../record/index.mjs";
+import { Refused, readDoc, saveDoc, saveVerdict, isSigned, renderPrd, renderPrototype, renderStories, renderStandard, renderDesign, PROTOTYPE_FILE, STORIES_FILE, DESIGN_FILE } from "../record/index.mjs";
 import { checkPrototype } from "../prototype/index.mjs";
 import { checkStories } from "../stories/index.mjs";
 import { checkDesign } from "../design/index.mjs";
+import { resolveTracker, project as projectTo, IDEA } from "./trackers.mjs";
 
 export const GATE = "export-ready";
 export const EXITS = ["team", "delivery", "both"];
-/** Jira issue type names by role; a site that names them differently says so in the jira option. */
-export const TYPES = { idea: "Idea", epic: "Epic", story: "Story" };
-/** The idea is not an item; its key is filed under this id. */
-export const IDEA = "PRD";
+export { IDEA, KINDS as TRACKERS, repoOf } from "./trackers.mjs";
 
 // ── the ready gate ──
 
@@ -73,24 +74,25 @@ export function compile(prd) {
 // ── the door ──
 
 /**
- * Export. Refused: an exit that is not one of the three; no named person; a team exit
- * with no Jira site and project (given now or on the last handoff) or no credentials in
- * the environment; no line, prototype or backlog; a record whose joins do not add up
- * (`not-ready`, the findings attached); and — for Delivery or both — no design, or a
- * design nobody has signed. Then the snapshot is written as the next version, Jira is
- * brought to match it (create · update · leave alone, by item hash), and the PRD takes
- * a flag. Credentials are read from JIRA_EMAIL and JIRA_API_TOKEN and written nowhere.
+ * Export. Refused: an exit that is not one of the three; no named person; a tracker
+ * that is not one we know, or one missing what it needs (`bad-tracker`; Jira also needs
+ * JIRA_EMAIL and JIRA_API_TOKEN in the environment — `no-credentials`); no line,
+ * prototype or backlog; a record whose joins do not add up (`not-ready`, the findings
+ * attached); and — for Delivery or both — no design, or a design nobody has signed. Then
+ * the snapshot is written as the next version with its rendering beside it; for a team,
+ * the tracker (given now, or carried from the last handoff) is brought to match it —
+ * create · update · leave alone, by item hash — or, with none, the files are the handoff;
+ * and the PRD takes a flag saying what left and where. Credentials are written nowhere.
  */
-export async function exportHandoff({ root, exit, by, jira: jiraOpts, _now = () => new Date(), _fetch = fetch, _env = process.env }) {
+export async function exportHandoff({ root, exit, by, tracker: trackerOpts, _now = () => new Date(), _fetch = fetch, _env = process.env, _exec = exec }) {
   if (!EXITS.includes(exit)) throw new Refused("bad-exit", `export: the door has three exits — ${EXITS.join(", ")} — and "${exit}" is not one`);
   if (!by?.trim()) throw new Refused("no-author", "export: a handoff is a named person's word — say who");
   const project = loadProject(root);
   const prd = loadPrd(root);
   const previous = latestHandoff(root);
-  const toJira = exit !== "delivery";
-  const jira = toJira ? jiraConfig(jiraOpts, previous) : (previous?.jira ?? null);
-  if (toJira && !jira) throw new Refused("no-jira", "export: handing off to a team goes through Jira — say the site and the project key");
-  if (toJira && !(_env.JIRA_EMAIL && _env.JIRA_API_TOKEN)) throw new Refused("no-credentials", "export: JIRA_EMAIL and JIRA_API_TOKEN must be in the environment; they are never written to a record");
+  const toTeam = exit !== "delivery";
+  const tracker = toTeam ? resolveTracker(trackerOpts, previous, project) : (previous?.tracker ?? null);
+  if (toTeam && tracker?.kind === "jira" && !(_env.JIRA_EMAIL && _env.JIRA_API_TOKEN)) throw new Refused("no-credentials", "export: JIRA_EMAIL and JIRA_API_TOKEN must be in the environment; they are never written to a record");
   if (!lineDrawn(prd)) throw new Refused("no-line", "export: nothing leaves before the MVP line is drawn");
   const proto = readDoc(root, PROTOTYPE_FILE);
   if (!proto) throw new Refused("no-prototype", "export: there is no prototype — the backlog claims screens it must have");
@@ -110,29 +112,22 @@ export async function exportHandoff({ root, exit, by, jira: jiraOpts, _now = () 
   const handoff = {
     id: `handoff-${project.slug}-v${version}`, version, exported_at: _now().toISOString(), by: by.trim(), exit,
     project: { slug: project.slug, title: project.title, remote: project.repo?.remote ?? null },
-    contract: compile(prd), prototype: proto, stories, design, items: [], jira, cost: costOf(root), meta: {},
+    contract: compile(prd), prototype: proto, stories, design, items: [], tracker, cost: costOf(root), meta: {},
     "x-drift-checked": ["/contract", "/prototype", "/stories", "/design"],
   };
   handoff.items = itemsOf(handoff);
   const file = handoffFile(version);
-  const save = () => saveDoc(root, file, "handoff", handoff);
+  const rendering = file.replace(/\.json$/, ".md");
+  const save = () => { saveDoc(root, file, "handoff", handoff); writeFileSync(join(root, rendering), renderHandoff(handoff)); };
   save();
 
-  const projected = toJira ? await projectToJira({ handoff, previous, prd, save, _fetch, _env }) : null;
+  const projected = toTeam && tracker ? await projectTo({ handoff, previous, prd, save, _fetch, _env, _exec, root }) : null;
 
-  if (jira?.keys[IDEA]) prd.meta.links = { ...(prd.meta.links ?? {}), jira_idea: jira.keys[IDEA] };
-  const tally = projected ? ` · Jira ${jira.project}: ${projected.created.length} created, ${projected.updated.length} updated, ${projected.unchanged.length} unchanged` : "";
-  prd.flags.push({ at: handoff.exported_at, section: "export", kind: "note", note: `handoff v${version} exported (${exit}) by ${handoff.by}${tally}` });
+  if (tracker?.kind === "jira" && tracker.keys[IDEA]) prd.meta.links = { ...(prd.meta.links ?? {}), jira_idea: tracker.keys[IDEA] };
+  const where = projected ? ` · ${trackerName(tracker)}: ${projected.created.length} created, ${projected.updated.length} updated, ${projected.unchanged.length} unchanged` : toTeam ? " · files only" : "";
+  prd.flags.push({ at: handoff.exported_at, section: "export", kind: "note", note: `handoff v${version} exported (${exit}) by ${handoff.by}${where}` });
   savePrd(root, prd);
-  return { handoff, file, verdict, jira: projected };
-}
-
-/** Site, project and idea project from the option or the last handoff; keys always carry forward. */
-function jiraConfig(opts, previous) {
-  const prev = previous?.jira ?? null;
-  const site = opts?.site ?? prev?.site, project = opts?.project ?? prev?.project;
-  if (!site || !project) return null;
-  return { site, project, ideas: opts?.ideas ?? prev?.ideas ?? null, types: { ...TYPES, ...(prev?.types ?? {}), ...(opts?.types ?? {}) }, keys: { ...(prev?.keys ?? {}) } };
+  return { handoff, file, rendering, verdict, tracker: projected };
 }
 
 function costOf(root) {
@@ -141,118 +136,39 @@ function costOf(root) {
   return { usd: sum("usd"), calls: sum("calls"), by_stage: Object.fromEntries(Object.entries(t).map(([k, v]) => [k, { usd: v.usd, calls: v.calls }])) };
 }
 
-// ── Jira: a projection with the same ids ──
+const trackerName = (t) => (t.kind === "github" ? `GitHub ${t.repo}` : `Jira ${t.project}`);
+
+// ── the rendering ──
+
+/** The design's state as the snapshot records it: none, unsigned, or signed by whom and when. */
+export function designState(design) {
+  if (!design) return "none";
+  if (!isSigned(design)) return "unsigned";
+  return `signed by ${design.signoff.by} at ${design.signoff.at}${design.signoff.override ? " (over a BLOCK, with reason on record)" : ""}`;
+}
 
 /**
- * Bring Jira to the snapshot. The idea (when an ideas project is set) with the PRD
- * attached; an epic per requirement inside the line; a story per story under its epic.
- * Ids ride as labels and in every description. An item whose hash is unchanged since
- * the last handoff is left alone; a changed one is updated in place; one that is gone
- * is reported, not touched — the team may have moved it. Keys are written back onto
- * the snapshot as each issue is made, so a failure midway resumes, never duplicates.
+ * The handoff as a team reads it, beside the snapshot: what this is and where it went,
+ * the contract (the PRD's own rendering, on the compiled fields), the rulings and
+ * amendments in force, the backlog, the design as it stands, the prototype. Derived —
+ * the snapshot is the record; this is written from it and never read back.
  */
-async function projectToJira({ handoff, previous, prd, save, _fetch, _env }) {
-  const jira = handoff.jira;
-  const api = client({ site: jira.site, email: _env.JIRA_EMAIL, token: _env.JIRA_API_TOKEN, _fetch });
-  const before = new Map((previous?.items ?? []).map((it) => [`${it.kind}:${it.id}`, it.hash]));
-  const now = new Map(handoff.items.map((it) => [`${it.kind}:${it.id}`, it.hash]));
-  const out = { created: [], updated: [], unchanged: [], removed: [] };
-
-  const upsert = async (id, changed, fields) => {
-    const key = jira.keys[id];
-    if (key && !changed) { out.unchanged.push(id); return key; }
-    if (key) { await api("PUT", `/issue/${key}`, { fields }); out.updated.push(id); return key; }
-    const made = await api("POST", "/issue", { fields });
-    jira.keys[id] = made.key;
-    save();
-    out.created.push(id);
-    return made.key;
-  };
-  const moved = (kind, id) => before.get(`${kind}:${id}`) !== now.get(`${kind}:${id}`);
-
-  if (jira.ideas) {
-    const prdMoved = previous?.contract.prd.content_hash !== handoff.contract.prd.content_hash;
-    const had = Boolean(jira.keys[IDEA]);
-    const key = await upsert(IDEA, prdMoved, ideaFields(handoff));
-    if (!had || prdMoved) await attachPrd(api, key, prd);
-  }
-  for (const req of handoff.contract.requirements) await upsert(req.id, moved("requirement", req.id), epicFields(req, handoff));
-  for (const story of handoff.stories.stories) {
-    const epic = handoff.stories.epics.find((e) => e.id === story.epic);
-    const parent = epic && jira.keys[epic.req_ref];
-    if (!parent) throw new Refused("jira-parent-missing", `export: ${story.id} sits under ${story.epic}, whose requirement has no epic in Jira`, story.epic);
-    await upsert(story.id, moved("story", story.id), storyFields(story, parent, handoff));
-  }
-  out.removed = Object.keys(jira.keys).filter((id) => id !== IDEA && !now.has(`requirement:${id}`) && !now.has(`story:${id}`));
-  return out;
-}
-
-function client({ site, email, token, _fetch }) {
-  const auth = `Basic ${Buffer.from(`${email}:${token}`).toString("base64")}`;
-  const base = site.replace(/\/+$/, "");
-  return async (method, path, body, headers = {}) => {
-    const form = body instanceof FormData;
-    const res = await _fetch(`${base}/rest/api/3${path}`, {
-      method,
-      headers: { Authorization: auth, Accept: "application/json", ...(body && !form ? { "Content-Type": "application/json" } : {}), ...headers },
-      body: form ? body : body ? JSON.stringify(body) : undefined,
-    });
-    if (!res.ok) throw new Refused("jira-error", `export: Jira ${method} ${path} → ${res.status} ${await res.text()}`, res.status);
-    return res.status === 204 ? null : res.json();
-  };
-}
-
-async function attachPrd(api, key, prd) {
-  const form = new FormData();
-  form.append("file", new Blob([JSON.stringify(prd, null, 2) + "\n"], { type: "application/json" }), "prd.json");
-  form.append("file", new Blob([`# ${prd.meta.title}\n\n${renderPrd(prd)}\n`], { type: "text/markdown" }), "prd.md");
-  await api("POST", `/issue/${key}/attachments`, form, { "X-Atlassian-Token": "no-check" });
-}
-
-// Atlassian Document Format, the little of it a description needs.
-const text = (t) => ({ type: "text", text: t });
-const p = (t) => ({ type: "paragraph", content: [text(t)] });
-const code = (t, language) => ({ type: "codeBlock", attrs: { language }, content: [text(t)] });
-const bullets = (items) => ({ type: "bulletList", content: items.map((t) => ({ type: "listItem", content: [p(t)] })) });
-const adf = (...content) => ({ type: "doc", version: 1, content: content.flat() });
-const clip = (s, n = 255) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
-const trace = (handoff, ...ids) => `Traces: ${[...ids, `PRD v${handoff.contract.prd.version} ${handoff.contract.prd.content_hash.slice(0, 12)}`, `handoff v${handoff.version}`].join(" · ")}`;
-
-function ideaFields(handoff) {
-  const c = handoff.contract, { cost, jira } = handoff;
-  return {
-    project: { key: jira.ideas }, issuetype: { name: jira.types.idea }, summary: clip(c.title),
-    description: adf(
-      p(`Who: ${c.problem.who}`), p(`Problem: ${c.problem.problem}`), p(`Crux: ${c.problem.crux}`),
-      p(`Objective: ${c.okr.objective}`), p(`MVP line: ${c.mvp.line}`),
-      p(`Discovery cost: $${cost.usd.toFixed(2)} over ${cost.calls} model calls.`),
-      p(trace(handoff)),
-    ),
-  };
-}
-
-function epicFields(req, handoff) {
-  const { jira } = handoff;
-  return {
-    project: { key: jira.project }, issuetype: { name: jira.types.epic }, summary: clip(`${req.id} · ${req.statement}`), labels: [req.id],
-    description: adf(
-      p(req.statement), p(`Done when: ${req.done_definition}`),
-      bullets(req.acceptance_criteria.map((ac) => `${req.id}/${ac.id} — ${ac.statement}`)),
-      p(trace(handoff, req.id)),
-    ),
-  };
-}
-
-function storyFields(story, parent, handoff) {
-  const { jira } = handoff;
-  return {
-    project: { key: jira.project }, issuetype: { name: jira.types.story }, summary: clip(story.statement), parent: { key: parent },
-    labels: [story.id, ...story.req_refs, ...story.screen_refs],
-    description: adf(
-      p(story.statement),
-      story.scenarios.flatMap((sc) => [p(`${sc.name} — proves ${sc.proves.join(", ")}`), code(sc.gherkin.trim(), "gherkin")]),
-      p(`Screens: ${story.screen_refs.join(", ") || "(none)"}`),
-      p(trace(handoff, story.id, ...story.req_refs)),
-    ),
-  };
+export function renderHandoff(h) {
+  const c = h.contract;
+  const t = h.tracker;
+  const keys = t ? Object.entries(t.keys).map(([id, k]) => `${id} ${t.kind === "github" ? `#${k}` : k}`).join(", ") : "";
+  const head = [
+    `# ${c.title} — handoff v${h.version} (${h.exit})`,
+    `Exported ${h.exported_at} by ${h.by} · PRD v${c.prd.version} ${c.prd.content_hash.slice(0, 12)} · design: ${designState(h.design)}`,
+    `Tracker: ${t ? `${trackerName(t)}${keys ? ` — ${keys}` : ""}` : "none — these files are the handoff"}`,
+    `Discovery cost: $${h.cost.usd.toFixed(2)} over ${h.cost.calls} model calls${Object.keys(h.cost.by_stage).length ? ` (${Object.entries(h.cost.by_stage).map(([s, v]) => `${s} ${v.calls}`).join(", ")})` : ""}`,
+    h.project.remote ? `Repository: ${h.project.remote}` : null,
+  ].filter(Boolean).join("\n");
+  const parts = [head, renderPrd({ ...c, surfaces: { shipped: c.surfaces } })];
+  if (c.rulings.length) parts.push(`## Rulings — answers on the record (R3)\n\n${c.rulings.map((r) => `- **${r.id}**${r.oq ? ` (${r.oq})` : ""} ${r.question}\n  ${r.answer}${r.criterion ? ` → ${r.criterion}` : ""} — ${r.by}, ${r.at}`).join("\n")}`);
+  if (c.amendments.length) parts.push(`## Amendments approved\n\n${c.amendments.map((a) => `- **${a.id}** ${a.target}: ${a.rationale} — ${a.by}, ${a.at}`).join("\n")}`);
+  parts.push(`## Backlog\n\n${renderStories(h.stories)}`);
+  parts.push(`## Design — ${designState(h.design)}\n\n${h.design ? `${renderStandard(h.design.standard)}\n\n${renderDesign(h.design)}` : "(no design yet)"}`);
+  parts.push(`## Prototype\n\n${renderPrototype(h.prototype)}`);
+  return `${parts.join("\n\n")}\n`;
 }

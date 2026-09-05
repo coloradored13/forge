@@ -5,7 +5,7 @@
 // in a temp root with discovery/ absent) joins at M2 and lives in this file. git and gh
 // are scripted — no real repo is ever created here (R15).
 
-import { existsSync, readFileSync, readdirSync, symlinkSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { suite, withRoot, scripted, ROOT } from "./_harness.mjs";
 import { seedProject, seedPrototype, seedStories, seedDesign, STORIES } from "./_fixture.mjs";
@@ -18,7 +18,7 @@ import { loadPrd } from "../discovery/workshop/index.mjs";
 import { readDoc, readVerdict, isSigned, DESIGN_FILE, REVIEWS } from "../discovery/record/index.mjs";
 import { answer } from "../discovery/doors/index.mjs";
 import { review, signoff } from "../discovery/design/index.mjs";
-import { exportHandoff, readiness, compile, GATE as EXPORT_GATE, EXITS, IDEA } from "../discovery/export/index.mjs";
+import { exportHandoff, readiness, compile, designState, renderHandoff, repoOf, GATE as EXPORT_GATE, EXITS, IDEA, TRACKERS } from "../discovery/export/index.mjs";
 
 const { check, done } = suite("seam · import rule, project repo, handoff");
 
@@ -155,7 +155,7 @@ withRoot({ "pipeline/shared/rules.json": RULES, "pipeline/SPEC.md": "#", "taken/
   check("every kind's field list is non-empty and holds its id", Object.entries(KINDS).every(([k, { id }]) => itemFields(k).length > 0 && itemFields(k).includes(id)));
 }
 
-// ── the export door: the ready gate, three exits, the snapshot, Jira as a projection ──
+// ── the export door: the ready gate, three exits, the snapshot and its rendering, a tracker as a projection ──
 function jiraScript({ fail } = {}) {
   const calls = [];
   const n = {};
@@ -171,28 +171,46 @@ function jiraScript({ fail } = {}) {
   };
   return { fetch, calls };
 }
+/** gh, scripted: every call recorded as { method, path, fields, cwd }; issues numbered from 1. */
+function ghScript({ fail } = {}) {
+  const calls = [];
+  let n = 0;
+  const exec = (cmd, args, { cwd }) => {
+    if (cmd !== "gh") throw new Error(`unexpected ${cmd}`);
+    const fields = {};
+    for (let i = 0; i < args.length; i++) if (args[i] === "-f") { const [k, v] = args[++i].split(/=(.*)/s); if (k.endsWith("[]")) (fields[k.slice(0, -2)] ??= []).push(v); else fields[k] = v; }
+    calls.push({ method: args[2], path: args[3], fields, cwd });
+    if (fail?.(calls.length)) { const e = new Error("gh: HTTP 422"); e.stderr = "gh: Validation Failed (HTTP 422)"; throw e; }
+    return args[2] === "POST" ? JSON.stringify({ number: ++n }) : "";
+  };
+  return { exec, calls };
+}
 const ENV = { JIRA_EMAIL: "pm@acme.test", JIRA_API_TOKEN: "tok-secret-9f3a" };
-const JIRA = { site: "https://acme.atlassian.net/", project: "DOCK", ideas: "IDEAS" };
+const JIRA = { kind: "jira", site: "https://acme.atlassian.net/", project: "DOCK", ideas: "IDEAS" };
+const noExec = () => { throw new Error("no command expected"); };
 const refusal = (fn) => Promise.resolve().then(fn).then(() => null, (e) => e);
 const clean = () => scripted({ structured: { findings: [], deferred: [], checked: 2, skipped: 0 } }).query;
+const seqOf = (calls) => calls.map((c) => `${c.method} ${c.path.replace("/rest/api/3", "")}`).join(" | ");
 
 await withRoot({}, async (tmp) => {
   const root = seedProject(tmp);
   const j = jiraScript();
-  const go = (exit, opts = {}) => exportHandoff({ root, exit, by: "Brad", jira: JIRA, _fetch: j.fetch, _env: ENV, _now: () => new Date("2026-09-05T12:00:00Z"), ...opts });
+  const go = (exit, opts = {}) => exportHandoff({ root, exit, by: "Brad", tracker: JIRA, _fetch: j.fetch, _env: ENV, _exec: noExec, _now: () => new Date("2026-09-05T12:00:00Z"), ...opts });
 
   // Refusals, in the order the door asks — nothing written, nothing fetched.
-  check("EXITS are the spec's three", EXITS.join() === "team,delivery,both");
+  check("EXITS are the spec's three; TRACKERS are the two we project to", EXITS.join() === "team,delivery,both" && TRACKERS.join() === "github,jira");
   const bad = await refusal(() => go("jira"));
   check("an exit that is not one of the three is refused", bad?.code === "bad-exit", bad?.message);
   const anon = await refusal(() => go("team", { by: " " }));
   check("no named person, no handoff", anon?.code === "no-author");
-  const noJira = await refusal(() => go("team", { jira: undefined }));
-  check("a team exit with no Jira site and project is refused before anything is read", noJira?.code === "no-jira", noJira?.message);
+  const trello = await refusal(() => go("team", { tracker: { kind: "trello" } }));
+  check("a tracker we do not project to is refused before anything is read", trello?.code === "bad-tracker", trello?.message);
+  const noSite = await refusal(() => go("team", { tracker: { kind: "jira", project: "DOCK" } }));
+  check("Jira without a site is refused", noSite?.code === "bad-tracker");
   const noCreds = await refusal(() => go("team", { _env: {} }));
-  check("a team exit with no credentials in the environment is refused", noCreds?.code === "no-credentials");
+  check("Jira with no credentials in the environment is refused", noCreds?.code === "no-credentials");
   const noProto = await refusal(() => go("delivery"));
-  check("a Delivery exit needs no Jira, and is refused without a prototype", noProto?.code === "no-prototype", noProto?.message);
+  check("a Delivery exit needs no tracker, and is refused without a prototype", noProto?.code === "no-prototype", noProto?.message);
   seedPrototype(root);
   const noStories = await refusal(() => go("team"));
   check("…and without a backlog", noStories?.code === "no-stories");
@@ -226,10 +244,17 @@ await withRoot({}, async (tmp) => {
   check("the ready verdict is filed under export-ready, fresh on the three documents", readVerdict(root, EXPORT_GATE)?.verdict === "pass" && v1.verdict.judged.length === 3);
   check("cost rides in from the ledger — nothing spent yet", h1.cost.usd === 0 && h1.cost.calls === 0 && Object.keys(h1.cost.by_stage).length === 0);
 
+  // The rendering beside it: what a team reads with no tracker at all.
+  const md1 = readFileSync(join(root, v1.rendering), "utf8");
+  check("a rendering sits beside the snapshot as handoff-v1.md and is not a handoff itself",
+    v1.rendering === "discovery/handoffs/handoff-v1.md" && readHandoffs(root).length === 1 && md1 === renderHandoff(h1));
+  check("it says what this is, where it went and what the design's state is, then the contract, the backlog and the prototype",
+    md1.startsWith("# Dock — handoff v1 (team)\n") && /by Brad · PRD v\S+ [0-9a-f]{12} · design: none/.test(md1) && /^Tracker: Jira DOCK — PRD IDEAS-1, REQ-1 DOCK-1/m.test(md1) && md1.includes("## Requirements inside the line") && md1.includes("  - REQ-1/AC-2: A submitted exception cannot be edited.") && md1.includes("## Backlog") && md1.includes("```gherkin") && md1.includes("## Design — none") && md1.includes("## Prototype"), md1.slice(0, 400));
+  check("the rendering names no REQ-3 and no SURF-2 — it is the contract, not the PRD", !md1.includes("REQ-3") && !md1.includes("SURF-2"));
+
   // Jira: idea with the PRD attached, an epic per requirement, a story under its epic.
-  const seq = j.calls.map((c) => `${c.method} ${c.path.replace("/rest/api/3", "")}`);
   check("the sequence is idea → attachments → three epics → two stories, all against the site given",
-    seq.join(" | ") === "POST /issue | POST /issue/IDEAS-1/attachments | POST /issue | POST /issue | POST /issue | POST /issue | POST /issue" && j.calls.every((c) => c.host === "acme.atlassian.net"), seq.join(" | "));
+    seqOf(j.calls) === "POST /issue | POST /issue/IDEAS-1/attachments | POST /issue | POST /issue | POST /issue | POST /issue | POST /issue" && j.calls.every((c) => c.host === "acme.atlassian.net"), seqOf(j.calls));
   check("every call carries Basic auth from the environment and asks for JSON", j.calls.every((c) => c.headers.Authorization === `Basic ${Buffer.from("pm@acme.test:tok-secret-9f3a").toString("base64")}` && c.headers.Accept === "application/json"));
   const idea = j.calls[0].body.fields;
   check("the idea goes to the ideas project as an Idea, titled by the PRD, describing who/problem/crux, objective, the line, the cost and the trace",
@@ -240,19 +265,19 @@ await withRoot({}, async (tmp) => {
     epics.map((e) => e.labels.join()).join("|") === "REQ-1|REQ-2|REQ-4" && epics.every((e) => e.project.key === "DOCK" && e.issuetype.name === "Epic") && JSON.stringify(epics[0].description).includes("REQ-1/AC-2 — A submitted exception cannot be edited."), JSON.stringify(epics[0]).slice(0, 300));
   const stories = j.calls.slice(5).map((c) => c.body.fields);
   check("each story is a DOCK Story under its requirement's epic, labelled with its own id, its REQ and its SCREEN, its scenarios as gherkin",
-    stories[0].parent.key === h1.jira.keys["REQ-1"] && stories[1].parent.key === h1.jira.keys["REQ-2"] && stories[0].labels.join() === "STORY-1,REQ-1,SCREEN-1" && stories[0].description.content.some((b) => b.type === "codeBlock" && b.attrs.language === "gherkin") && JSON.stringify(stories[0].description).includes("proves REQ-1/AC-1"), JSON.stringify(stories[0].labels));
-  check("every key is written back onto the snapshot, the idea under PRD; the PRD links the idea; the flag says what left and what Jira got",
-    Object.keys(h1.jira.keys).sort().join() === "PRD,REQ-1,REQ-2,REQ-4,STORY-1,STORY-2" && h1.jira.keys[IDEA] === "IDEAS-1" && loadPrd(root).meta.links.jira_idea === "IDEAS-1" && /^handoff v1 exported \(team\) by Brad · Jira DOCK: 6 created, 0 updated, 0 unchanged$/.test(loadPrd(root).flags.at(-1).note), loadPrd(root).flags.at(-1).note);
-  check("the projection reports what it did", v1.jira.created.length === 6 && v1.jira.updated.length === 0 && v1.jira.removed.length === 0);
-  const written = readFileSync(join(root, v1.file), "utf8") + readFileSync(join(root, "discovery", "prd.json"), "utf8");
-  check("no credential is written to any record", !written.includes("tok-secret") && !written.includes("pm@acme.test"));
-  check("the keys did not move the hash — Jira and cost are outside the snapshot's content", verify({ ...h1, jira: null }).verdict === "pass" && verifyHandoff({ ...h1, jira: null, cost: { usd: 9, calls: 9, by_stage: {} } }).verdict === "pass");
+    stories[0].parent.key === h1.tracker.keys["REQ-1"] && stories[1].parent.key === h1.tracker.keys["REQ-2"] && stories[0].labels.join() === "STORY-1,REQ-1,SCREEN-1" && stories[0].description.content.some((b) => b.type === "codeBlock" && b.attrs.language === "gherkin") && JSON.stringify(stories[0].description).includes("proves REQ-1/AC-1"), JSON.stringify(stories[0].labels));
+  check("every key is written back onto the snapshot, the idea under PRD; the PRD links the idea; the flag says what left and where",
+    h1.tracker.kind === "jira" && Object.keys(h1.tracker.keys).sort().join() === "PRD,REQ-1,REQ-2,REQ-4,STORY-1,STORY-2" && h1.tracker.keys[IDEA] === "IDEAS-1" && loadPrd(root).meta.links.jira_idea === "IDEAS-1" && /^handoff v1 exported \(team\) by Brad · Jira DOCK: 6 created, 0 updated, 0 unchanged$/.test(loadPrd(root).flags.at(-1).note), loadPrd(root).flags.at(-1).note);
+  check("the projection reports what it did", v1.tracker.kind === "jira" && v1.tracker.created.length === 6 && v1.tracker.updated.length === 0 && v1.tracker.removed.length === 0);
+  const written = readFileSync(join(root, v1.file), "utf8") + readFileSync(join(root, "discovery", "prd.json"), "utf8") + md1;
+  check("no credential is written to any record or rendering", !written.includes("tok-secret") && !written.includes("pm@acme.test"));
+  check("the keys did not move the hash — tracker and cost are outside the snapshot's content", verify({ ...h1, tracker: null }).verdict === "pass" && verifyHandoff({ ...h1, tracker: null, cost: { usd: 9, calls: 9, by_stage: {} } }).verdict === "pass");
 
   // Exporting again with nothing changed: a new version, and Jira is not touched.
   j.calls.length = 0;
-  const v2 = await go("team", { jira: undefined });
-  check("a re-export is v2 beside v1, carries site, project and keys from v1 without being told them, and makes no Jira call — every item is unchanged",
-    v2.handoff.version === 2 && readHandoffs(root).length === 2 && v2.handoff.jira.site === JIRA.site && v2.handoff.jira.keys["STORY-2"] === h1.jira.keys["STORY-2"] && j.calls.length === 0 && v2.jira.unchanged.length === 6 && v2.jira.created.length === 0, JSON.stringify(v2.jira));
+  const v2 = await go("team", { tracker: undefined });
+  check("a re-export is v2 beside v1, carries the tracker and its keys from v1 without being told them, and makes no call — every item is unchanged",
+    v2.handoff.version === 2 && readHandoffs(root).length === 2 && v2.handoff.tracker.site === JIRA.site && v2.handoff.tracker.keys["STORY-2"] === h1.tracker.keys["STORY-2"] && j.calls.length === 0 && v2.tracker.unchanged.length === 6 && v2.tracker.created.length === 0, JSON.stringify(v2.tracker));
 
   // The design: a team takes it as it stands; Delivery takes it signed.
   const noDesign = await refusal(() => go("delivery"));
@@ -262,16 +287,17 @@ await withRoot({}, async (tmp) => {
   check("Delivery with an unsigned design is refused — the user's ruling: if it goes to Delivery it is signed", unsigned?.code === "design-unsigned" && unsigned.detail === "unsigned" && readHandoffs(root).length === 2);
   const both = await refusal(() => go("both"));
   check("both exits together are held to the same signature", both?.code === "design-unsigned");
-  const v3 = await go("team", { jira: undefined });
+  const v3 = await go("team", { tracker: undefined });
   check("a team takes the design as it stands — embedded, unsigned, with its screens indexed; no gate, no staleness check",
     v3.handoff.version === 3 && v3.handoff.design !== null && !("signoff" in v3.handoff.design) && !isSigned(v3.handoff.design) && kinds(v3.handoff).screen === 2 && j.calls.length === 0, JSON.stringify(kinds(v3.handoff)));
+  check("the rendering says the design is unsigned and renders it whole", readFileSync(join(root, v3.rendering), "utf8").includes("## Design — unsigned\n\nDirection:") && designState(v3.handoff.design) === "unsigned");
   await review({ root, _query: clean() });
   signoff(root, { by: "Ana Ruiz" });
   const v4 = await go("delivery");
   check("once signed, Delivery takes it: the sign-off rides in the snapshot with the name on it, the reviewer's verdict beside it",
     v4.handoff.version === 4 && v4.handoff.exit === "delivery" && isSigned(v4.handoff.design) && v4.handoff.design.signoff.by === "Ana Ruiz" && v4.handoff.design.signoff.review.gate === "design-reviewer" && verifyHandoff(v4.handoff).verdict === "pass");
-  check("a Delivery exit makes no Jira call and still carries the keys forward; the review it took to get here is in the cost", j.calls.length === 0 && v4.jira === null && v4.handoff.jira.keys[IDEA] === "IDEAS-1" && v4.handoff.cost.calls === 1 && "design" in v4.handoff.cost.by_stage && v4.verdict.judged.length === 4, JSON.stringify(v4.handoff.cost));
-  check("the design signed in the snapshot is the design on disk, hash for hash", v4.handoff.design.meta.content_hash === readDoc(root, DESIGN_FILE).meta.content_hash);
+  check("a Delivery exit makes no call and still carries the keys forward; the review it took to get here is in the cost; the flag names no tracker", j.calls.length === 0 && v4.tracker === null && v4.handoff.tracker.keys[IDEA] === "IDEAS-1" && v4.handoff.cost.calls === 1 && "design" in v4.handoff.cost.by_stage && v4.verdict.judged.length === 4 && loadPrd(root).flags.at(-1).note === "handoff v4 exported (delivery) by Brad", JSON.stringify(v4.handoff.cost));
+  check("the design signed in the snapshot is the design on disk, hash for hash; the rendering says who signed", v4.handoff.design.meta.content_hash === readDoc(root, DESIGN_FILE).meta.content_hash && /design: signed by Ana Ruiz at 20\d\d-/.test(readFileSync(join(root, v4.rendering), "utf8")));
 
   // The PRD moves under the backlog: a ruling writes a criterion nobody proves yet. The gate says so, by id.
   answer({ root, req: "REQ-1", oq: "OQ-1", answer: "Yes, until the shift ends.", criterion: "An exception can be recorded until the shift ends.", by: "Brad" });
@@ -287,13 +313,12 @@ await withRoot({}, async (tmp) => {
   proving[0].scenarios.push({ name: "After the truck has left", gherkin: "Given a delivery whose truck has left\nWhen I record an exception before the shift ends\nThen the exception is recorded against that delivery", proves: ["REQ-1/AC-3"] });
   seedStories(root, { stories: proving });
   j.calls.length = 0;
-  const v5 = await go("both", { jira: undefined });
-  const seq5 = j.calls.map((c) => `${c.method} ${c.path.replace("/rest/api/3", "")}`);
+  const v5 = await go("both", { tracker: undefined });
   check("both: v5 exported, the PRD moved so the idea is updated and the PRD re-attached; REQ-1's epic and STORY-1 are updated in place; nothing is created",
-    v5.handoff.version === 5 && v5.handoff.exit === "both" && seq5.join(" | ") === "PUT /issue/IDEAS-1 | POST /issue/IDEAS-1/attachments | PUT /issue/DOCK-1 | PUT /issue/DOCK-4" && v5.jira.updated.join() === "PRD,REQ-1,STORY-1" && v5.jira.unchanged.join() === "REQ-2,REQ-4,STORY-2" && v5.jira.created.length === 0, seq5.join(" | "));
+    v5.handoff.version === 5 && v5.handoff.exit === "both" && seqOf(j.calls) === "PUT /issue/IDEAS-1 | POST /issue/IDEAS-1/attachments | PUT /issue/DOCK-1 | PUT /issue/DOCK-4" && v5.tracker.updated.join() === "PRD,REQ-1,STORY-1" && v5.tracker.unchanged.join() === "REQ-2,REQ-4,STORY-2" && v5.tracker.created.length === 0, seqOf(j.calls));
   check("the updated epic carries the new criterion and the updated story its new scenario", JSON.stringify(j.calls[2].body.fields.description).includes("REQ-1/AC-3") && JSON.stringify(j.calls[3].body.fields.description).includes("After the truck has left"));
-  check("the contract carries the ruling and the criterion it wrote; the ruling is an indexed item", v5.handoff.contract.rulings.length === 1 && v5.handoff.contract.rulings[0].criterion === "REQ-1/AC-3" && kinds(v5.handoff).ruling === 1 && v5.handoff.contract.prd.version === loadPrd(root).meta.version && v5.handoff.contract.requirements[0].acceptance_criteria.length === 3);
-  check("the handoffs read back in order and the latest is v5", readHandoffs(root).map((h) => h.version).join() === "1,2,3,4,5" && latestHandoff(root).version === 5 && readdirSync(join(root, HANDOFFS)).length === 5);
+  check("the contract carries the ruling and the criterion it wrote; the ruling is an indexed item and is rendered", v5.handoff.contract.rulings.length === 1 && v5.handoff.contract.rulings[0].criterion === "REQ-1/AC-3" && kinds(v5.handoff).ruling === 1 && v5.handoff.contract.prd.version === loadPrd(root).meta.version && v5.handoff.contract.requirements[0].acceptance_criteria.length === 3 && /## Rulings[^]*RUL-1[^]*Yes, until the shift ends\. → REQ-1\/AC-3 — Brad/.test(readFileSync(join(root, v5.rendering), "utf8")));
+  check("the handoffs read back in order and the latest is v5, a rendering beside each", readHandoffs(root).map((h) => h.version).join() === "1,2,3,4,5" && latestHandoff(root).version === 5 && readdirSync(join(root, HANDOFFS)).length === 10);
 
   // Tampering with a snapshot is named by item.
   const forged = structuredClone(v5.handoff);
@@ -309,20 +334,70 @@ await withRoot({}, async (tmp) => {
     verifyHandoff(dropped).findings.some((f) => f.rule === "item-unlisted" && f.subject === "REQ-4") && verifyHandoff(extra).findings.some((f) => f.rule === "item-missing" && f.subject === "REQ-9"));
   check("the same snapshot untouched still passes", verifyHandoff(v5.handoff).verdict === "pass" && itemsOf(v5.handoff).length === v5.handoff.items.length);
 
-  // A second project: Jira fails midway, the snapshot stands with the keys it got, and the next export resumes.
+  // A second project, no Jira anywhere: files only, then GitHub Issues through the gh the PM already has.
   const oven = seedProject(tmp, { slug: "oven" });
   seedPrototype(oven); seedStories(oven);
-  const failing = jiraScript({ fail: (n) => n === 4 });
-  const midway = await refusal(() => exportHandoff({ root: oven, exit: "team", by: "Brad", jira: JIRA, _fetch: failing.fetch, _env: ENV }));
-  const partial = latestHandoff(oven);
-  check("a Jira error is a refusal naming the call; the snapshot was already written, holding the idea and the first epic's keys",
-    midway?.code === "jira-error" && /POST \/issue → 400/.test(midway.message) && partial?.version === 1 && Object.keys(partial.jira.keys).sort().join() === "PRD,REQ-1" && loadPrd(oven).flags.length === 0, midway?.message);
-  const resumed = jiraScript();
-  const again = await exportHandoff({ root: oven, exit: "team", by: "Brad", _fetch: resumed.fetch, _env: ENV });
-  const seqR = resumed.calls.map((c) => `${c.method} ${c.path.replace("/rest/api/3", "")}`);
-  check("the next export resumes: the idea and REQ-1 are left alone, the remaining epics and stories are created — nothing duplicated",
-    again.handoff.version === 2 && seqR.join(" | ") === "POST /issue | POST /issue | POST /issue | POST /issue" && again.jira.created.join() === "REQ-2,REQ-4,STORY-1,STORY-2" && again.jira.unchanged.join() === "PRD,REQ-1" && again.handoff.jira.keys["REQ-1"] === partial.jira.keys["REQ-1"], seqR.join(" | "));
-  check("the reviews directory holds the export verdict beside the others", existsSync(join(oven, REVIEWS, `${EXPORT_GATE}.json`)));
+  const g = ghScript();
+  const goOven = (exit, opts = {}) => exportHandoff({ root: oven, exit, by: "Brad", _exec: g.exec, _fetch: noExec, _env: {}, ...opts });
+  const files = await goOven("team");
+  check("a team exit with no tracker is files only — the snapshot and its rendering, no call anywhere, and the flag says so",
+    files.handoff.tracker === null && files.tracker === null && g.calls.length === 0 && existsSync(join(oven, files.rendering)) && readFileSync(join(oven, files.rendering), "utf8").includes("Tracker: none — these files are the handoff") && loadPrd(oven).flags.at(-1).note === "handoff v1 exported (team) by Brad · files only", loadPrd(oven).flags.at(-1).note);
+  check("repoOf reads owner/name from an ssh or https GitHub remote and nothing else", repoOf("git@github.com:acme/oven.git") === "acme/oven" && repoOf("https://github.com/acme/oven.git") === "acme/oven" && repoOf("https://github.com/acme/oven") === "acme/oven" && repoOf("git@gitlab.com:acme/oven.git") === null && repoOf(null) === null);
+  const gh1 = await goOven("team", { tracker: { kind: "github" } });
+  const t1 = gh1.handoff.tracker;
+  check("GitHub Issues: the repository is the project's own remote unless told otherwise; the sequence is three epics then two stories, every call in the project root",
+    t1.kind === "github" && t1.repo === "acme/oven" && g.calls.map((c) => `${c.method} ${c.path}`).join(" | ") === Array(5).fill("POST repos/acme/oven/issues").join(" | ") && g.calls.every((c) => c.cwd === oven), g.calls.map((c) => `${c.method} ${c.path}`).join(" | "));
+  const [e1, , , s1] = g.calls.map((c) => c.fields);
+  check("each epic is titled by its REQ id and statement, labelled epic + REQ-n, its criteria by join id in the body",
+    e1.title.startsWith("REQ-1 · ") && e1.labels.join() === "epic,REQ-1" && e1.body.includes("- REQ-1/AC-2 — A submitted exception cannot be edited.") && e1.body.includes("**Done when:**") && /handoff v2/.test(e1.body), JSON.stringify(e1).slice(0, 300));
+  check("each story is labelled story + its own id, REQ and SCREEN, and is part of its requirement's issue, scenarios fenced as gherkin",
+    s1.labels.join() === "story,STORY-1,REQ-1,SCREEN-1" && s1.body.startsWith(`Part of #${t1.keys["REQ-1"]}\n\n`) && s1.body.includes("```gherkin\n") && s1.body.includes("proves REQ-1/AC-1"), JSON.stringify(s1).slice(0, 300));
+  check("issue numbers are written back as the keys; the flag names the repository; the rendering lists them as #n",
+    JSON.stringify(t1.keys) === JSON.stringify({ "REQ-1": 1, "REQ-2": 2, "REQ-4": 3, "STORY-1": 4, "STORY-2": 5 }) && gh1.tracker.created.length === 5 && loadPrd(oven).flags.at(-1).note === "handoff v2 exported (team) by Brad · GitHub acme/oven: 5 created, 0 updated, 0 unchanged" && /^Tracker: GitHub acme\/oven — REQ-1 #1, REQ-2 #2/m.test(readFileSync(join(oven, gh1.rendering), "utf8")) && !("jira_idea" in (loadPrd(oven).meta.links ?? {})), loadPrd(oven).flags.at(-1).note);
+  check("a snapshot with a GitHub tracker validates", validate("handoff", gh1.handoff).ok, validate("handoff", gh1.handoff).errors.join("; "));
+  g.calls.length = 0;
+  const gh2 = await goOven("team");
+  check("a re-export carries the GitHub tracker forward and makes no call", gh2.handoff.tracker.repo === "acme/oven" && g.calls.length === 0 && gh2.tracker.unchanged.length === 5);
+  answer({ root: oven, req: "REQ-2", oq: "OQ-2", answer: "The last one wins.", criterion: "Only the most recent exception on a delivery is shown.", by: "Brad" });
+  const proving2 = structuredClone(STORIES);
+  proving2[1].scenarios.push({ name: "Two exceptions", gherkin: "Given a delivery with two exceptions\nWhen I open it\nThen only the most recent exception is shown", proves: ["REQ-2/AC-2"] });
+  seedStories(oven, { stories: proving2 });
+  const gh3 = await goOven("team");
+  check("changed items are patched in place — REQ-2's issue and STORY-2's — and nothing else is touched",
+    g.calls.map((c) => `${c.method} ${c.path}`).join(" | ") === "PATCH repos/acme/oven/issues/2 | PATCH repos/acme/oven/issues/5" && gh3.tracker.updated.join() === "REQ-2,STORY-2" && gh3.tracker.unchanged.join() === "REQ-1,REQ-4,STORY-1" && g.calls[0].fields.body.includes("REQ-2/AC-2") && g.calls[0].fields.labels.join() === "epic,REQ-2", g.calls.map((c) => `${c.method} ${c.path}`).join(" | "));
+  const elsewhere = await goOven("team", { tracker: { kind: "github", repo: "acme/oven-backlog" } });
+  check("a different repository is a fresh projection: the keys do not carry across, five issues are created there, and the next export follows it",
+    elsewhere.handoff.tracker.repo === "acme/oven-backlog" && elsewhere.tracker.created.length === 5 && g.calls.slice(-5).every((c) => c.path === "repos/acme/oven-backlog/issues" && c.method === "POST") && elsewhere.handoff.tracker.keys["REQ-1"] === 6 && (await goOven("team")).handoff.tracker.repo === "acme/oven-backlog", JSON.stringify(elsewhere.handoff.tracker));
+  const noRemote = seedProject(tmp, { slug: "mill" });
+  seedPrototype(noRemote); seedStories(noRemote);
+  writeFileSync(join(noRemote, "forge", "project.json"), JSON.stringify({ ...loadProject(noRemote), repo: { ...loadProject(noRemote).repo, remote: "git@gitlab.com:acme/mill.git" } }));
+  const noRepo = await refusal(() => exportHandoff({ root: noRemote, exit: "team", by: "Brad", tracker: { kind: "github" }, _exec: noExec, _fetch: noExec, _env: {} }));
+  check("GitHub with a remote that is not on GitHub and no repository given is refused", noRepo?.code === "bad-tracker" && /owner\/name/.test(noRepo.message), noRepo?.message);
+
+  // gh fails midway: the snapshot stands with the keys it got; the next export resumes.
+  const failing = ghScript({ fail: (n) => n === 2 });
+  const midway = await refusal(() => exportHandoff({ root: noRemote, exit: "team", by: "Brad", tracker: { kind: "github", repo: "acme/mill" }, _exec: failing.exec, _fetch: noExec, _env: {} }));
+  const partial = latestHandoff(noRemote);
+  check("a tracker error is a refusal naming the call and the kind; the snapshot was already written, holding the first epic's key; the PRD took no flag",
+    midway?.code === "tracker-error" && /gh POST issues failed — gh: Validation Failed/.test(midway.message) && midway.detail === "github" && partial?.version === 1 && JSON.stringify(partial.tracker.keys) === JSON.stringify({ "REQ-1": 1 }) && loadPrd(noRemote).flags.length === 0, midway?.message);
+  const resumed = ghScript();
+  const again = await exportHandoff({ root: noRemote, exit: "team", by: "Brad", _exec: resumed.exec, _fetch: noExec, _env: {} });
+  check("the next export resumes: REQ-1 is left alone, the remaining epics and stories are created — nothing duplicated",
+    again.handoff.version === 2 && resumed.calls.length === 4 && again.tracker.created.join() === "REQ-2,REQ-4,STORY-1,STORY-2" && again.tracker.unchanged.join() === "REQ-1" && again.handoff.tracker.keys["REQ-1"] === 1, resumed.calls.map((c) => c.path).join(" | "));
+
+  // Jira fails midway the same way.
+  const kiln = seedProject(tmp, { slug: "kiln" });
+  seedPrototype(kiln); seedStories(kiln);
+  const jf = jiraScript({ fail: (n) => n === 4 });
+  const jMid = await refusal(() => exportHandoff({ root: kiln, exit: "team", by: "Brad", tracker: JIRA, _fetch: jf.fetch, _env: ENV, _exec: noExec }));
+  const jPartial = latestHandoff(kiln);
+  check("a Jira error is a refusal naming the call; the snapshot holds the idea and the first epic's keys",
+    jMid?.code === "tracker-error" && /Jira POST \/issue → 400/.test(jMid.message) && jMid.detail === "jira" && jPartial?.version === 1 && Object.keys(jPartial.tracker.keys).sort().join() === "PRD,REQ-1", jMid?.message);
+  const jr = jiraScript();
+  const jAgain = await exportHandoff({ root: kiln, exit: "team", by: "Brad", _fetch: jr.fetch, _env: ENV, _exec: noExec });
+  check("the next export resumes: the idea and REQ-1 are left alone, the rest created — nothing duplicated",
+    jAgain.handoff.version === 2 && seqOf(jr.calls) === "POST /issue | POST /issue | POST /issue | POST /issue" && jAgain.tracker.created.join() === "REQ-2,REQ-4,STORY-1,STORY-2" && jAgain.tracker.unchanged.join() === "PRD,REQ-1", seqOf(jr.calls));
+  check("the reviews directory holds the export verdict beside the others", existsSync(join(kiln, REVIEWS, `${EXPORT_GATE}.json`)));
 });
 
 done();
