@@ -47,15 +47,13 @@ export function estimate(path, { half, role, model }) {
   return { usd: like.reduce((n, r) => n + r.usd, 0) / like.length, n: like.length, basis: "history" };
 }
 
-/** The strip a door shows before a trigger. `budget` null means uncapped. */
-export function quote(path, { half, role, model, budget = null }) {
-  const est = estimate(path, { half, role, model });
+/** Where the spend stands against the cap. `budget` null means uncapped. */
+export function standing(path, budget = null) {
   const used = spent(path);
-  return {
-    estimate: est,
-    spent: used,
-    budget,
-    remaining: budget == null ? null : Math.max(0, budget - used),
-    over: budget != null && used >= budget,
-  };
+  return { spent: used, budget, remaining: budget == null ? null : Math.max(0, budget - used), over: budget != null && used >= budget };
+}
+
+/** The strip a door shows before a trigger: what one more call is likely to cost, and where the spend stands. */
+export function quote(path, { half, role, model, budget = null }) {
+  return { estimate: estimate(path, { half, role, model }), ...standing(path, budget) };
 }

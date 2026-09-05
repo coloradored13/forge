@@ -130,7 +130,8 @@ export async function exportHandoff({ root, exit, by, tracker: trackerOpts, _now
   return { handoff, file, rendering, verdict, tracker: projected };
 }
 
-function costOf(root) {
+/** What Discovery has cost so far, by stage — the ledger's totals, shaped for the snapshot and the board. */
+export function costOf(root) {
   const t = totals(ledgerPath(root), ["stage"]);
   const sum = (k) => Object.values(t).reduce((n, v) => n + v[k], 0);
   return { usd: sum("usd"), calls: sum("calls"), by_stage: Object.fromEntries(Object.entries(t).map(([k, v]) => [k, { usd: v.usd, calls: v.calls }])) };
