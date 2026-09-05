@@ -2,9 +2,9 @@
 // wrong with it. One builder call through the chokepoint writes one HTML file and returns
 // the record of its screens; the runner refuses a write anywhere else, hashes the file,
 // keeps screen ids sticky, and holds the record to the line's arithmetic — every shipped
-// surface inside the line has a screen, every requirement inside the line is on a screen
-// or listed as uncovered, nothing past the line is shown. No AI reviews the prototype:
-// the PM is the loop here.
+// surface inside the line has a screen, every functional requirement inside the line is on
+// a screen or listed as uncovered, nothing past the line is shown. No AI reviews the
+// prototype: the PM is the loop here.
 
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
@@ -88,8 +88,12 @@ export async function generate({ root, notes, onEvent, _query, _sleep }) {
 export function checkPrototype(prd, proto) {
   const findings = [];
   const f = (rule, subject, summary, evidence, remedy) => findings.push({ severity: "high", confidence: "certain", rule, subject, summary, evidence, remedy });
-  const reqIds = new Set((prd.requirements ?? []).map((r) => r.id));
+  const reqs = new Map((prd.requirements ?? []).map((r) => [r.id, r]));
+  const reqIds = new Set(reqs.keys());
   const inside = new Set(prd.mvp?.inside ?? []);
+  // Only a functional requirement is a screen's to show; non-functional and constraint are
+  // verified by measurement or inspection (prd.schema) and are not forced onto a screen.
+  const functional = [...inside].filter((r) => reqs.get(r)?.type === "functional");
   const past = new Set((prd.mvp?.past ?? []).map((p) => p.ref));
   const surfaces = new Map((prd.surfaces?.shipped ?? []).map((s) => [s.id, s]));
   const screens = proto.screens ?? [];
@@ -112,9 +116,9 @@ export function checkPrototype(prd, proto) {
     if (!reqIds.has(r)) f("ref-unknown", r, `${r} is listed as uncovered but is not a requirement.`, `\`/uncovered\` names ${r}; \`/requirements\` has no such id.`, "List only requirements the PRD holds.");
     else if (onScreen.has(r)) f("uncovered-yet-covered", r, `${r} is listed as uncovered and is also on a screen.`, `\`/uncovered\` names ${r}; ${screens.filter((s) => s.req_refs.includes(r)).map((s) => s.id).join(", ")} show it.`, "It is one or the other.");
   }
-  for (const r of inside) {
-    if (reqIds.has(r) && !onScreen.has(r) && !uncovered.has(r)) f("req-unaccounted", r, `${r} is inside the line but is on no screen and not listed as uncovered.`, `\`/mvp/inside\` names ${r}; no \`/screens\` entry references it; \`/uncovered\` omits it.`, "Show it, or say you did not.");
+  for (const r of functional) {
+    if (!onScreen.has(r) && !uncovered.has(r)) f("req-unaccounted", r, `${r} is inside the line but is on no screen and not listed as uncovered.`, `\`/mvp/inside\` names ${r}; no \`/screens\` entry references it; \`/uncovered\` omits it.`, "Show it, or say you did not.");
   }
-  const checked = screens.length + [...surfaces.keys()].filter((id) => !past.has(id)).length + inside.size;
+  const checked = screens.length + [...surfaces.keys()].filter((id) => !past.has(id)).length + functional.length;
   return { gate: GATE, verdict: deriveVerdict(findings), findings, deferred: [], checked, skipped: 0 };
 }
