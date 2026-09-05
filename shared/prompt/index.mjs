@@ -6,8 +6,10 @@
 // is refused. There is no _shared.md.
 
 import { readFileSync } from "node:fs";
-import { fields } from "../schema/index.mjs";
+import { fields, fieldsOf, partialContract } from "../schema/index.mjs";
 import { K_DEFAULT, SEVERITY, CONFIDENCE } from "../judge/verdict.mjs";
+
+export const KINDS = ["judge", "reviewer", "writer", "conversant"];
 
 const PLACEHOLDER = /\{\{[^}]*\}\}/g;
 const FIELD = /`(\/[^`\s]+)`/g;
@@ -30,23 +32,31 @@ export function identity(path) {
 
 /**
  * The generated half.
- * @param kind        judge | reviewer | writer — judges and reviewers get the ranking and
- *                    deferral sections; writers get the artifact contract and scope
+ * @param kind        judge | reviewer | writer | conversant — judges and reviewers get the
+ *                    ranking and deferral sections; writers get the artifact contract and
+ *                    scope; a conversant (the workshop) is shown what a later extraction
+ *                    will read out of the transcript, and told never to emit it
  * @param schema      the schema name whose output contract this agent produces
+ * @param only        top-level fields of that contract this agent is responsible for
+ *                    (a workshop section); default: all of them
  * @param k           the finding cap (R7)
  * @param scope       { mvp: string, deferred: string[] } — the line and what sits past it (R2)
  * @param rulings     [{ id, question, answer }] — settled; never re-raised (R3)
  * @param arithmetic  rule names checked mechanically elsewhere — not this agent's to report (R10)
  */
-export function mechanics({ kind, schema, k = K_DEFAULT, scope, rulings = [], arithmetic = [] }) {
-  if (!["judge", "reviewer", "writer"].includes(kind)) throw new Error(`mechanics: unknown kind ${kind}`);
+export function mechanics({ kind, schema, only, k = K_DEFAULT, scope, rulings = [], arithmetic = [] }) {
+  if (!KINDS.includes(kind)) throw new Error(`mechanics: unknown kind ${kind}`);
   if (!schema) throw new Error("mechanics: a schema name is required — the output contract is derived, never typed");
-  const judging = kind !== "writer";
+  const judging = kind === "judge" || kind === "reviewer";
+  const conversing = kind === "conversant";
   const out = [];
 
-  out.push(`# Mechanics\n\nGenerated from the schema and the run's configuration. The contract below is validated after you answer; an answer that does not fit it is discarded, not repaired.`);
+  out.push(conversing
+    ? `# Mechanics\n\nGenerated from the schema and the run's configuration. You converse; you never emit structured data. A separate extraction reads the transcript into the fields below afterwards — so what is not said in the conversation is not captured.`
+    : `# Mechanics\n\nGenerated from the schema and the run's configuration. The contract below is validated after you answer; an answer that does not fit it is discarded, not repaired.`);
 
-  out.push(`## Output contract — \`${schema}\`\n\n` + fields(schema).map(({ path, required, description, enum: e }) => {
+  const held = only ? fieldsOf(partialContract(schema, only)) : fields(schema);
+  out.push(`## ${conversing ? "This section captures" : "Output contract"} — \`${schema}\`\n\n` + held.map(({ path, required, description, enum: e }) => {
     const bits = [`- \`${path}\``, required ? "(required)" : "(optional)"];
     if (e) bits.push(`one of ${e.map((x) => `\`${x}\``).join(", ")}`);
     if (description) bits.push(`— ${description}`);
@@ -64,7 +74,9 @@ export function mechanics({ kind, schema, k = K_DEFAULT, scope, rulings = [], ar
     if (scope.deferred?.length) lines.push(``, `Past the line already:`, ...scope.deferred.map((d) => `- ${d}`));
     lines.push(``, judging
       ? `Anything you notice past the line goes in \`deferred\`, quoting which line it sits past — never in \`findings\`. A deferral costs nothing and seeds the next round.`
-      : `Produce nothing past the line. If the work needs something past it, say so in your notes and stop at the line.`);
+      : conversing
+        ? `When the PM raises something past the line, name the line and move on — do not elicit it further. The line moves only if the PM says so, on the record.`
+        : `Produce nothing past the line. If the work needs something past it, say so in your notes and stop at the line.`);
     out.push(lines.join("\n"));
   }
 

@@ -30,7 +30,16 @@ function validator(name) {
 
 /** `{ ok, errors }` — errors as `instancePath message` strings, addressable. */
 export function validate(name, doc) {
-  const v = validator(name);
+  return report(validator(name), doc);
+}
+
+/** The same, against a schema document in hand — a partial contract, a seeded case. */
+export function validateAgainst(schema, doc) {
+  const ajv = new Ajv({ allErrors: true, strict: false });
+  return report(ajv.compile(schema), doc);
+}
+
+function report(v, doc) {
   const ok = v(doc);
   return { ok, errors: ok ? [] : (v.errors ?? []).map((e) => `${e.instancePath || "/"} ${e.message}`) };
 }
@@ -69,6 +78,51 @@ export function contractOf(full) {
   model.required = (full.required ?? []).filter((k) => k in model.properties);
   const out = inlineRefs(model, full.$defs);
   return strip(out);
+}
+
+/**
+ * A contract cut to some of its top-level fields — what one workshop section asks the
+ * model for. The keys must exist in the contract; asking for a field the schema does
+ * not hold is the retyping R10 forbids, caught here rather than on the wire.
+ */
+export function partialContract(name, keys) {
+  return partialOf(outputContract(name), keys);
+}
+
+export function partialOf(contract, keys) {
+  const missing = keys.filter((k) => !(k in (contract.properties ?? {})));
+  if (missing.length) throw new Error(`partialOf: ${missing.join(", ")} not in the contract`);
+  return {
+    ...contract,
+    properties: Object.fromEntries(keys.map((k) => [k, contract.properties[k]])),
+    required: (contract.required ?? []).filter((k) => keys.includes(k)),
+  };
+}
+
+/**
+ * An empty instance that validates: every required field present with the emptiest
+ * value its type allows, enums at their first value, `const` as declared. This is how a
+ * PRD exists before its first section is captured — derived, so the skeleton cannot
+ * disagree with the schema it will be validated against.
+ */
+export function skeleton(name) {
+  return skeletonOf(inlineRefs(load(name)));
+}
+
+export function skeletonOf(node) {
+  if ("const" in node) return structuredClone(node.const);
+  if (node.enum) return node.enum[0];
+  if (node.oneOf) return skeletonOf(node.oneOf[0]);
+  const type = Array.isArray(node.type) ? node.type[0] : node.type;
+  switch (type) {
+    case "object": return Object.fromEntries((node.required ?? []).map((k) => [k, skeletonOf(node.properties?.[k] ?? {})]));
+    case "array": return [];
+    case "string": return "";
+    case "integer": case "number": return 0;
+    case "boolean": return false;
+    case "null": return null;
+    default: return null;
+  }
 }
 
 /** Vendor extensions (`x-*`) are for this repo, not the model. */

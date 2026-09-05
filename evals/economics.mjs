@@ -7,31 +7,14 @@
 // SDK is replaced by a scripted query.
 
 import { join } from "node:path";
-import { suite, withRoot } from "./_harness.mjs";
-import { call, BudgetError, rows, quote, modelFor } from "../shared/agent-call/index.mjs";
+import { suite, withRoot, scripted } from "./_harness.mjs";
+import { call, BudgetError, rows, quote, modelFor, TOOLS } from "../shared/agent-call/index.mjs";
 import { runJudge, runPerItemJudge, rank, deriveVerdict, weight, renderFindingsForAgent } from "../shared/judge/index.mjs";
 import { stamp } from "../shared/hash.mjs";
+import { setupProject } from "../discovery/setup/index.mjs";
+import { openPrd, quoteTurn, turn } from "../discovery/workshop/index.mjs";
 
 const { check, done } = suite("economics · R1 metering and budget, R7 ranked judges");
-
-// A scripted query: yields what the SDK would, records that it was invoked.
-function scripted({ text = "ok", structured, usd = 0.05, tokens = { in: 1000, out: 200 }, throwWith, resultError, toolUses = [] } = {}) {
-  const calls = [];
-  const throws = throwWith == null ? [] : Array.isArray(throwWith) ? [...throwWith] : [throwWith];
-  const query = ({ prompt, options }) => {
-    calls.push({ prompt, options });
-    if (throws.length) { const e = throws.shift(); if (e) throw new Error(e); }
-    return (async function* () {
-      yield { type: "assistant", message: { content: [...toolUses.map((t) => ({ type: "tool_use", name: t, input: { file_path: "x" } })), { type: "text", text }] } };
-      yield {
-        type: "result", subtype: resultError ? "error_during_execution" : "success", is_error: !!resultError, errors: resultError ? [resultError] : [],
-        total_cost_usd: usd, num_turns: 3, structured_output: structured,
-        modelUsage: { [options.model]: { inputTokens: tokens.in, outputTokens: tokens.out, cacheReadInputTokens: 7, cacheCreationInputTokens: 3, costUSD: usd } },
-      };
-    })();
-  };
-  return { query, calls };
-}
 
 const IDENTITY = "# Story reviewer\n\nYou review stories at the PM's bar. A missing edge case is not a finding; an untestable Then is.\n";
 const FINDING = (severity, confidence, n) => ({ severity, confidence, rule: `r${n}`, subject: `STORY-${n}`, summary: `s${n}`, evidence: `e${n}` });
@@ -101,6 +84,41 @@ await withRoot({}, async (root) => {
   const q2 = scripted({ throwWith: ["TypeError: cannot read properties of undefined"] });
   const err = await call({ half: "delivery", stage: "qa", role: "judge", system: "s", prompt: "p", ledger, _query: q2.query, _sleep: async () => {} }).then(() => null, (e) => e);
   check("any other error rethrows at once", err && /TypeError/.test(err.message) && q2.calls.length === 1);
+});
+
+// ── R1 · the workshop turn is a metered call: quoted before, recorded after, one session ──
+await withRoot({}, async (parent) => {
+  const _exec = (cmd, args) => (cmd === "git" && args[0] === "remote" ? "git@github.com:acme/oven.git" : "");
+  const { root } = setupProject({ slug: "oven", title: "Oven", parent, budget: 1.0, models: { "discovery.workshop": "claude-sonnet-5" }, _exec });
+  openPrd({ root, title: "Oven", slug: "oven", seed: "A run sheet for one bakery." });
+
+  const before = quoteTurn({ root, key: "problem" });
+  check("before a turn the door has a quote: the model, no history yet, nothing spent, the cap",
+    before.model === "claude-sonnet-5" && before.estimate.basis === "none" && before.spent === 0 && before.budget === 1.0 && before.remaining === 1.0, JSON.stringify(before));
+
+  const q = scripted({ text: ["🔥 Who exactly is the baker?", "🏛️ Good — so the crux is the 4am handoff.\n\n[SECTION_COMPLETE]"], usd: [0.21, 0.19], sessionId: "sess-oven-1" });
+  const t1 = await turn({ root, key: "problem", text: "A bakery run sheet.", _query: q.query });
+  const t2 = await turn({ root, key: "problem", text: "The head baker, at 4am.", _query: q.query });
+  const ledger = rows(join(root, "forge", "discovery", "calls.jsonl"));
+  check("each turn is one ledger row under discovery/workshop/workshop with the model the project chose",
+    ledger.length === 2 && ledger.every((r) => r.half === "discovery" && r.stage === "workshop" && r.role === "workshop" && r.kind === "converse" && r.model === "claude-sonnet-5") && ledger[0].usd === 0.21 && ledger[1].usd === 0.19,
+    JSON.stringify(ledger));
+  check("the turn returns what it cost", t1.usd === 0.21 && t1.model === "claude-sonnet-5" && t2.usd === 0.19);
+  check("the first turn opens a session; the second resumes it — real multi-turn state, not a flattened transcript",
+    q.calls[0].options.resume === undefined && q.calls[1].options.resume === "sess-oven-1" && t1.sessionId === "sess-oven-1" && t2.state.session_id === "sess-oven-1",
+    JSON.stringify([q.calls[0].options.resume, q.calls[1].options.resume]));
+  check("a conversant holds no tools — tools: [] reaches the SDK, one turn at a time",
+    q.calls.every((c) => Array.isArray(c.options.tools) && c.options.tools.length === 0 && c.options.allowedTools.length === 0 && c.options.maxTurns === 1) && TOOLS.converse.allowed.length === 0 && TOOLS.extract.allowed.length === 0,
+    JSON.stringify(q.calls[0].options));
+
+  const after = quoteTurn({ root, key: "problem" });
+  check("after two turns the quote has history: estimate is their mean, spent is their sum",
+    after.estimate.basis === "history" && after.estimate.n === 2 && Math.abs(after.estimate.usd - 0.2) < 1e-9 && Math.abs(after.spent - 0.4) < 1e-9 && Math.abs(after.remaining - 0.6) < 1e-9, JSON.stringify(after));
+
+  const dear = scripted({ text: "🔥 …", usd: 0.7 });
+  await turn({ root, key: "shape", text: "An order has a life.", _query: dear.query });
+  const refused = await turn({ root, key: "shape", text: "more", _query: dear.query }).then(() => null, (e) => e);
+  check("at the project's cap the next turn is refused before the model runs", refused instanceof BudgetError && dear.calls.length === 1 && quoteTurn({ root, key: "shape" }).over === true, refused?.message);
 });
 
 // ── R7 · rank and derive ──
