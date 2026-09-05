@@ -90,6 +90,11 @@ async function once({ half, stage, role, kind, model, system, prompt, cwd, outpu
     model,
     systemPrompt: system,
     cwd,
+    // SDK isolation: omitted, the SDK loads the operator's settings, CLAUDE.md, hooks and
+    // every configured MCP server under the identity — the first real call carried 44k
+    // tokens of them. An agent sees what the pipeline assembled and nothing else.
+    settingSources: [],
+    strictMcpConfig: true,
     tools: policy.allowed,
     allowedTools: policy.allowed,
     disallowedTools: NEVER,
