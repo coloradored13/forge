@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forge.local/schema/story.schema.json",
+  "title": "Stories",
+  "description": "The backlog a team can take: one epic per functional requirement inside the MVP line, stories that are vertical slices a person would notice, scenarios in declarative Gherkin that each prove one criterion. Every criterion inside the line is proved by a scenario; every story pins the criteria it proves and the screens it happens on. The writer composes epics, stories, notes and open questions; the runner owns identity, traces and the hash.",
+  "type": "object",
+  "required": ["id", "meta", "traces", "epics", "stories", "notes", "open_questions", "x-drift-checked"],
+  "additionalProperties": false,
+  "properties": {
+    "id": { "type": "string", "x-runner": true, "description": "stories-<slug>." },
+    "meta": {
+      "type": "object",
+      "x-runner": true,
+      "additionalProperties": false,
+      "properties": {
+        "content_hash": { "type": "string" },
+        "hash_algorithm": { "type": "string" }
+      }
+    },
+    "traces": {
+      "type": "object",
+      "x-runner": true,
+      "description": "What these stories were written from. Either hash moving makes the stories stale — the badge, not a block.",
+      "required": ["prd", "prototype"],
+      "additionalProperties": false,
+      "properties": {
+        "prd": {
+          "type": "object",
+          "required": ["version", "content_hash"],
+          "additionalProperties": false,
+          "properties": { "version": { "type": "string" }, "content_hash": { "type": "string" } }
+        },
+        "prototype": {
+          "type": "object",
+          "required": ["content_hash"],
+          "additionalProperties": false,
+          "properties": { "content_hash": { "type": "string" } }
+        }
+      }
+    },
+    "epics": {
+      "type": "array",
+      "description": "One per functional requirement inside the line. Ids are sticky across rewrites.",
+      "items": {
+        "type": "object",
+        "required": ["id", "req_ref", "title"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string", "pattern": "^EPIC-\\d+$" },
+          "req_ref": { "type": "string", "pattern": "^REQ-\\d+$" },
+          "title": { "type": "string", "description": "What a person can do once the epic is done, in their words." }
+        }
+      }
+    },
+    "stories": {
+      "type": "array",
+      "description": "Vertical slices: each one is something a person using the product would notice. Ids are sticky — the same story keeps its STORY-n across rewrites.",
+      "items": {
+        "type": "object",
+        "required": ["id", "epic", "statement", "req_refs", "screen_refs", "scenarios"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string", "pattern": "^STORY-\\d+$" },
+          "epic": { "type": "string", "pattern": "^EPIC-\\d+$" },
+          "statement": {
+            "type": "string",
+            "pattern": "^As an? .+, I want .+, so that .+",
+            "description": "As a <role>, I want <capability>, so that <outcome>. The role is a person; the outcome is why they care, not the capability restated."
+          },
+          "req_refs": { "type": "array", "minItems": 1, "items": { "type": "string", "pattern": "^REQ-\\d+$" }, "description": "The requirements this story delivers, in whole or part." },
+          "screen_refs": { "type": "array", "items": { "type": "string", "pattern": "^SCREEN-\\d+$" }, "description": "The prototype screens this story happens on. Empty only when no screen shows its requirement." },
+          "scenarios": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "required": ["name", "gherkin", "proves"],
+              "additionalProperties": false,
+              "properties": {
+                "name": { "type": "string" },
+                "gherkin": { "type": "string", "description": "Given/When/Then lines, one behaviour, declarative: what a person does and observes, in words that would not change if the implementation did." },
+                "proves": { "type": "array", "minItems": 1, "items": { "type": "string", "pattern": "^REQ-\\d+/AC-\\d+$" }, "description": "The criteria this scenario proves, as REQ-n/AC-m joins." }
+              }
+            }
+          }
+        }
+      }
+    },
+    "notes": { "type": "string", "description": "For the PM: where the prototype and the PRD disagree, which reading was taken, what was hard to slice." },
+    "open_questions": {
+      "type": "array",
+      "description": "What writing the stories exposed that the PRD does not answer — as questions for the PM, never as decisions taken.",
+      "items": {
+        "type": "object",
+        "required": ["question", "blocking"],
+        "additionalProperties": false,
+        "properties": {
+          "subject": { "type": "string", "description": "The REQ, AC or STORY it concerns, if one." },
+          "question": { "type": "string" },
+          "blocking": { "type": "boolean", "description": "True if the story cannot be taken until this is answered." }
+        }
+      }
+    },
+    "x-drift-checked": {
+      "type": "array",
+      "x-runner": true,
+      "description": "The pointers the content hash covers: the epics and the stories.",
+      "const": ["/epics", "/stories"]
+    }
+  }
+}

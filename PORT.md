@@ -15,7 +15,7 @@ Check an item only when its eval is green in this repo. The v1 path is the sourc
 | `tools/provenance.mjs` + verifier | `delivery/release/` | M3 | [ ] |
 | `tools/containment.mjs` | `delivery/build/` | M3 | [ ] |
 | `tests/browser` | `delivery/qa/` | M3 | [ ] |
-| prompt `prototype` (identity half only) | `discovery/prototype/` | M1 | [ ] |
+| prompt `prototype` (identity half only) | `discovery/prototype/` | M1 | [x] |
 | prompts `uxd-writer`, `uxd-judge` (identity halves; the declared-standard pattern, §10.6) | `discovery/design/` | M1 | [ ] |
 | prompts `sdd-writer`, `sdd-judge` (identity halves) | `delivery/sdd/` | M3 | [ ] |
 | prompt `dev` (identity half — the largest upgrade; containment lines drop, they are mechanical) | `delivery/build/` | M3 | [ ] |
@@ -30,13 +30,13 @@ Check an item only when its eval is green in this repo. The v1 path is the sourc
 
 | item | rule | milestone | done |
 |---|---|---|---|
-| The story judge → a reviewer at the PM's bar | R13 | M1 | [ ] |
+| The story judge → a reviewer at the PM's bar | R13 | M1 | [x] |
 | Intake: diff, compile, slice, ask — new | R13, R14 | M2 | [ ] |
 | The state machine and liveness | R9 | M2 | [ ] |
-| Amend with blast radius | R4 | M1 | [ ] |
-| Answers that write criteria | R3 | M1 | [ ] |
+| Amend with blast radius | R4 | M1 | [x] |
+| Answers that write criteria | R3 | M1 | [x] |
 | Staleness as re-judge | R5 | M2 | [ ] |
-| Ranked judges | R7 | M1 | [ ] |
+| Ranked judges | R7 | M1 | [x] |
 | Setup with estimate, both halves | R1 | M1, M2 | [ ] |
 | Project repo at Discovery setup (create or attach; refusals) — new | R11, R14 | M1 | [x] |
 | Delivery read containment: no `discovery/` reads, tool uses recorded — new | R14 | M2 | [ ] |

@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forge.local/schema/prototype.schema.json",
+  "title": "Prototype",
+  "description": "The PRD made tangible enough that a PM can find what is wrong with it: one self-contained HTML file a person clicks through, plus this record of what it shows. Every shipped surface inside the MVP line has a screen; every requirement inside the line is on a screen or listed as uncovered. The builder writes the file and this record's screens, uncovered, notes and open questions; the runner owns identity, traces and the hashes.",
+  "type": "object",
+  "required": ["id", "meta", "traces", "file", "file_hash", "screens", "uncovered", "notes", "open_questions", "x-drift-checked"],
+  "additionalProperties": false,
+  "properties": {
+    "id": { "type": "string", "x-runner": true, "description": "proto-<slug>." },
+    "meta": {
+      "type": "object",
+      "x-runner": true,
+      "additionalProperties": false,
+      "properties": {
+        "content_hash": { "type": "string" },
+        "hash_algorithm": { "type": "string" }
+      }
+    },
+    "traces": {
+      "type": "object",
+      "x-runner": true,
+      "description": "What this prototype was built from. A PRD whose hash no longer matches makes the prototype stale — the badge, not a block.",
+      "required": ["prd"],
+      "additionalProperties": false,
+      "properties": {
+        "prd": {
+          "type": "object",
+          "required": ["version", "content_hash"],
+          "additionalProperties": false,
+          "properties": { "version": { "type": "string" }, "content_hash": { "type": "string" } }
+        }
+      }
+    },
+    "file": { "type": "string", "x-runner": true, "description": "Root-relative path of the one HTML file." },
+    "file_hash": { "type": "string", "x-runner": true, "description": "sha256 of the file's bytes — the record is about this file and no other." },
+    "screens": {
+      "type": "array",
+      "description": "Every screen the prototype shows. Ids are sticky — the same screen keeps its SCREEN-n across regenerations.",
+      "items": {
+        "type": "object",
+        "required": ["id", "name", "surface_ref", "req_refs"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string", "pattern": "^SCREEN-\\d+$" },
+          "name": { "type": "string", "description": "The name a person using the product would give this screen — not a component name." },
+          "surface_ref": { "type": "string", "pattern": "^SURF-\\d+$", "description": "The shipped surface this screen belongs to." },
+          "req_refs": { "type": "array", "items": { "type": "string", "pattern": "^REQ-\\d+$" }, "description": "The requirements this screen lets a person exercise." }
+        }
+      }
+    },
+    "uncovered": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^REQ-\\d+$" },
+      "description": "Requirements inside the line the prototype does not show. Skipping is allowed; skipping quietly is not."
+    },
+    "notes": { "type": "string", "description": "For the PM: what was ambiguous and which reading was taken, where the prototype cheats, what to look at first." },
+    "open_questions": {
+      "type": "array",
+      "description": "What building it exposed that the PRD does not answer — as questions for the PM, never as decisions taken.",
+      "items": {
+        "type": "object",
+        "required": ["question", "blocking"],
+        "additionalProperties": false,
+        "properties": {
+          "question": { "type": "string" },
+          "blocking": { "type": "boolean", "description": "True if stories cannot be written until this is answered." }
+        }
+      }
+    },
+    "x-drift-checked": {
+      "type": "array",
+      "x-runner": true,
+      "description": "The pointers the content hash covers: the screens, what is uncovered, and the file itself.",
+      "const": ["/screens", "/uncovered", "/file_hash"]
+    }
+  }
+}

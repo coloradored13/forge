@@ -26,9 +26,12 @@ export class BudgetError extends Error {
  * conversant has no tools at all — an interrogator holding a Write tool is an
  * interrogator that will eventually use it (v1 chat route, kept verbatim). An extractor
  * reads a transcript it is handed and returns structured output; it too holds nothing.
+ * A composer reads the record and returns a structured artifact the runner writes — it
+ * sees the same surface a judge does and has no write of its own.
  */
 export const TOOLS = {
   judge: { allowed: ["Read", "Glob", "Grep"], mode: "default" },
+  compose: { allowed: ["Read", "Glob", "Grep"], mode: "default" },
   writer: { allowed: ["Read", "Write", "Edit", "Glob", "Grep"], mode: "acceptEdits" },
   builder: { allowed: ["Read", "Write", "Edit", "Bash", "Glob", "Grep"], mode: "acceptEdits" },
   converse: { allowed: [], mode: "default" },
@@ -40,7 +43,7 @@ const NEVER = ["WebFetch", "WebSearch", "Task", "NotebookEdit"];
  * @param half         discovery | delivery
  * @param stage        e.g. stories, sdd
  * @param role         a key in models.json under this half: writer | reviewer | judge | workshop
- * @param kind         tool policy: judge | writer | builder | converse | extract (default judge — the safe one)
+ * @param kind         tool policy: judge | compose | writer | builder | converse | extract (default judge — the safe one)
  * @param system       the assembled system prompt (shared/prompt)
  * @param prompt       the input
  * @param cwd          what Read/Glob/Grep (and any writes) see

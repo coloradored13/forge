@@ -43,6 +43,12 @@
       "x-runner": true,
       "description": "Findings the runner cut to reach k. A judge that keeps over-enumerating is a funnel signal (R8)."
     },
+    "reraised": {
+      "type": "integer",
+      "minimum": 0,
+      "x-runner": true,
+      "description": "Findings the runner removed because they re-raise a settled ruling (R3). A reviewer that keeps re-raising is a funnel signal (R8)."
+    },
     "judged": {
       "type": "array",
       "x-runner": true,
