@@ -8,7 +8,7 @@ import { append, spent } from "./ledger.mjs";
 import { isUsageGap, withUsagePause } from "./usage-pause.mjs";
 
 export { modelFor, roles, defaults } from "./models.mjs";
-export { rows, spent, totals, estimate, quote } from "./ledger.mjs";
+export { rows, spent, totals, estimate, standing, quote } from "./ledger.mjs";
 export { withUsagePause, isUsageGap, waitMsFor } from "./usage-pause.mjs";
 
 export const HALVES = ["discovery", "delivery"];
