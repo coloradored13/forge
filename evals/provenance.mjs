@@ -1,13 +1,19 @@
 #!/usr/bin/env node
-// owns: R14 · shared — eval: provenance. Seeded at M1 with the chain arithmetic every
+// owns: R11, R14 · shared — eval: provenance. Seeded at M1 with the chain arithmetic every
 // artifact stands on: one canonical form (Python parity pinned), a content hash over
 // the artifact's own x-drift-checked subset, per-item hashes, and a verifier that says
-// no on a tampered field and yes on a clean one. The manifest verifier joins at M3.
+// no on a tampered field and yes on a clean one. Brownfield (R11) starts here too: the
+// workshop reads the project repo and its prior manifest into a brief that rides in the
+// system prompt before the first question. The manifest verifier joins at M3.
 
-import { suite } from "./_harness.mjs";
+import { join } from "node:path";
+import { suite, withRoot, scripted } from "./_harness.mjs";
 import { canonicalize, sha256, resolve, contentHash, itemHash, stamp, stampItems, verify, ALGORITHM } from "../shared/hash.mjs";
+import { repoBrief, productFiles, readManifest, manifestSummary, MANIFEST } from "../discovery/workshop/brief.mjs";
+import { setupProject } from "../discovery/setup/index.mjs";
+import { openPrd, systemFor, turn } from "../discovery/workshop/index.mjs";
 
-const { check, done } = suite("provenance · hash chain");
+const { check, done } = suite("provenance · hash chain, brownfield brief");
 
 // ── canonical form ──
 {
@@ -71,5 +77,63 @@ const { check, done } = suite("provenance · hash chain");
   check("a tampered item is named — item-hash-stale on STORY-2 — and the document hash fails with it",
     v.verdict === "block" && v.findings.map((f) => `${f.rule}:${f.subject}`).join(",") === "item-hash-stale:STORY-2,content-hash-mismatch:handoff-1", JSON.stringify(v.findings.map((f) => f.subject)));
 }
+
+// ── R11 · what exists, before the first question ──
+// A fresh project repo holds scaffolding only; the brief finds nothing and says so.
+withRoot({ "README.md": "# Oven", ".gitignore": "node_modules", "discovery/.keep": "", "forge/project.json": "{}" }, (root) => {
+  const b = repoBrief(root);
+  check("scaffolding alone is greenfield — README, .gitignore, discovery/ and forge/ are not the product",
+    b.mode === "greenfield" && b.manifest === null && /^## What exists/.test(b.text) && /Nothing yet/.test(b.text) && /Elicit the whole shape/.test(b.text), b.text);
+  check("the pipeline's own directories are never product files", productFiles(root).join() === ".gitignore,README.md", productFiles(root).join());
+});
+
+// A product Forge released before: the manifest is the record and the brief leads with it.
+const PRIOR = { id: "manifest-oven", meta: { release: "1.2.0", content_hash: "ab".repeat(32) }, contract: { version: "1.4.0" }, requirements: [{ id: "REQ-1" }, { id: "REQ-2" }], criteria: [{ id: "REQ-1/AC-1" }], tests: [], verdicts: [{ id: "qa-1" }] };
+withRoot({
+  "README.md": "# Oven\n\nA run sheet for one bakery.\n", "package.json": `{"name":"oven","description":"one bakery, one run sheet"}`,
+  "src/app.js": "x", "src/sheet.js": "y", "src/style.css": "z", "tests/app.test.js": "t", [MANIFEST]: JSON.stringify(PRIOR),
+  "discovery/prd.json": "{}", "node_modules/left/index.js": "never",
+}, (root) => {
+  const b = repoBrief(root);
+  check("a repo with a manifest is brownfield, and the brief says to elicit the delta", b.mode === "brownfield" && /Elicit the \*\*delta\*\*/.test(b.text) && /Do not re-elicit/.test(b.text));
+  check("the manifest is read whole and returned for the record", b.manifest?.id === "manifest-oven" && b.manifest.meta.release === "1.2.0");
+  const summary = manifestSummary(PRIOR);
+  check("the summary names id, release, content hash, contract version and each collection with its ids",
+    summary.join(" | ") === `id manifest-oven | release 1.2.0 | content hash ${"ab".repeat(32)} | contract 1.4.0 | 2 requirements (REQ-1, REQ-2) | 1 criteria (REQ-1/AC-1) | 0 tests | 1 verdicts (qa-1)`, summary.join(" | "));
+  check("every summary line rides in the brief under the prior-release heading", /### Prior release manifest/.test(b.text) && summary.every((l) => b.text.includes(`- ${l}`)));
+  check("package.json and the README head are quoted", /### package.json\n\n- oven — one bakery, one run sheet/.test(b.text) && /### README \(first 3 lines\)/.test(b.text) && /A run sheet for one bakery\./.test(b.text));
+  check("files are counted by type (most first, ties in walk order) and top level; scaffolding, node_modules and the pipeline's directories are not product",
+    /- by type: \.js 3, \.json 1, \.css 1\n/.test(b.text) && /- top level: README\.md, package\.json, src, tests$/.test(b.text) && !b.text.includes("node_modules") && !b.text.includes("discovery") && !/prd\.json/.test(b.text) && productFiles(root).length === 6, b.text.split("### Files")[1]);
+  check("a manifest with nothing recognisable still says what keys it carries", manifestSummary({ foo: 1, bar: 2 }).join() === "keys: foo, bar");
+});
+
+// A product not built by Forge, and a manifest that cannot be read: both are brownfield, both said plainly.
+withRoot({ "src/main.py": "print(1)", "requirements.txt": "flask" }, (root) => {
+  const b = repoBrief(root);
+  check("product files without a manifest are brownfield with the manifest's absence stated", b.mode === "brownfield" && b.manifest === null && b.text.includes(`No \`${MANIFEST}\``) && /not built by Forge/.test(b.text), b.text);
+  check("the file listing is by type and top level", /- by type: \.txt 1, \.py 1\n/.test(b.text) && /- top level: requirements\.txt, src$/.test(b.text), b.text.split("### Files")[1]);
+});
+withRoot({ [MANIFEST]: "{not json", "src/a.js": "x" }, (root) => {
+  const m = readManifest(root);
+  const b = repoBrief(root);
+  check("an unreadable manifest is reported, not swallowed — the product is treated as undocumented",
+    typeof m.unreadable === "string" && m.unreadable.length && b.mode === "brownfield" && b.manifest.unreadable === m.unreadable && /present but unreadable/.test(b.text) && /Treat the product as undocumented/.test(b.text), b.text);
+});
+
+// The brief reaches the interrogator before its first question, and the interrogator holds no tools to go looking itself.
+await withRoot({ "theirs/.git/HEAD": "ref", "theirs/src/app.js": "x", [`theirs/${MANIFEST}`]: JSON.stringify(PRIOR) }, async (tmp) => {
+  const root = join(tmp, "theirs");
+  setupProject({ slug: "theirs", title: "Theirs", path: root, existing: true, pipelineRoot: join(tmp, "pipeline"), _exec: () => "" });
+  const prd = openPrd({ root, title: "Theirs", slug: "theirs", seed: "Add a second oven to the run sheet." });
+  const brief = repoBrief(root);
+  const system = systemFor({ prd, key: "problem", brief });
+  check("systemFor compiles the brief into the first section's system prompt, after the seed",
+    system.includes("## What exists") && system.includes("manifest-oven") && system.indexOf("Add a second oven") < system.indexOf("## What exists"), system.slice(-600));
+  const { query, calls } = scripted({ text: "🏛️ The manifest says two requirements shipped. What does the second oven change for REQ-1?", usd: 0.1, sessionId: "sess-b" });
+  const t = await turn({ root, key: "problem", text: "We need a second oven.", _query: query, _sleep: async () => {} });
+  const wire = calls[0].options;
+  check("the first turn goes out brownfield, with the brief on the wire and no tools for the interrogator",
+    t.brief === "brownfield" && wire.systemPrompt.includes("### Prior release manifest") && wire.systemPrompt.includes("release 1.2.0") && Array.isArray(wire.tools) && wire.tools.length === 0, JSON.stringify(Object.keys(wire)));
+});
 
 done();

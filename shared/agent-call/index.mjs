@@ -21,11 +21,18 @@ export class BudgetError extends Error {
   }
 }
 
-/** The one tool policy per kind of agent. A judge has no write surface at all. */
+/**
+ * The one tool policy per kind of agent. A judge has no write surface at all; a
+ * conversant has no tools at all — an interrogator holding a Write tool is an
+ * interrogator that will eventually use it (v1 chat route, kept verbatim). An extractor
+ * reads a transcript it is handed and returns structured output; it too holds nothing.
+ */
 export const TOOLS = {
   judge: { allowed: ["Read", "Glob", "Grep"], mode: "default" },
   writer: { allowed: ["Read", "Write", "Edit", "Glob", "Grep"], mode: "acceptEdits" },
   builder: { allowed: ["Read", "Write", "Edit", "Bash", "Glob", "Grep"], mode: "acceptEdits" },
+  converse: { allowed: [], mode: "default" },
+  extract: { allowed: [], mode: "default" },
 };
 const NEVER = ["WebFetch", "WebSearch", "Task", "NotebookEdit"];
 
@@ -33,11 +40,14 @@ const NEVER = ["WebFetch", "WebSearch", "Task", "NotebookEdit"];
  * @param half         discovery | delivery
  * @param stage        e.g. stories, sdd
  * @param role         a key in models.json under this half: writer | reviewer | judge | workshop
- * @param kind         tool policy: judge | writer | builder (default judge — the safe one)
+ * @param kind         tool policy: judge | writer | builder | converse | extract (default judge — the safe one)
  * @param system       the assembled system prompt (shared/prompt)
  * @param prompt       the input
  * @param cwd          what Read/Glob/Grep (and any writes) see
  * @param outputSchema structured-output schema, or omit for text
+ * @param resume       a session id from a prior call — real multi-turn state, not a
+ *                     transcript flattened into a prompt (a model shown a document about
+ *                     a conversation reads it differently from the conversation)
  * @param ledger       path to the run's calls.jsonl — required; an unrecorded call is a leak
  * @param budget       usd cap read against the ledger; null = uncapped
  * @param models       per-role overrides from the run's setup
@@ -46,7 +56,7 @@ const NEVER = ["WebFetch", "WebSearch", "Task", "NotebookEdit"];
  */
 export async function call({
   half, stage, role, kind = "judge",
-  system, prompt, cwd, outputSchema, maxTurns,
+  system, prompt, cwd, outputSchema, maxTurns, resume,
   ledger, budget = null, models = {},
   onEvent, _query, _sleep,
 }) {
@@ -62,30 +72,33 @@ export async function call({
   }
 
   const label = `${half}/${stage}/${role}`;
-  return withUsagePause(() => once({ half, stage, role, kind, model, system, prompt, cwd, outputSchema, maxTurns, ledger, onEvent, _query }),
+  return withUsagePause(() => once({ half, stage, role, kind, model, system, prompt, cwd, outputSchema, maxTurns, resume, ledger, onEvent, _query }),
     { label, onEvent, _sleep });
 }
 
-async function once({ half, stage, role, kind, model, system, prompt, cwd, outputSchema, maxTurns, ledger, onEvent, _query }) {
+async function once({ half, stage, role, kind, model, system, prompt, cwd, outputSchema, maxTurns, resume, ledger, onEvent, _query }) {
   const query = _query ?? (await import("@anthropic-ai/claude-agent-sdk")).query;
   const started = Date.now();
   const toolUses = [];
-  let text = "", structured, result, errorKind;
+  let text = "", structured, result, errorKind, sessionId;
 
   const policy = TOOLS[kind];
   const options = {
     model,
     systemPrompt: system,
     cwd,
+    tools: policy.allowed,
     allowedTools: policy.allowed,
     disallowedTools: NEVER,
     permissionMode: policy.mode,
     ...(maxTurns ? { maxTurns } : {}),
+    ...(resume ? { resume } : {}),
     ...(outputSchema ? { outputFormat: { type: "json_schema", schema: outputSchema } } : {}),
   };
 
   try {
     for await (const msg of query({ prompt, options })) {
+      if (msg.session_id) sessionId = msg.session_id;
       if (msg.type === "assistant") {
         if (msg.error) errorKind = msg.error;
         for (const b of msg.message?.content ?? []) {
@@ -121,7 +134,7 @@ async function once({ half, stage, role, kind, model, system, prompt, cwd, outpu
     throw new Error(isUsageGap(errorKind) ? `${message} (usage limit)` : message);
   }
 
-  return { text, structured, toolUses, model: row.model, usd: row.usd, ms: row.ms, turns: row.turns, tokens: row.tokens };
+  return { text, structured, toolUses, sessionId, model: row.model, usd: row.usd, ms: row.ms, turns: row.turns, tokens: row.tokens };
 
   function record({ ok, error }) {
     const usage = Object.values(result?.modelUsage ?? {});

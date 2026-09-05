@@ -1,0 +1,323 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forge.local/schema/prd.schema.json",
+  "title": "PRD",
+  "description": "What a PM signs: the diagnosis, the whole product's shape, the solution and its scope, requirements with criteria, the surfaces that ship, the MVP line, and how success is measured. The workshop fills it one section at a time from a transcript; the runner owns identity, state, flags and the hash. Compiles to the contract; export freezes it.",
+  "type": "object",
+  "required": ["id", "created", "meta", "seed", "problem", "shape", "solution", "surfaces", "requirements", "mvp", "okr", "open_questions", "constraints", "flags", "sections", "x-drift-checked"],
+  "additionalProperties": false,
+  "properties": {
+    "id": { "type": "string", "x-runner": true, "description": "prd-<slug>." },
+    "created": { "type": "string", "x-runner": true },
+    "meta": {
+      "type": "object",
+      "x-runner": true,
+      "required": ["title", "slug", "doc_status", "version"],
+      "additionalProperties": false,
+      "properties": {
+        "title": { "type": "string" },
+        "slug": { "type": "string" },
+        "owner": { "type": "string" },
+        "doc_status": { "enum": ["draft", "reviewed", "signed"], "description": "Document status per SPEC §2: draft → reviewed → signed." },
+        "version": { "type": "string" },
+        "baseline": {
+          "description": "Brownfield (R11): the release this PRD is a delta against — null for greenfield.",
+          "oneOf": [
+            { "type": "null" },
+            { "type": "object", "required": ["manifest_hash"], "additionalProperties": false, "properties": { "release": { "type": "string" }, "manifest_hash": { "type": "string" } } }
+          ]
+        },
+        "links": { "type": "object", "additionalProperties": false, "properties": { "repo": { "type": "string" }, "jira_idea": { "type": "string" } } },
+        "content_hash": { "type": "string" },
+        "hash_algorithm": { "type": "string" }
+      }
+    },
+    "seed": { "type": "string", "x-runner": true, "description": "The PM's original idea, as typed." },
+    "problem": {
+      "type": "object",
+      "required": ["who", "problem", "crux", "why_now", "business_value", "evidence"],
+      "additionalProperties": false,
+      "properties": {
+        "who": { "type": "string", "description": "Who this is for — specific people in a specific situation, never \"users\"." },
+        "problem": { "type": "string", "description": "The pain, timeless: true as long as these people have it, whatever system they use today." },
+        "crux": { "type": "string", "description": "The one hardest thing — the obstacle that, solved, makes the rest easier. Empty means the diagnosis is incomplete." },
+        "why_now": { "type": "string", "description": "Why this cycle and not six months ago or six months from now." },
+        "business_value": { "type": "string", "description": "What it is worth to the business, in terms someone would fund." },
+        "evidence": { "type": "string", "description": "Why we believe the problem is real, not assumed — what was observed, counted, or said." }
+      }
+    },
+    "shape": {
+      "type": "object",
+      "description": "The whole product before the line is drawn (R12): what things exist, what states they pass through, who is responsible for what, and where time is cut. Unknowns are recorded with owner `unowned` — expect discovery — never guessed.",
+      "required": ["lifecycles", "vocabulary", "attribution", "clocks"],
+      "additionalProperties": false,
+      "properties": {
+        "lifecycles": {
+          "type": "array",
+          "description": "Every thing in the product that has a life: what it is, the states it passes through in order, and who moves it. Include lifecycles past the MVP line — the line is drawn after this, not before.",
+          "items": {
+            "type": "object",
+            "required": ["id", "subject", "states", "owner"],
+            "additionalProperties": false,
+            "properties": {
+              "id": { "type": "string", "pattern": "^LC-\\d+$" },
+              "subject": { "type": "string", "description": "The thing with the life — an order, a batch, a shift." },
+              "states": { "type": "array", "minItems": 2, "items": { "type": "string" }, "description": "In order, from creation to rest. Terminal states included." },
+              "owner": { "type": "string", "description": "The role that moves it between states, or `unowned`." }
+            }
+          }
+        },
+        "vocabulary": {
+          "type": "array",
+          "description": "Every term the PRD uses that a stranger could misread, defined once. Requirements and stories are held to these words; a term used but not here is drift.",
+          "items": {
+            "type": "object",
+            "required": ["term", "definition", "owner"],
+            "additionalProperties": false,
+            "properties": {
+              "term": { "type": "string" },
+              "definition": { "type": "string" },
+              "owner": { "type": "string", "description": "Who decides what this word means, or `unowned`." }
+            }
+          }
+        },
+        "attribution": {
+          "type": "array",
+          "description": "For each action that matters later — who did it, and how the product knows. A product that cannot say who recorded what invites the amendment that adds it mid-build.",
+          "items": {
+            "type": "object",
+            "required": ["id", "action", "actor", "known_by"],
+            "additionalProperties": false,
+            "properties": {
+              "id": { "type": "string", "pattern": "^ATT-\\d+$" },
+              "action": { "type": "string" },
+              "actor": { "type": "string", "description": "The role that does it." },
+              "known_by": { "type": "string", "description": "How the product attributes it — a sign-in, a named device, a shift roster — or `unowned`." }
+            }
+          }
+        },
+        "clocks": {
+          "type": "array",
+          "description": "Where time is cut: the boundaries that decide which day, shift, or period something belongs to, and who owns the cut. Midnight is a choice, not a default.",
+          "items": {
+            "type": "object",
+            "required": ["id", "boundary", "rule", "owner"],
+            "additionalProperties": false,
+            "properties": {
+              "id": { "type": "string", "pattern": "^CLK-\\d+$" },
+              "boundary": { "type": "string", "description": "What is being cut — a business day, a shift, a reporting week." },
+              "rule": { "type": "string", "description": "Where the cut falls and what decides it." },
+              "owner": { "type": "string", "description": "Who owns the rule, or `unowned`." }
+            }
+          }
+        }
+      }
+    },
+    "solution": {
+      "type": "object",
+      "required": ["summary", "problem_mapping", "in_scope", "out_of_scope", "deferred"],
+      "additionalProperties": false,
+      "properties": {
+        "summary": { "type": "string", "description": "What we are building, one plain paragraph — what it does for the people in `who`, never how it is built." },
+        "problem_mapping": { "type": "string", "description": "The line from the solution back to the crux. If it cannot be drawn cleanly, the solution or the problem is wrong." },
+        "in_scope": { "type": "array", "items": { "type": "string" } },
+        "out_of_scope": {
+          "type": "array",
+          "description": "Anti-requirements with a reason each. An exclusion without a rationale is a boundary, not a strategy.",
+          "items": {
+            "type": "object",
+            "required": ["item", "rationale"],
+            "additionalProperties": false,
+            "properties": { "item": { "type": "string" }, "rationale": { "type": "string" } }
+          }
+        },
+        "deferred": { "type": "array", "items": { "type": "string" }, "description": "Consciously later, not never." }
+      }
+    },
+    "surfaces": {
+      "type": "object",
+      "description": "The delivery-surface decision: what a person actually gets this cycle. API-only is a decision; silence is not.",
+      "required": ["shipped", "deferred"],
+      "additionalProperties": false,
+      "properties": {
+        "shipped": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "kind", "statement", "req_refs"],
+            "additionalProperties": false,
+            "properties": {
+              "id": { "type": "string", "pattern": "^SURF-\\d+$" },
+              "kind": { "type": "string", "description": "web app · handheld web app · native app · API · CLI · document." },
+              "statement": { "type": "string", "description": "One testable sentence: \"A handheld web app a dock lead uses one-handed at the door.\"" },
+              "req_refs": { "type": "array", "items": { "type": "string", "pattern": "^REQ-\\d+$" }, "description": "The requirements whose experience this surface carries. Empty until requirements exist; bound in the requirements section." }
+            }
+          }
+        },
+        "deferred": {
+          "type": "array",
+          "description": "Surfaces considered and cut, each with a rationale and the requirements it consciously leaves without a surface.",
+          "items": {
+            "type": "object",
+            "required": ["kind", "rationale", "req_refs"],
+            "additionalProperties": false,
+            "properties": {
+              "kind": { "type": "string" },
+              "rationale": { "type": "string" },
+              "req_refs": { "type": "array", "items": { "type": "string", "pattern": "^REQ-\\d+$" } }
+            }
+          }
+        }
+      }
+    },
+    "requirements": {
+      "type": "array",
+      "description": "Atomic, testable, timeless. Ids are sticky — reuse REQ-n for the same requirement across captures; mint new ids only for new requirements.",
+      "items": {
+        "type": "object",
+        "required": ["id", "statement", "type", "done_definition", "acceptance_criteria", "status"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string", "pattern": "^REQ-\\d+$" },
+          "statement": { "type": "string", "description": "One testable assertion, no rationale, no system names. Functional: what a person can do and what they get." },
+          "type": { "enum": ["functional", "non-functional", "constraint"], "description": "Routes the work: functional becomes a story with scenarios; non-functional and constraint become tickets verified by measurement or inspection." },
+          "done_definition": { "type": "string", "description": "A yes/no you can answer standing in front of the built system." },
+          "acceptance_criteria": {
+            "type": "array",
+            "description": "Each provable by one piece of work, in one place. Lived claims carry numbers.",
+            "items": {
+              "type": "object",
+              "required": ["id", "statement"],
+              "additionalProperties": false,
+              "properties": {
+                "id": { "type": "string", "pattern": "^AC-\\d+$" },
+                "statement": { "type": "string" }
+              }
+            }
+          },
+          "status": { "enum": ["committed", "deferred", "cut", "done"], "description": "Deferred and cut requirements keep their ids and stay in the document." },
+          "context": { "type": "string", "description": "System-specific detail the statement must stay free of. Not drift-checked; nothing tests it — behaviour that lives only here is a requirement in disguise." },
+          "flags": { "type": "array", "items": { "type": "string" }, "description": "Challenges the PM overrode rather than answered, each named." }
+        }
+      }
+    },
+    "mvp": {
+      "type": "object",
+      "description": "The MVP line (R2): drawn after the shape is known, read by every reviewer and judge. The contract binds only what is inside.",
+      "required": ["line", "inside", "past"],
+      "additionalProperties": false,
+      "properties": {
+        "line": { "type": "string", "description": "Where the line is, in one sentence a reviewer can quote: what this cycle ships and what it does not." },
+        "inside": { "type": "array", "items": { "type": "string", "pattern": "^REQ-\\d+$" }, "description": "Every committed requirement inside the line." },
+        "past": {
+          "type": "array",
+          "description": "What sits past the line — a requirement, a surface, a lifecycle — and why it can wait.",
+          "items": {
+            "type": "object",
+            "required": ["ref", "why"],
+            "additionalProperties": false,
+            "properties": {
+              "ref": { "type": "string", "pattern": "^(REQ|SURF|LC)-\\d+$" },
+              "why": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "okr": {
+      "type": "object",
+      "required": ["objective", "measurements", "key_results"],
+      "additionalProperties": false,
+      "properties": {
+        "objective": { "type": "string", "description": "Qualitative, durable, aimed at the crux. Not a number, not a feature." },
+        "measurements": {
+          "type": "object",
+          "description": "The timeless gauges — no targets, no dates. \"Exceptions logged per shift,\" never \"by Q3.\"",
+          "required": ["outcome", "leading", "counter"],
+          "additionalProperties": false,
+          "properties": {
+            "outcome": { "type": "array", "items": { "type": "string" } },
+            "leading": { "type": "array", "items": { "type": "string" } },
+            "counter": { "type": "array", "items": { "type": "string" }, "description": "What must not get worse while the outcome improves." }
+          }
+        },
+        "key_results": {
+          "type": "array",
+          "description": "This cycle's readings: each bound to one measurement, baseline → target, cycle-stamped, committed or aspirational.",
+          "items": {
+            "type": "object",
+            "required": ["id", "statement", "measurement", "baseline", "target", "cycle", "commitment"],
+            "additionalProperties": false,
+            "properties": {
+              "id": { "type": "string", "pattern": "^KR-\\d+$" },
+              "statement": { "type": "string" },
+              "measurement": { "type": "string", "description": "The gauge this reads, quoted from measurements." },
+              "baseline": { "type": "string" },
+              "target": { "type": "string", "description": "Blank only if tied to an open question with an owner." },
+              "cycle": { "type": "string", "description": "e.g. 2026-Q4." },
+              "commitment": { "enum": ["committed", "aspirational"], "description": "Committed: on the hook. Aspirational: a real stretch — certainty means it is sandbagged." }
+            }
+          }
+        }
+      }
+    },
+    "open_questions": {
+      "type": "array",
+      "description": "What engineering will hit that is not yet answered — framed as a question with an owner, never as a product-supplied technical finding.",
+      "items": {
+        "type": "object",
+        "required": ["id", "question", "owner", "status"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string", "pattern": "^OQ-\\d+$" },
+          "question": { "type": "string" },
+          "owner": { "type": "string" },
+          "status": { "enum": ["open", "answered", "closed"] }
+        }
+      }
+    },
+    "constraints": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "What product legitimately owns and engineering must live with: regulation, deadlines and the reason behind them, dependencies as facts."
+    },
+    "flags": {
+      "type": "array",
+      "x-runner": true,
+      "description": "Append-only decision history: overrides, kill suggestions, rulings recorded by the doors.",
+      "items": {
+        "type": "object",
+        "required": ["at", "section", "kind", "note"],
+        "additionalProperties": false,
+        "properties": {
+          "at": { "type": "string" },
+          "section": { "type": "string" },
+          "kind": { "enum": ["kill_suggested", "override", "note"] },
+          "note": { "type": "string" }
+        }
+      }
+    },
+    "sections": {
+      "type": "object",
+      "x-runner": true,
+      "description": "Workshop state per section: the session the conversation lives in, turns taken, when it was last extracted.",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["status", "session_id", "turns", "extracted_at"],
+        "additionalProperties": false,
+        "properties": {
+          "status": { "enum": ["pending", "open", "complete"] },
+          "session_id": { "type": ["string", "null"] },
+          "turns": { "type": "integer", "minimum": 0 },
+          "extracted_at": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "x-drift-checked": {
+      "type": "array",
+      "x-runner": true,
+      "description": "The pointers the content hash covers — the spec, not the record around it.",
+      "const": ["/problem", "/shape", "/solution", "/surfaces", "/requirements", "/mvp", "/okr", "/constraints"]
+    }
+  }
+}

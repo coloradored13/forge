@@ -20,7 +20,7 @@ Check an item only when its eval is green in this repo. The v1 path is the sourc
 | prompts `sdd-writer`, `sdd-judge` (identity halves) | `delivery/sdd/` | M3 | [ ] |
 | prompt `dev` (identity half — the largest upgrade; containment lines drop, they are mechanical) | `delivery/build/` | M3 | [ ] |
 | prompt `acceptance-oracle` (identity half) | `delivery/qa/` | M3 | [ ] |
-| `lib/workshop.ts` — grows shape and the MVP line | `discovery/workshop/` | M1 | [ ] |
+| `lib/workshop.ts` + `app/api/{chat,extract}/route.ts` — grows shape and the MVP line; the `Capture:` enumerations become generated mechanics | `discovery/workshop/` | M1 | [x] |
 | eval `coherence` | `evals/coherence.mjs` | M1 | [x] |
 | eval `provenance` | `evals/provenance.mjs` | M3 | [ ] |
 | eval `door-table` | folded into `evals/transition-table.mjs` | M2 | [ ] |
@@ -38,9 +38,9 @@ Check an item only when its eval is green in this repo. The v1 path is the sourc
 | Staleness as re-judge | R5 | M2 | [ ] |
 | Ranked judges | R7 | M1 | [ ] |
 | Setup with estimate, both halves | R1 | M1, M2 | [ ] |
-| Project repo at Discovery setup (create or attach; refusals) — new | R11, R14 | M1 | [ ] |
+| Project repo at Discovery setup (create or attach; refusals) — new | R11, R14 | M1 | [x] |
 | Delivery read containment: no `discovery/` reads, tool uses recorded — new | R14 | M2 | [ ] |
-| Workshop reads the repo and manifest before its first question (brownfield) — new | R11 | M1 | [ ] |
+| Workshop reads the repo and manifest before its first question (brownfield) — new | R11 | M1 | [x] |
 | Jira export — new | — | M1 | [ ] |
 
 ## Stays behind
