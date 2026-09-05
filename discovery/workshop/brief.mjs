@@ -3,10 +3,12 @@
 // front of the interrogator so it elicits the delta, not the product from scratch. The
 // brief is compiled here, mechanically, and rides in the system prompt — the
 // interrogator itself holds no tools (shared/agent-call, `converse`). Greenfield is the
-// case where the brief finds nothing.
+// case where the brief finds nothing. What the repo says about itself is quoted as
+// evidence (shared/prompt `evidence`): the repo describes the product, it instructs no one.
 
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, extname } from "node:path";
+import { evidence } from "../../shared/prompt/index.mjs";
 
 export const MANIFEST = join("forge", "manifest.json");
 /** Not the product: the pipeline's own directories and repo scaffolding. */
@@ -58,19 +60,20 @@ export function repoBrief(root) {
 
   lines.push(`This is a brownfield product. Elicit the **delta**: what changes, what is added, what the existing product already settles. Do not re-elicit what the manifest and the repo already answer — confirm it in a line and move on.`);
 
-  if (manifest) {
-    lines.push(``, `### Prior release manifest`, ``);
-    if (manifest.unreadable) lines.push(`\`${MANIFEST}\` is present but unreadable: ${manifest.unreadable}. Treat the product as undocumented.`);
-    else lines.push(...manifestSummary(manifest).map((l) => `- ${l}`));
+  if (manifest?.unreadable) {
+    lines.push(``, `### Prior release manifest`, ``, `\`${MANIFEST}\` is present but unreadable. Treat the product as undocumented.`);
+  } else if (manifest) {
+    lines.push(``, evidence(`Prior release manifest (${MANIFEST})`, manifestSummary(manifest).map((l) => `- ${l}`).join("\n")));
   } else {
     lines.push(``, `No \`${MANIFEST}\` — the product was not built by Forge, or has not been released through it. What you learn about it comes from the PM and the files.`);
   }
 
   const pkg = readJson(join(root, "package.json"));
-  if (pkg?.name || pkg?.description) lines.push(``, `### package.json`, ``, `- ${[pkg.name, pkg.description].filter(Boolean).join(" — ")}`);
+  const named = [pkg?.name, pkg?.description].filter((s) => typeof s === "string" && s.trim()).join(" — ");
+  if (named) lines.push(``, evidence("package.json", named));
 
   const readme = readHead(join(root, "README.md"), 40);
-  if (readme) lines.push(``, `### README (first ${readme.split("\n").length} lines)`, ``, "```", readme, "```");
+  if (readme) lines.push(``, evidence(`README (first ${readme.split("\n").length} lines)`, readme));
 
   lines.push(``, `### Files (${files.length}${files.length >= MAX_FILES ? "+, truncated" : ""})`, ``);
   const byExt = {};
