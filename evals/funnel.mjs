@@ -36,7 +36,9 @@ await withRoot({}, (parent) => {
   const prd = loadPrd(root);
   const clean = checkPrototype(prd, proto);
   check("clean: two screens on the shipped surface, the non-functional requirement listed as uncovered — pass, nothing fired", clean.verdict === "pass" && clean.findings.length === 0 && clean.gate === PROTO_GATE, JSON.stringify(clean.findings));
-  check("checked counts the screens, the surfaces inside the line and the requirements inside it", clean.checked === 2 + 1 + 3 && clean.skipped === 0 && clean.deferred.length === 0, String(clean.checked));
+  check("checked counts the screens, the surfaces inside the line and the functional requirements inside it — REQ-4 is not a screen's to show", clean.checked === 2 + 1 + 2 && clean.skipped === 0 && clean.deferred.length === 0, String(clean.checked));
+  const quiet = checkPrototype(prd, { ...clone(proto), uncovered: [] });
+  check("a non-functional requirement on no screen and not listed as uncovered is not a defect — nothing forces a screen to house it", quiet.verdict === "pass" && quiet.findings.length === 0, fired(quiet).join(" "));
 
   const seen = new Set();
   const defect = (label, mutate, expect) => {
@@ -51,9 +53,9 @@ await withRoot({}, (parent) => {
   defect("a screen showing a requirement past the line", (p) => { p.screens[0].req_refs = ["REQ-3"]; }, ["screen-past-line@SCREEN-1", "req-unaccounted@REQ-1"]);
   defect("a screen referencing a requirement that does not exist", (p) => { p.screens[1].req_refs = ["REQ-9"]; }, ["ref-unknown@SCREEN-2", "req-unaccounted@REQ-2"]);
   defect("no screen on a surface inside the line", (p) => { p.screens = []; }, ["surface-without-screen@SURF-1", "req-unaccounted@REQ-1", "req-unaccounted@REQ-2"]);
-  defect("uncovered naming a requirement that does not exist", (p) => { p.uncovered = ["REQ-9"]; }, ["ref-unknown@REQ-9", "req-unaccounted@REQ-4"]);
+  defect("uncovered naming a requirement that does not exist", (p) => { p.uncovered = ["REQ-9"]; }, ["ref-unknown@REQ-9"]);
   defect("uncovered naming a requirement a screen shows", (p) => { p.uncovered = ["REQ-1", "REQ-4"]; }, ["uncovered-yet-covered@REQ-1"]);
-  defect("a requirement inside the line on no screen and not listed as uncovered", (p) => { p.uncovered = []; }, ["req-unaccounted@REQ-4"]);
+  defect("a functional requirement inside the line on no screen and not listed as uncovered", (p) => { p.screens[1].req_refs = []; }, ["req-unaccounted@REQ-2"]);
   check("every rule the builder is told is checked elsewhere fires on some defect, and nothing else does", eq([...seen].sort(), [...PROTO_RULES].sort()), `${[...seen].sort()} vs ${[...PROTO_RULES].sort()}`);
 });
 

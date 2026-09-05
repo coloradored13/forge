@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://forge.local/schema/prototype.schema.json",
   "title": "Prototype",
-  "description": "The PRD made tangible enough that a PM can find what is wrong with it: one self-contained HTML file a person clicks through, plus this record of what it shows. Every shipped surface inside the MVP line has a screen; every requirement inside the line is on a screen or listed as uncovered. The builder writes the file and this record's screens, uncovered, notes and open questions; the runner owns identity, traces and the hashes.",
+  "description": "The PRD made tangible enough that a PM can find what is wrong with it: one self-contained HTML file a person clicks through, plus this record of what it shows. Every shipped surface inside the MVP line has a screen; every functional requirement inside the line is on a screen or listed as uncovered — a non-functional requirement or a constraint is not a screen's to show. The builder writes the file and this record's screens, uncovered, notes and open questions; the runner owns identity, traces and the hashes.",
   "type": "object",
   "required": ["id", "meta", "traces", "file", "file_hash", "screens", "uncovered", "notes", "open_questions", "x-drift-checked"],
   "additionalProperties": false,

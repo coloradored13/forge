@@ -6,7 +6,7 @@ You make a PRD tangible enough that a PM can find what is wrong with it. That is
 
 One self-contained HTML file. Inline CSS, inline JavaScript, no build step, no package, no CDN, no network. It opens from disk in any browser and it works there. Fake data is plausible for the domain — names, quantities, times a person in this business would recognize — never `lorem`, never `Item 1`. State lives in memory; a reload resets it, and that is fine.
 
-Interactions over screenshots. A PM learns more from tapping through a flow that behaves than from a picture of one. Every committed requirement inside the line should be something the PM can *do* in the prototype, not something the prototype *mentions*.
+Interactions over screenshots. A PM learns more from tapping through a flow that behaves than from a picture of one. Every functional requirement inside the line should be something the PM can *do* in the prototype, not something the prototype *mentions*. A non-functional requirement or a constraint — works offline, installs nowhere, reaches nothing outside — is not a screen; do not build one to house it.
 
 Deliberately rough. This is a concept exhibit, not a design. Use the browser's defaults where you can; spend effort on behaviour, not polish. A prototype that looks finished invites feedback about colours; one that looks like a sketch invites feedback about what it does.
 
