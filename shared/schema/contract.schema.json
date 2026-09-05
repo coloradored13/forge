@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forge.local/schema/contract.schema.json",
+  "title": "Contract",
+  "description": "What the PRD compiles to at export (SPEC §4) and Delivery builds against: the problem, the shape, what sits inside the line and the surfaces that carry it, with the rulings and approved amendments in force and the questions still open. Every field is the PRD's own, read from its schema and filtered to the line — nothing is retyped here (R10). Frozen by the handoff that embeds it; the PRD keeps moving.",
+  "type": "object",
+  "required": ["prd", "title", "slug", "problem", "shape", "solution", "okr", "constraints", "mvp", "surfaces", "requirements", "rulings", "amendments", "open_questions"],
+  "additionalProperties": false,
+  "properties": {
+    "prd": {
+      "type": "object",
+      "description": "The PRD version and content hash this was compiled from.",
+      "required": ["version", "content_hash"],
+      "additionalProperties": false,
+      "properties": {
+        "version": { "type": "string" },
+        "content_hash": { "type": "string" }
+      }
+    },
+    "title": { "$ref": "prd.schema.json#/properties/meta/properties/title" },
+    "slug": { "$ref": "prd.schema.json#/properties/meta/properties/slug" },
+    "problem": { "$ref": "prd.schema.json#/properties/problem" },
+    "shape": { "$ref": "prd.schema.json#/properties/shape" },
+    "solution": { "$ref": "prd.schema.json#/properties/solution" },
+    "okr": { "$ref": "prd.schema.json#/properties/okr" },
+    "constraints": { "$ref": "prd.schema.json#/properties/constraints" },
+    "mvp": { "$ref": "prd.schema.json#/properties/mvp" },
+    "surfaces": {
+      "$ref": "prd.schema.json#/properties/surfaces/properties/shipped",
+      "description": "The shipped surfaces inside the line — where each screen is read."
+    },
+    "requirements": {
+      "$ref": "prd.schema.json#/properties/requirements",
+      "description": "The requirements inside the line, with every criterion by its join id."
+    },
+    "rulings": {
+      "$ref": "prd.schema.json#/properties/rulings",
+      "description": "Every ruling on the PRD — each already a criterion above; they ride into every judge (R3)."
+    },
+    "amendments": {
+      "$ref": "prd.schema.json#/properties/amendments",
+      "description": "The approved amendments — why the requirements read as they do."
+    },
+    "open_questions": {
+      "$ref": "prd.schema.json#/properties/open_questions",
+      "description": "Still open at export. Delivery asks, within its budget, and never assumes (R13)."
+    }
+  }
+}
