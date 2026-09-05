@@ -1,0 +1,176 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forge.local/schema/design.schema.json",
+  "title": "Design",
+  "description": "The canonical production design, two-faced: a declared standard and one visual language a designer signs; per-screen structure, states and controls Delivery binds to. One design per screen the backlog claims, nothing else. The writer declares the standard it will be held to — a direction, the hero moments, its commitments — then composes the tokens, the stylesheet, the screens, notes and open questions; the runner owns identity, traces, the hash and the sign-off.",
+  "type": "object",
+  "required": ["id", "meta", "traces", "standard", "tokens", "stylesheet", "screens", "notes", "open_questions", "x-drift-checked"],
+  "additionalProperties": false,
+  "properties": {
+    "id": { "type": "string", "x-runner": true, "description": "design-<slug>." },
+    "meta": {
+      "type": "object",
+      "x-runner": true,
+      "additionalProperties": false,
+      "properties": {
+        "content_hash": { "type": "string" },
+        "hash_algorithm": { "type": "string" }
+      }
+    },
+    "traces": {
+      "type": "object",
+      "x-runner": true,
+      "description": "What this design was written from. Any hash moving makes the design stale — the badge, not a block.",
+      "required": ["prd", "prototype", "stories"],
+      "additionalProperties": false,
+      "properties": {
+        "prd": {
+          "type": "object",
+          "required": ["version", "content_hash"],
+          "additionalProperties": false,
+          "properties": { "version": { "type": "string" }, "content_hash": { "type": "string" } }
+        },
+        "prototype": {
+          "type": "object",
+          "required": ["content_hash"],
+          "additionalProperties": false,
+          "properties": { "content_hash": { "type": "string" } }
+        },
+        "stories": {
+          "type": "object",
+          "required": ["content_hash"],
+          "additionalProperties": false,
+          "properties": { "content_hash": { "type": "string" } }
+        }
+      }
+    },
+    "standard": {
+      "type": "object",
+      "description": "The standard you declare and are then held to. The reviewer judges the screens against this and against the craft floor; it does not judge whether it would have chosen it.",
+      "required": ["direction", "heroes", "commitments"],
+      "additionalProperties": false,
+      "properties": {
+        "direction": { "type": "string", "description": "The point of view, in a sentence with nouns from this product's world, and why it serves the people in the PRD. Not a synonym pile; not something that could be pasted onto another product unchanged." },
+        "heroes": {
+          "type": "array",
+          "description": "The two or three moments where the design earns its keep — each on a screen this design holds, with what is on screen at that moment. The system's strongest treatment is spent here and nowhere else.",
+          "items": {
+            "type": "object",
+            "required": ["screen_ref", "moment"],
+            "additionalProperties": false,
+            "properties": {
+              "screen_ref": { "type": "string", "pattern": "^SCREEN-\\d+$" },
+              "moment": { "type": "string" }
+            }
+          }
+        },
+        "commitments": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "What the design promises and can be checked against: the type families and weights, the space unit, the neutrals' temperature, how separation is earned, what status never relies on. Each is a line the reviewer holds every screen to."
+        }
+      }
+    },
+    "tokens": {
+      "type": "object",
+      "additionalProperties": { "type": ["string", "number"] },
+      "description": "The visual language as named decisions — palette, type scale and ratio, space unit, radii, touch-target minimum, status treatments. Every screen renders from these and nothing else."
+    },
+    "stylesheet": {
+      "type": "string",
+      "description": "Shippable production CSS realizing the tokens as custom properties, with focus-visible and pressed states, and motion that is absent under reduced-motion. A build that adopts it verbatim looks designed."
+    },
+    "screens": {
+      "type": "array",
+      "description": "One per screen the backlog claims, keyed by the prototype's screen id. Nothing else.",
+      "items": {
+        "type": "object",
+        "required": ["screen_ref", "name", "moment", "structure", "states", "controls"],
+        "additionalProperties": false,
+        "properties": {
+          "screen_ref": { "type": "string", "pattern": "^SCREEN-\\d+$" },
+          "name": { "type": "string" },
+          "moment": { "type": "string", "description": "Where and how this screen is read — the surface, the distance, the hands, the light — and the density that calls for." },
+          "structure": { "type": "string", "description": "The semantic outline — elements, roles, order, data slots, final microcopy — specific enough that two implementers produce the same DOM shape." },
+          "states": {
+            "type": "array",
+            "minItems": 1,
+            "description": "Every state the screen renders — initial, populated, empty, faulted — and what each shows and withholds. Together they partition the screen's life.",
+            "items": {
+              "type": "object",
+              "required": ["name", "renders"],
+              "additionalProperties": false,
+              "properties": {
+                "name": { "type": "string" },
+                "renders": { "type": "string", "description": "What a person sees in this state and not in the others, testably." },
+                "entered_by": { "type": "string", "description": "What brings the screen into this state, when it is not the initial one." }
+              }
+            }
+          },
+          "controls": {
+            "type": "array",
+            "description": "Every control the structure names, with a stable id downstream cites. Mint once; keep the same id for the same control across rewrites.",
+            "items": {
+              "type": "object",
+              "required": ["id", "kind", "label"],
+              "additionalProperties": false,
+              "properties": {
+                "id": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+                "kind": { "type": "string", "description": "button, link, field, chip, toggle, list, …" },
+                "label": { "type": "string", "description": "The final string a person reads, in the product's vocabulary." },
+                "state": { "type": "string", "description": "The state this control appears in, when it is not every state." }
+              }
+            }
+          }
+        }
+      }
+    },
+    "notes": { "type": "string", "description": "For the PM and the designer who signs: where the prototype was kept and where it was left, what the surface forced, what was hard." },
+    "open_questions": {
+      "type": "array",
+      "description": "What designing exposed that the PRD and the backlog do not answer — as questions for the PM, never as decisions taken in pixels.",
+      "items": {
+        "type": "object",
+        "required": ["question", "blocking"],
+        "additionalProperties": false,
+        "properties": {
+          "subject": { "type": "string", "description": "The SCREEN, STORY or REQ it concerns, if one." },
+          "question": { "type": "string" },
+          "blocking": { "type": "boolean", "description": "True if the screen cannot be designed sensibly until this is answered." }
+        }
+      }
+    },
+    "signoff": {
+      "type": "object",
+      "x-runner": true,
+      "description": "A named human designer's word on this exact design, beside the reviewer's verdict at the time. Outside the hash: signing does not change the design; regenerating makes the signature stale.",
+      "required": ["by", "at", "content_hash", "review"],
+      "additionalProperties": false,
+      "properties": {
+        "by": { "type": "string" },
+        "at": { "type": "string" },
+        "note": { "type": "string" },
+        "content_hash": { "type": "string" },
+        "review": {
+          "type": "object",
+          "required": ["gate", "verdict"],
+          "additionalProperties": false,
+          "properties": { "gate": { "type": "string" }, "verdict": { "type": "string", "enum": ["pass", "advise", "block"] } }
+        },
+        "override": {
+          "type": "object",
+          "description": "Present only when a blocking review was overridden — a human's word, on the record.",
+          "required": ["reason"],
+          "additionalProperties": false,
+          "properties": { "reason": { "type": "string" } }
+        }
+      }
+    },
+    "x-drift-checked": {
+      "type": "array",
+      "x-runner": true,
+      "description": "The pointers the content hash covers: the standard, the tokens, the stylesheet and the screens.",
+      "const": ["/standard", "/tokens", "/stylesheet", "/screens"]
+    }
+  }
+}

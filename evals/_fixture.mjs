@@ -8,7 +8,7 @@ import { dirname, join } from "node:path";
 import { skeleton } from "../shared/schema/index.mjs";
 import { setupProject } from "../discovery/setup/index.mjs";
 import { openPrd, loadPrd, savePrd } from "../discovery/workshop/index.mjs";
-import { readDoc, saveDoc, traceOf, PROTOTYPE_FILE, HTML_FILE, STORIES_FILE } from "../discovery/record/index.mjs";
+import { readDoc, saveDoc, traceOf, PROTOTYPE_FILE, HTML_FILE, STORIES_FILE, DESIGN_FILE } from "../discovery/record/index.mjs";
 
 export const HTML = "<!doctype html><title>Dock</title><main><h1>Run sheet</h1><button>Record an exception</button></main>\n";
 
@@ -93,4 +93,40 @@ export function seedStories(root, { epics = EPICS, stories = STORIES } = {}) {
   const proto = readDoc(root, PROTOTYPE_FILE);
   const doc = { ...skeleton("story"), id: `stories-${prd.meta.slug}`, traces: traceOf(prd, proto), epics, stories, notes: "", open_questions: [] };
   return saveDoc(root, STORIES_FILE, "story", doc);
+}
+
+/** What the design writer composes: a declared standard, one language, one design per claimed screen. */
+export const DESIGN = {
+  standard: {
+    direction: "A clipboard at a loading door: ink-dark type on warm paper, one red pen for the exception, read with a glove on in bad light.",
+    heroes: [{ screen_ref: "SCREEN-1", moment: "The reason is chosen and the exception is recorded — the red pen mark." }],
+    commitments: ["Two families: Source Serif for the delivery names, Inter for everything else; weights 400 and 600 only.", "Space on an 8px unit.", "Separation by space and weight; a border only around the one control that records.", "Status never by colour alone — a word travels with it."],
+  },
+  tokens: { "font-display": "Source Serif 4", "font-text": "Inter", "type-ratio": 1.25, "space-unit": 8, "color-paper": "#f3ede2", "color-ink": "#1e1a16", "color-pen": "#b3261e", "touch-min": 48 },
+  stylesheet: ":root{--paper:#f3ede2;--ink:#1e1a16;--pen:#b3261e;--u:8px}button:focus-visible{outline:3px solid var(--pen)}@media (prefers-reduced-motion:reduce){*{transition:none}}",
+  screens: [
+    {
+      screen_ref: "SCREEN-1", name: "Recording an exception", moment: "Held one-handed at the door, glanced at between pallets; large targets, few words.",
+      structure: "header: delivery name (display) · vendor · main: reason chips (Short, Damaged, Wrong item) · quantity stepper · footer: one button 'Record the exception'",
+      states: [{ name: "choosing", renders: "reason chips unselected; the record button disabled with its label" }, { name: "recorded", renders: "the exception as written, no controls but 'Back to the run sheet'", entered_by: "recording" }],
+      controls: [{ id: "reason-chip", kind: "chip", label: "Short / Damaged / Wrong item" }, { id: "record-exception", kind: "button", label: "Record the exception" }],
+    },
+    {
+      screen_ref: "SCREEN-2", name: "The run sheet", moment: "Glanced at from a step away as trucks arrive; the next delivery reads first.",
+      structure: "header: shift and door · list: one row per delivery — time (tabular), vendor (display), state word · empty: 'Nothing due this shift'",
+      states: [{ name: "populated", renders: "every delivery expected this shift in arrival order" }, { name: "empty", renders: "one sentence: Nothing due this shift", entered_by: "a shift with no deliveries" }],
+      controls: [{ id: "delivery-row", kind: "link", label: "the delivery" }],
+    },
+  ],
+  notes: "Kept the prototype's start-on-the-run-sheet; dropped its bordered cards.",
+  open_questions: [],
+};
+
+/** The design as the runner would write it: traced to all three by hash, unsigned. */
+export function seedDesign(root, design = DESIGN) {
+  const prd = loadPrd(root);
+  const proto = readDoc(root, PROTOTYPE_FILE);
+  const stories = readDoc(root, STORIES_FILE);
+  const doc = { ...skeleton("design"), id: `design-${prd.meta.slug}`, traces: traceOf(prd, proto, stories), ...structuredClone(design) };
+  return saveDoc(root, DESIGN_FILE, "design", doc);
 }
