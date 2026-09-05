@@ -4,25 +4,38 @@
 // arithmetic — every committed requirement on one side, nothing named that the document
 // lacks. The workshop is exercised end to end on a scripted model: sections open in
 // order, a turn writes the transcript and the section state, an extraction fills only
-// its section's fields from a contract derived from the PRD schema, and ids stick.
+// its section's fields from a contract derived from the PRD schema, and ids stick. The
+// design is the last document inside the line: held to the claim map exactly (every
+// claimed screen designed, every designed screen claimed), reviewed against the standard
+// it declared, and signed by a named person — a blocking review overridden only by a
+// human's word on the record.
 
 import { join } from "node:path";
 import { existsSync, readFileSync } from "node:fs";
 import { suite, withRoot, scripted } from "./_harness.mjs";
+import { seedProject, seedPrototype, seedStories, seedDesign, DESIGN } from "./_fixture.mjs";
 import { skeleton, validate, outputContract, fieldsOf, partialContract } from "../shared/schema/index.mjs";
 import { mechanics, namedFields } from "../shared/prompt/index.mjs";
-import { verify } from "../shared/hash.mjs";
+import { verify, stamp } from "../shared/hash.mjs";
 import { lineDrawn, scopeOf, checkScope } from "../shared/scope.mjs";
-import { setupProject } from "../discovery/setup/index.mjs";
+import { setupProject, ledgerPath } from "../discovery/setup/index.mjs";
 import { SECTIONS, LINE_SECTION, indexOf, section } from "../discovery/workshop/sections.mjs";
 import { openPrd, loadPrd, savePrd, mayOpen, systemFor, turn, extract, readTranscript, parseReply, captured, progress, WorkshopRefused } from "../discovery/workshop/index.mjs";
 import { repoBrief } from "../discovery/workshop/brief.mjs";
+import { Refused, readDoc, readVerdict, freshVerdict, staleness, DESIGN_FILE, HTML_FILE } from "../discovery/record/index.mjs";
+import { answer } from "../discovery/doors/index.mjs";
+import { write, review, signoff, checkDesign, GATE as DESIGN_GATE, REVIEW_GATE as DESIGN_REVIEW, ARITHMETIC as DESIGN_RULES } from "../discovery/design/index.mjs";
 
 const { check, done } = suite("scope · R2 the line is a gate input, R12 shape before scope");
 
 const same = (a, b) => a.length === b.length && [...a].sort().join(" ") === [...b].sort().join(" ");
 const REQ = (n, status = "committed") => ({ id: `REQ-${n}`, statement: `s${n}`, type: "functional", done_definition: "d", acceptance_criteria: [{ id: "AC-1", statement: "a" }], status, context: "", flags: [] });
 const rulesOf = (v) => v.findings.map((f) => `${f.rule}:${f.subject}`).sort();
+const fired = (v) => v.findings.map((f) => `${f.rule}@${f.subject}`);
+const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+const refusal = async (fn) => { try { await fn(); return null; } catch (e) { return e; } };
+const refuse = (fn) => { try { fn(); return null; } catch (e) { return e; } };
+const finding = (subject, severity = "high", confidence = "certain", extra = {}) => ({ severity, confidence, rule: "crafted-not-generic", subject, summary: `about ${subject}`, evidence: "e", remedy: "r", ...extra });
 
 // ── R2 · the line's arithmetic ──
 {
@@ -190,6 +203,184 @@ await withRoot({}, async (parent) => {
   await extract({ root, key: "requirements", _query: contradict.query });
   check("the arithmetic is the gate's, not the writer's: a line the document contradicts is written and then found",
     same(rulesOf(checkScope(loadPrd(root))), ["mvp-both-sides:REQ-2", "mvp-inside-not-committed:REQ-2"]), rulesOf(checkScope(loadPrd(root))).join(","));
+});
+
+// ── R2 · the design covers the claim map exactly, both directions ──
+await withRoot({}, (parent) => {
+  const root = seedProject(parent);
+  const proto = seedPrototype(root);
+  const stories = seedStories(root);
+  const doc = seedDesign(root);
+  const clean = checkDesign(proto, stories, doc);
+  check("clean: both claimed screens designed once, the hero on a designed screen — pass, nothing fired", clean.verdict === "pass" && clean.findings.length === 0 && clean.gate === DESIGN_GATE, JSON.stringify(clean.findings));
+  check("checked counts the claimed screens, the designed screens and the heroes", clean.checked === 2 + 2 + 1 && clean.skipped === 0 && clean.deferred.length === 0, String(clean.checked));
+
+  const seen = new Set();
+  const defect = (label, mutate, expect) => {
+    const d = structuredClone(doc), s = structuredClone(stories);
+    mutate(d, s);
+    const v = checkDesign(proto, s, d);
+    for (const x of v.findings) seen.add(x.rule);
+    check(`design defect: ${label}`, v.verdict === "block" && same(fired(v), expect) && v.findings.every((x) => x.severity === "high" && x.confidence === "certain" && x.evidence && x.remedy), fired(v).join(" "));
+  };
+  defect("a designed screen the prototype does not have — and the claimed one it displaced is undesigned", (d) => { d.screens[1].screen_ref = "SCREEN-9"; }, ["screen-unknown@SCREEN-9", "screen-undesigned@SCREEN-2"]);
+  defect("a designed screen no story claims", (d, s) => { s.stories[1].screen_refs = []; }, ["screen-unclaimed@SCREEN-2"]);
+  defect("a claimed screen with no design", (d) => { d.screens = [d.screens[0]]; }, ["screen-undesigned@SCREEN-2"]);
+  defect("a screen designed twice", (d) => { d.screens.push(structuredClone(d.screens[0])); }, ["screen-designed-twice@SCREEN-1"]);
+  defect("a hero on a screen the design does not hold", (d) => { d.standard.heroes[0].screen_ref = "SCREEN-9"; }, ["hero-unknown@SCREEN-9"]);
+  check("every rule the writer is told is checked elsewhere fires on some defect, and nothing else does", same([...seen], DESIGN_RULES), `${[...seen].sort()} vs ${[...DESIGN_RULES].sort()}`);
+  const s9 = structuredClone(stories);
+  s9.stories[0].screen_refs = ["SCREEN-1", "SCREEN-9"];
+  check("a story claiming a screen the prototype lacks is the backlog's defect, not the design's — nothing fires here", checkDesign(proto, s9, doc).findings.length === 0);
+
+  const empty = skeleton("design");
+  check("the design skeleton is derived and validates; the hash covers the standard, the tokens, the stylesheet and the screens; nothing is signed by default",
+    validate("design", empty).ok && empty["x-drift-checked"].join() === "/standard,/tokens,/stylesheet,/screens" && !("signoff" in empty));
+  const signed = structuredClone(doc);
+  signed.signoff = { by: "Ana", at: "t", content_hash: doc.meta.content_hash, review: { gate: DESIGN_REVIEW, verdict: "pass" } };
+  signed.notes = "different notes";
+  stamp(signed);
+  const recoloured = structuredClone(doc);
+  recoloured.tokens["color-pen"] = "#a02018";
+  stamp(recoloured);
+  check("a signature and notes do not move the hash; one token does — the design is one document, and a changed palette stales all of it",
+    signed.meta.content_hash === doc.meta.content_hash && recoloured.meta.content_hash !== doc.meta.content_hash && validate("design", signed).ok);
+  const contract = outputContract("design");
+  check("the writer's contract on the wire holds the standard and the screens and neither the traces nor the sign-off",
+    same(Object.keys(contract.properties), ["standard", "tokens", "stylesheet", "screens", "notes", "open_questions"]) && contract.properties.standard.required.join() === "direction,heroes,commitments");
+});
+
+// ── the design runner: a writer that declares its standard, a reviewer that holds it to it, a person who signs ──
+await withRoot({}, async (parent) => {
+  const bare = seedProject(parent, { slug: "bare" });
+  const none = scripted({ structured: DESIGN });
+  const noProto = await refusal(() => write({ root: bare, _query: none.query }));
+  seedPrototype(bare);
+  const noStories = await refusal(() => write({ root: bare, _query: none.query }));
+  const noDesign = await refusal(() => review({ root: bare, _query: none.query }));
+  const noSign = refuse(() => signoff(bare, { by: "Ana" }));
+  check("no prototype, no design; no backlog, no design; no design, nothing to review or sign — all refused before any call",
+    noProto?.code === "no-prototype" && noStories?.code === "no-stories" && noDesign?.code === "no-design" && noSign?.code === "no-design" && none.calls.length === 0, `${noProto?.code} ${noStories?.code} ${noDesign?.code} ${noSign?.code}`);
+  const p = loadPrd(bare);
+  p.mvp = { line: "", inside: [], past: [] };
+  savePrd(bare, p);
+  const noLine = await refusal(() => write({ root: bare, _query: none.query }));
+  check("no line, no design", noLine instanceof Refused && noLine.code === "no-line" && none.calls.length === 0, noLine?.message);
+
+  const root = seedProject(parent);
+  const proto = seedPrototype(root);
+  const stories = seedStories(root);
+  answer({ root, req: "REQ-1", oq: "OQ-1", answer: "No — the door closes the record when the truck leaves.", criterion: "An exception cannot be recorded against a delivery marked departed.", by: "Brad" });
+  const prd = loadPrd(root);
+
+  const q = scripted({ structured: DESIGN, toolUses: [{ name: "Read", input: { file_path: HTML_FILE } }] });
+  const out = await write({ root, _query: q.query });
+  const o = q.calls[0].options;
+  check("the writer composes: Read/Glob/Grep only, no edits accepted, the design contract as its output format, billed to discovery.writer",
+    q.calls.length === 1 && eq(o.tools, ["Read", "Glob", "Grep"]) && o.permissionMode === "default" && eq(o.outputFormat, { type: "json_schema", schema: outputContract("design") }) && out.model === "claude-opus-5", JSON.stringify({ tools: o.tools, mode: o.permissionMode }));
+  check("its system prompt is the design writer's identity — declare the standard, then the craft floor — plus the contract naming the standard's fields, scope, the ruling and every arithmetic rule as checked elsewhere",
+    /^# Design writer/.test(o.systemPrompt) && /## Declare your standard before you draw a screen/.test(o.systemPrompt) && /## The craft floor/.test(o.systemPrompt) && /`\/standard\/commitments`/.test(o.systemPrompt) && !/`\/signoff/.test(o.systemPrompt) && !/`\/traces/.test(o.systemPrompt) &&
+    /## Scope/.test(o.systemPrompt) && /RUL-1/.test(o.systemPrompt) && /## Checked elsewhere/.test(o.systemPrompt) && DESIGN_RULES.every((r) => o.systemPrompt.includes(r)), o.systemPrompt.slice(-600));
+  check("its prompt is the PRD with its surfaces and their kind, the prototype with the file to read, the stories per screen — and nothing about a previous design on a first write",
+    /## Surfaces inside the line\n\n- \*\*SURF-1\*\* \(handheld web app\)/.test(q.calls[0].prompt) && !/SURF-2/.test(q.calls[0].prompt) && /REQ-1\/AC-3/.test(q.calls[0].prompt) && q.calls[0].prompt.includes(`The prototype itself is at \`${HTML_FILE}\``) &&
+    /## Stories — what happens on each screen\n\nEpics:[\s\S]*### STORY-1 \(EPIC-1\)[\s\S]*screens SCREEN-1/.test(q.calls[0].prompt) && !/## The previous design's standard/.test(q.calls[0].prompt) && !/## Existing control ids/.test(q.calls[0].prompt) && !/## The reviewer's findings/.test(q.calls[0].prompt));
+  const doc = readDoc(root, DESIGN_FILE);
+  check("the design is written by the runner: traced to the PRD, the prototype and the backlog by hash, stamped, verifying, unsigned, and it is what came back",
+    doc.id === "design-dock" && doc.traces.prd.content_hash === prd.meta.content_hash && doc.traces.prd.version === "0.2.0" && doc.traces.prototype.content_hash === proto.meta.content_hash && doc.traces.stories.content_hash === stories.meta.content_hash &&
+    eq(doc.screens, DESIGN.screens) && eq(doc.standard, DESIGN.standard) && validate("design", doc).ok && verify(doc).verdict === "pass" && !("signoff" in doc) && eq(out.design, doc), JSON.stringify(doc.traces));
+  const badge = staleness(root).design;
+  check("the badge: not stale, nothing moved, unsigned", badge && !badge.stale && !badge.prd_moved && !badge.prototype_moved && !badge.stories_moved && badge.signed === false, JSON.stringify(badge));
+  const arith = readVerdict(root, DESIGN_GATE);
+  check("the arithmetic verdict is filed with four pins — PRD, prototype, stories, design — passes and is fresh",
+    arith.judged.length === 4 && arith.judged[3].content_hash === doc.meta.content_hash && arith.verdict === "pass" && freshVerdict(root, DESIGN_GATE) !== null && eq(out.arithmetic, arith), JSON.stringify(arith.judged.map((j) => j.id)));
+
+  for (const tool of ["Write", "Edit", "Bash"]) {
+    const e = await refusal(() => write({ root, _query: scripted({ structured: DESIGN, toolUses: [tool] }).query }));
+    check(`a writer that used ${tool} is refused — it composes, the runner writes`, e instanceof Refused && e.code === "wrote" && e.message.includes(tool), e?.message);
+  }
+  const silent = await refusal(() => write({ root, _query: scripted({}).query }));
+  check("no structured answer is refused", silent instanceof Refused && silent.code === "no-structured-output", silent?.message);
+  const wrong = await refusal(() => write({ root, _query: scripted({ structured: { ...DESIGN, standard: { direction: "clean and modern" } } }).query }));
+  check("a design that does not fit the contract — a standard with no heroes and no commitments — is refused naming the fields", wrong instanceof Refused && wrong.code === "design-invalid" && wrong.detail.some((d) => /heroes|commitments/.test(d)), wrong?.message);
+  check("nothing refused reached the record", eq(readDoc(root, DESIGN_FILE), doc));
+
+  // A rewrite: the previous standard and its control ids ride in with the PM's notes.
+  const q2 = scripted({ structured: DESIGN });
+  await write({ root, notes: "Bigger chips; a glove has to hit them.", _query: q2.query });
+  check("a rewrite is shown the previous design's standard, its control ids to keep, and the PM's notes",
+    /## The previous design's standard[\s\S]*Direction: A clipboard at a loading door[\s\S]*Commitments:\n- Two families/.test(q2.calls[0].prompt) && /## Existing control ids[\s\S]*- SCREEN-1 `record-exception` button "Record the exception"[\s\S]*- SCREEN-2 `delivery-row` link/.test(q2.calls[0].prompt) && /## The PM's notes\n\nBigger chips/.test(q2.calls[0].prompt));
+
+  // The arithmetic is the gate's, not the writer's: a design missing a claimed screen is written, found, and cannot be signed.
+  const q3 = scripted({ structured: { ...DESIGN, screens: [DESIGN.screens[0]] } });
+  const out3 = await write({ root, _query: q3.query });
+  check("a design missing a claimed screen is written and then found — the arithmetic blocks on screen-undesigned", out3.arithmetic.verdict === "block" && fired(out3.arithmetic).join() === "screen-undesigned@SCREEN-2" && eq(readVerdict(root, DESIGN_GATE), out3.arithmetic), fired(out3.arithmetic).join(" "));
+  const notAdding = refuse(() => signoff(root, { by: "Ana Ruiz" }));
+  check("nobody signs a design that does not add up — refused with the arithmetic's findings", notAdding?.code === "arithmetic-blocked" && notAdding.detail.length === 1, notAdding?.message);
+  await write({ root, _query: scripted({ structured: DESIGN }).query });
+
+  // The sign-off door before any review.
+  const absent = refuse(() => signoff(root, { by: "Ana Ruiz" }));
+  check("no reviewer verdict, no signature — review-absent, and it says none was ever filed", absent?.code === "review-absent" && absent.detail === "none", absent?.message);
+  const anon = refuse(() => signoff(root, { by: "  " }));
+  check("a sign-off is a named person's word — no name, no signature", anon?.code === "no-author");
+
+  // The reviewer: three findings — one re-raises the ruling by id, one breaks a declared commitment, one advises.
+  const findings = [
+    finding("SCREEN-1", "high", "certain", { rule: "standard-not-kept", evidence: "commitment \"weights 400 and 600 only\"; stylesheet sets font-weight:700 on the record button" }),
+    finding("RUL-1", "high", "certain", { rule: "decides-an-open-question", summary: "the recorded state should say whether the truck has left" }),
+    finding("SCREEN-2", "medium", "likely", { rule: "hero-spend" }),
+  ];
+  const r = scripted({ structured: { findings, deferred: [], checked: 2, skipped: 0 }, toolUses: [{ name: "Read", input: { file_path: HTML_FILE } }] });
+  const verdict = await review({ root, _query: r.query });
+  const ro = r.calls[0].options;
+  check("the reviewer is a judge: Read/Glob/Grep, the finding contract, billed to discovery.reviewer; its identity is the design reviewer's — the declared standard first — with the ruling and the arithmetic as checked elsewhere",
+    eq(ro.tools, ["Read", "Glob", "Grep"]) && eq(ro.outputFormat, { type: "json_schema", schema: outputContract("finding") }) && verdict.cost.model === "claude-opus-5" && /^# Design reviewer/.test(ro.systemPrompt) && /`standard-not-kept`/.test(ro.systemPrompt) && /RUL-1/.test(ro.systemPrompt) && DESIGN_RULES.every((x) => ro.systemPrompt.includes(x)) &&
+    readFileSync(ledgerPath(root), "utf8").trim().split("\n").map((l) => JSON.parse(l)).at(-1).role === "reviewer", ro.systemPrompt.slice(0, 200));
+  check("it is shown the declared standard before anything else, then the requirements, vocabulary, surfaces with their kind, prototype screens, stories, and the design whole — tokens, stylesheet, each screen's structure, states and controls",
+    /^## The declared standard\n\nDirection: A clipboard at a loading door/.test(r.calls[0].prompt) && /## Requirements inside the line[\s\S]*REQ-1\/AC-3/.test(r.calls[0].prompt) && /## Vocabulary[\s\S]*\*\*exception\*\*/.test(r.calls[0].prompt) &&
+    /## Surfaces inside the line — where each screen is read\n\n- \*\*SURF-1\*\* \(handheld web app\)/.test(r.calls[0].prompt) && !/SURF-2/.test(r.calls[0].prompt) && /## Prototype screens[\s\S]*SCREEN-2/.test(r.calls[0].prompt) && /## Stories[\s\S]*### STORY-2/.test(r.calls[0].prompt) &&
+    /## Design\n\nTokens:\n- font-display: Source Serif 4[\s\S]*- space-unit: 8[\s\S]*```css\n:root\{--paper[\s\S]*### SCREEN-1 — Recording an exception\n\nRead: Held one-handed[\s\S]*States:\n- \*\*choosing\*\*: [\s\S]*- \*\*recorded\*\* \(recording\): [\s\S]*Controls:\n- `reason-chip` chip "Short \/ Damaged \/ Wrong item"[\s\S]*### SCREEN-2[\s\S]*Writer's notes: Kept the prototype/.test(r.calls[0].prompt), r.calls[0].prompt.slice(0, 300));
+  check("the verdict: the re-raise removed and counted, the commitment break blocks, the advice rides along; filed with four pins and fresh",
+    verdict.reraised === 1 && verdict.findings.length === 2 && verdict.findings[0].rule === "standard-not-kept" && verdict.verdict === "block" && verdict.judged.length === 4 && eq(readVerdict(root, DESIGN_REVIEW), verdict) && freshVerdict(root, DESIGN_REVIEW) !== null, JSON.stringify(verdict.findings.map((x) => x.rule)));
+
+  // The sign-off door on a block: refused, then overridden by a human's word — on the record, hash unmoved.
+  const blocked = refuse(() => signoff(root, { by: "Ana Ruiz" }));
+  check("a blocking review is not signed — refused with the findings", blocked?.code === "review-blocked" && blocked.detail.length === 2, blocked?.message);
+  const noReason = refuse(() => signoff(root, { by: "Ana Ruiz", override: { reason: " " } }));
+  check("an override needs a reason", noReason?.code === "review-blocked");
+  const signedAt = new Date("2026-09-05T10:00:00Z");
+  const over = signoff(root, { by: "Ana Ruiz", note: "The 700 is one declaration; fixed at build.", override: { reason: "The direction is right; the weight slip is a token, not a design." }, _now: () => signedAt });
+  const after = readDoc(root, DESIGN_FILE);
+  const flag = loadPrd(root).flags.at(-1);
+  check("a human's word overrides: the design carries who, when, the review's verdict and the reason; its hash did not move; it validates and verifies; the badge says signed",
+    over.signed && after.signoff.by === "Ana Ruiz" && after.signoff.at === signedAt.toISOString() && after.signoff.content_hash === after.meta.content_hash && after.signoff.review.gate === DESIGN_REVIEW && after.signoff.review.verdict === "block" &&
+    after.signoff.override.reason.startsWith("The direction is right") && after.meta.content_hash === doc.meta.content_hash && validate("design", after).ok && verify(after).verdict === "pass" && staleness(root).design.signed === true, JSON.stringify(after.signoff));
+  check("the override is on the PRD as an override flag under the design section, naming the signer and the reason", flag.kind === "override" && flag.section === "design" && /design signed by Ana Ruiz over a BLOCK from design-reviewer: The direction is right/.test(flag.note) && flag.at === signedAt.toISOString(), JSON.stringify(flag));
+  check("signing moved nothing the reviewer pinned — the verdict is still fresh", freshVerdict(root, DESIGN_REVIEW) !== null && freshVerdict(root, DESIGN_GATE) !== null);
+
+  // A rewrite is a new design: the fresh verdict rides in, the signature stays behind, the verdict goes stale.
+  const q4 = scripted({ structured: { ...DESIGN, tokens: { ...DESIGN.tokens, "color-pen": "#a02018" } } });
+  await write({ root, _query: q4.query });
+  check("a fresh reviewer verdict rides into the rewrite, findings first and their authority stated, without the re-raise",
+    /## The reviewer's findings on the previous design\n\nThe design-reviewer gate returned BLOCK on the previous version/.test(q4.calls[0].prompt) && /1\. \[high\/certain\] standard-not-kept — SCREEN-1/.test(q4.calls[0].prompt) && !/RUL-1/.test(q4.calls[0].prompt.split("## The reviewer's findings")[1]));
+  const redone = readDoc(root, DESIGN_FILE);
+  const rebadge = staleness(root).design;
+  check("the rewrite is unsigned, its hash moved, the review verdict is no longer fresh though its file is there, and the badge says unsigned and not stale",
+    !("signoff" in redone) && redone.meta.content_hash !== after.meta.content_hash && freshVerdict(root, DESIGN_REVIEW) === null && existsSync(join(root, "discovery", "reviews", `${DESIGN_REVIEW}.json`)) && rebadge.signed === false && !rebadge.stale, JSON.stringify(rebadge));
+  const stale = refuse(() => signoff(root, { by: "Ana Ruiz" }));
+  check("a stale verdict is nothing — review-absent, and it says the one on file is stale", stale?.code === "review-absent" && stale.detail === "stale", stale?.message);
+
+  // A clean review is signed plainly; a ruling afterwards stales the design but not the signature.
+  const cleanReview = await review({ root, _query: scripted({ structured: { findings: [], deferred: [], checked: 2, skipped: 0 } }).query });
+  const plain = signoff(root, { by: "Ana Ruiz", override: { reason: "not needed" } });
+  const plainFlag = loadPrd(root).flags.at(-1);
+  check("a passing review is signed without an override even when a reason is offered — a note flag on the PRD, no override on the design",
+    cleanReview.verdict === "pass" && plain.signed && !("override" in plain.design.signoff) && plain.design.signoff.review.verdict === "pass" && plainFlag.kind === "note" && /design signed by Ana Ruiz \(design-reviewer pass\)/.test(plainFlag.note), JSON.stringify(plainFlag));
+  answer({ root, req: "REQ-2", oq: "OQ-2", answer: "The receiving lead.", by: "Brad" });
+  const moved = staleness(root).design;
+  check("a ruling after sign-off: the design wears the badge naming RUL-2 and stays signed — the signature is on this content; whether it needs redoing is the PM's call",
+    moved.stale && moved.prd_moved && !moved.stories_moved && moved.since.join() === "RUL-2" && moved.signed === true, JSON.stringify(moved));
+  check("every call went through the script and the ledger holds them all", readFileSync(ledgerPath(root), "utf8").trim().split("\n").length === 1 + 3 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1);
 });
 
 done();

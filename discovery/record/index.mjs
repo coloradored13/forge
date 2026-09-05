@@ -15,6 +15,7 @@ export { PRD_FILE };
 export const PROTOTYPE_FILE = join("discovery", "prototype.json");
 export const HTML_FILE = join("discovery", "prototype", "index.html");
 export const STORIES_FILE = join("discovery", "stories.json");
+export const DESIGN_FILE = join("discovery", "design.json");
 export const REVIEWS = join("discovery", "reviews");
 
 export class Refused extends Error {
@@ -61,10 +62,12 @@ export function freshVerdict(root, gate) {
 
 // ── traces, versions, rulings ──
 
-export function traceOf(prd, proto) {
+/** What a document was written from, by hash: the PRD always; the prototype and the stories when the document sits after them. */
+export function traceOf(prd, proto, stories) {
   return {
     prd: { version: prd.meta.version, content_hash: prd.meta.content_hash },
     ...(proto ? { prototype: { content_hash: proto.meta.content_hash } } : {}),
+    ...(stories ? { stories: { content_hash: stories.meta.content_hash } } : {}),
   };
 }
 
@@ -87,18 +90,21 @@ export function rulingsOf(prd) {
 
 /**
  * The stale badge per downstream document: whether what it traces still matches the
- * PRD (and, for stories, the prototype), and which rulings and amendments landed
- * after the version it was made from. A badge is shown, never enforced — the PM
- * decides whether the document needs redoing.
+ * PRD (and, further down, the prototype and the stories), and which rulings and
+ * amendments landed after the version it was made from. A badge is shown, never
+ * enforced — the PM decides whether the document needs redoing. The design also
+ * says whether its sign-off is on this exact version.
  */
 export function staleness(root) {
   const prd = loadPrd(root);
   const proto = readDoc(root, PROTOTYPE_FILE);
   const stories = readDoc(root, STORIES_FILE);
+  const design = readDoc(root, DESIGN_FILE);
   const since = (version) => [
     ...(prd.rulings ?? []).filter((r) => cmpVersion(r.version, version) > 0).map((r) => r.id),
     ...(prd.amendments ?? []).filter((a) => a.status === "approved" && cmpVersion(a.resulting_version, version) > 0).map((a) => a.id),
   ];
+  const moved = (traced, current) => !current || traced.content_hash !== current.meta.content_hash;
   const badge = (doc, extra = {}) => {
     const traced = doc.traces.prd;
     const prd_moved = traced.content_hash !== prd.meta.content_hash;
@@ -107,8 +113,14 @@ export function staleness(root) {
   return {
     prd: { version: prd.meta.version, content_hash: prd.meta.content_hash },
     prototype: proto ? badge(proto) : null,
-    stories: stories ? badge(stories, { prototype_moved: !proto || stories.traces.prototype.content_hash !== proto.meta.content_hash }) : null,
+    stories: stories ? badge(stories, { prototype_moved: moved(stories.traces.prototype, proto) }) : null,
+    design: design ? { ...badge(design, { prototype_moved: moved(design.traces.prototype, proto), stories_moved: moved(design.traces.stories, stories) }), signed: isSigned(design) } : null,
   };
+}
+
+/** Signed means a named person signed this exact content — a regenerate leaves the signature behind. */
+export function isSigned(design) {
+  return Boolean(design?.signoff) && design.signoff.content_hash === design.meta.content_hash;
 }
 
 // ── how the record reads to an agent ──
@@ -127,8 +139,13 @@ export function renderRequirement(r) {
 }
 
 /** The PRD as a writer or reviewer after the line reads it: the problem, the shape, what is inside the line, the surfaces that carry it. */
-export function renderPrd(prd) {
+/** The shipped surfaces inside the line, with their kind — where each screen is read. */
+export function renderSurfaces(prd) {
   const past = new Set((prd.mvp?.past ?? []).map((p) => p.ref));
+  return (prd.surfaces?.shipped ?? []).filter((s) => !past.has(s.id)).map((s) => `- **${s.id}** (${s.kind}) ${s.statement} — carries ${s.req_refs.join(", ") || "(nothing bound yet)"}`).join("\n") || "(none)";
+}
+
+export function renderPrd(prd) {
   const parts = [];
   parts.push(`## Problem\n\nWho: ${prd.problem.who}\nProblem: ${prd.problem.problem}\nCrux: ${prd.problem.crux}`);
   parts.push(`## Solution\n\n${prd.solution.summary}`);
@@ -139,7 +156,7 @@ export function renderPrd(prd) {
   if (sh.clocks?.length) shape.push(`Clocks:\n${sh.clocks.map((c) => `- ${c.id} ${c.boundary}: ${c.rule} (${c.owner})`).join("\n")}`);
   if (shape.length) parts.push(`## Shape\n\n${shape.join("\n\n")}`);
   parts.push(`## Vocabulary — the words to use\n\n${(sh.vocabulary ?? []).map((v) => `- **${v.term}**: ${v.definition}`).join("\n") || "(none defined)"}`);
-  parts.push(`## Surfaces inside the line\n\n${(prd.surfaces?.shipped ?? []).filter((s) => !past.has(s.id)).map((s) => `- **${s.id}** (${s.kind}) ${s.statement} — carries ${s.req_refs.join(", ") || "(nothing bound yet)"}`).join("\n") || "(none)"}`);
+  parts.push(`## Surfaces inside the line\n\n${renderSurfaces(prd)}`);
   parts.push(`## Requirements inside the line\n\n${insideRequirements(prd).map(renderRequirement).join("\n") || "(none)"}`);
   if (prd.constraints?.length) parts.push(`## Constraints\n\n${prd.constraints.map((c) => `- ${c}`).join("\n")}`);
   const open = (prd.open_questions ?? []).filter((q) => q.status === "open");
@@ -164,4 +181,28 @@ export function renderStories(doc) {
     ...(s.scenarios ?? []).map((sc) => `**${sc.name}** proves ${sc.proves.join(", ")}\n\`\`\`gherkin\n${sc.gherkin.trim()}\n\`\`\``),
   ].join("\n\n")).join("\n\n");
   return `Epics:\n${epics}\n\n${stories || "(no stories)"}`;
+}
+
+/** The declared standard alone — what the writer promised, as the reviewer reads it before the screens. */
+export function renderStandard(std) {
+  return [
+    `Direction: ${std.direction}`,
+    `Heroes:\n${(std.heroes ?? []).map((h) => `- ${h.screen_ref}: ${h.moment}`).join("\n") || "(none)"}`,
+    `Commitments:\n${(std.commitments ?? []).map((c) => `- ${c}`).join("\n") || "(none)"}`,
+  ].join("\n\n");
+}
+
+/** The design as a reviewer or a later stage reads it: tokens, the stylesheet, then each screen whole. */
+export function renderDesign(doc) {
+  const tokens = Object.entries(doc.tokens ?? {}).map(([k, v]) => `- ${k}: ${v}`).join("\n") || "(none)";
+  const screens = (doc.screens ?? []).map((s) => [
+    `### ${s.screen_ref} — ${s.name}`,
+    `Read: ${s.moment}`,
+    `Structure:\n${s.structure}`,
+    `States:\n${(s.states ?? []).map((st) => `- **${st.name}**${st.entered_by ? ` (${st.entered_by})` : ""}: ${st.renders}`).join("\n")}`,
+    `Controls:\n${(s.controls ?? []).map((c) => `- \`${c.id}\` ${c.kind} "${c.label}"${c.state ? ` in ${c.state}` : ""}`).join("\n") || "(none)"}`,
+  ].join("\n\n")).join("\n\n");
+  const parts = [`Tokens:\n${tokens}`, `Stylesheet:\n\`\`\`css\n${String(doc.stylesheet ?? "").trim()}\n\`\`\``, screens || "(no screens)"];
+  if (doc.notes?.trim()) parts.push(`Writer's notes: ${doc.notes.trim()}`);
+  return parts.join("\n\n");
 }
