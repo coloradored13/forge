@@ -1,0 +1,167 @@
+// owns: R3, R4 · discovery — the discovery record: where each document lives beside the
+// PRD, what it traces, how the PRD's settled rulings ride into every writer and reviewer
+// after it (R3), and the stale badge a document wears once the PRD has moved past what
+// it traces — with the rulings and amendments that moved it (R4). Also how the record
+// reads to an agent: one rendering per document, used by every prompt that shows it.
+
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { validate } from "../../shared/schema/index.mjs";
+import { stamp } from "../../shared/hash.mjs";
+import { verdictFreshness } from "../../shared/judge/index.mjs";
+import { PRD_FILE, loadPrd } from "../workshop/index.mjs";
+
+export { PRD_FILE };
+export const PROTOTYPE_FILE = join("discovery", "prototype.json");
+export const HTML_FILE = join("discovery", "prototype", "index.html");
+export const STORIES_FILE = join("discovery", "stories.json");
+export const REVIEWS = join("discovery", "reviews");
+
+export class Refused extends Error {
+  constructor(code, message, detail) { super(message); this.code = code; if (detail !== undefined) this.detail = detail; }
+}
+
+// ── documents ──
+
+export function readDoc(root, file) {
+  const p = join(root, file);
+  return existsSync(p) ? JSON.parse(readFileSync(p, "utf8")) : null;
+}
+
+/** Stamp, validate, write. An invalid document is never written — the refusal names the fields. */
+export function saveDoc(root, file, schema, doc) {
+  stamp(doc);
+  const v = validate(schema, doc);
+  if (!v.ok) throw new Refused(`${schema}-invalid`, `${file}: the document does not fit its schema — ${v.errors.slice(0, 5).join("; ")}`, v.errors);
+  const p = join(root, file);
+  mkdirSync(dirname(p), { recursive: true });
+  writeFileSync(p, JSON.stringify(doc, null, 2) + "\n");
+  return doc;
+}
+
+/** A gate's verdict, filed under its gate id (or a name under it). Validated: a verdict that does not fit the shape is not a verdict. */
+export function saveVerdict(root, verdict, name = verdict?.gate) {
+  const v = validate("finding", verdict);
+  if (!v.ok) throw new Refused("verdict-invalid", `${verdict?.gate}: the verdict does not validate — ${v.errors.slice(0, 5).join("; ")}`, v.errors);
+  const p = join(root, REVIEWS, `${name}.json`);
+  mkdirSync(dirname(p), { recursive: true });
+  writeFileSync(p, JSON.stringify(verdict, null, 2) + "\n");
+  return p;
+}
+
+export function readVerdict(root, gate) {
+  return readDoc(root, join(REVIEWS, `${gate}.json`));
+}
+
+/** The verdict only if every artifact it pinned is still the one on disk; presence alone is nothing. */
+export function freshVerdict(root, gate) {
+  const v = readVerdict(root, gate);
+  return v && verdictFreshness(v, { root }).fresh ? v : null;
+}
+
+// ── traces, versions, rulings ──
+
+export function traceOf(prd, proto) {
+  return {
+    prd: { version: prd.meta.version, content_hash: prd.meta.content_hash },
+    ...(proto ? { prototype: { content_hash: proto.meta.content_hash } } : {}),
+  };
+}
+
+export function cmpVersion(a, b) {
+  const pa = String(a).split(".").map(Number), pb = String(b).split(".").map(Number);
+  for (let i = 0; i < 3; i++) if ((pa[i] ?? 0) !== (pb[i] ?? 0)) return (pa[i] ?? 0) - (pb[i] ?? 0);
+  return 0;
+}
+
+/** major.minor.patch; `minor` resets patch. Material changes bump minor, the rest patch. */
+export function bumpVersion(v, part) {
+  const [ma, mi, pa] = String(v).split(".").map((n) => Number(n) || 0);
+  return part === "minor" ? `${ma}.${mi + 1}.0` : `${ma}.${mi}.${pa + 1}`;
+}
+
+/** The PRD's rulings as every writer, reviewer and judge after the answer door receives them (R3). */
+export function rulingsOf(prd) {
+  return (prd.rulings ?? []).map(({ id, oq, question, answer, criterion }) => ({ id, ...(oq ? { oq } : {}), question, answer, criterion }));
+}
+
+/**
+ * The stale badge per downstream document: whether what it traces still matches the
+ * PRD (and, for stories, the prototype), and which rulings and amendments landed
+ * after the version it was made from. A badge is shown, never enforced — the PM
+ * decides whether the document needs redoing.
+ */
+export function staleness(root) {
+  const prd = loadPrd(root);
+  const proto = readDoc(root, PROTOTYPE_FILE);
+  const stories = readDoc(root, STORIES_FILE);
+  const since = (version) => [
+    ...(prd.rulings ?? []).filter((r) => cmpVersion(r.version, version) > 0).map((r) => r.id),
+    ...(prd.amendments ?? []).filter((a) => a.status === "approved" && cmpVersion(a.resulting_version, version) > 0).map((a) => a.id),
+  ];
+  const badge = (doc, extra = {}) => {
+    const traced = doc.traces.prd;
+    const prd_moved = traced.content_hash !== prd.meta.content_hash;
+    return { stale: prd_moved || Object.values(extra).some(Boolean), prd_moved, ...extra, traced_version: traced.version, current_version: prd.meta.version, since: since(traced.version) };
+  };
+  return {
+    prd: { version: prd.meta.version, content_hash: prd.meta.content_hash },
+    prototype: proto ? badge(proto) : null,
+    stories: stories ? badge(stories, { prototype_moved: !proto || stories.traces.prototype.content_hash !== proto.meta.content_hash }) : null,
+  };
+}
+
+// ── how the record reads to an agent ──
+
+const insideLine = (prd) => new Set(prd.mvp?.inside ?? []);
+
+/** The requirements inside the line, with every criterion by its join id. */
+export function insideRequirements(prd) {
+  const inside = insideLine(prd);
+  return (prd.requirements ?? []).filter((r) => inside.has(r.id));
+}
+
+export function renderRequirement(r) {
+  const acs = (r.acceptance_criteria ?? []).map((ac) => `  - ${r.id}/${ac.id}: ${ac.statement}`);
+  return [`- **${r.id}** [${r.type}] ${r.statement}`, `  Done when: ${r.done_definition}`, ...acs].join("\n");
+}
+
+/** The PRD as a writer or reviewer after the line reads it: the problem, the shape, what is inside the line, the surfaces that carry it. */
+export function renderPrd(prd) {
+  const past = new Set((prd.mvp?.past ?? []).map((p) => p.ref));
+  const parts = [];
+  parts.push(`## Problem\n\nWho: ${prd.problem.who}\nProblem: ${prd.problem.problem}\nCrux: ${prd.problem.crux}`);
+  parts.push(`## Solution\n\n${prd.solution.summary}`);
+  const sh = prd.shape ?? {};
+  const shape = [];
+  if (sh.lifecycles?.length) shape.push(`Lifecycles:\n${sh.lifecycles.map((l) => `- ${l.id} ${l.subject}: ${l.states.join(" → ")} (${l.owner})`).join("\n")}`);
+  if (sh.attribution?.length) shape.push(`Attribution:\n${sh.attribution.map((a) => `- ${a.id} ${a.action} — ${a.actor}, known by ${a.known_by}`).join("\n")}`);
+  if (sh.clocks?.length) shape.push(`Clocks:\n${sh.clocks.map((c) => `- ${c.id} ${c.boundary}: ${c.rule} (${c.owner})`).join("\n")}`);
+  if (shape.length) parts.push(`## Shape\n\n${shape.join("\n\n")}`);
+  parts.push(`## Vocabulary — the words to use\n\n${(sh.vocabulary ?? []).map((v) => `- **${v.term}**: ${v.definition}`).join("\n") || "(none defined)"}`);
+  parts.push(`## Surfaces inside the line\n\n${(prd.surfaces?.shipped ?? []).filter((s) => !past.has(s.id)).map((s) => `- **${s.id}** (${s.kind}) ${s.statement} — carries ${s.req_refs.join(", ") || "(nothing bound yet)"}`).join("\n") || "(none)"}`);
+  parts.push(`## Requirements inside the line\n\n${insideRequirements(prd).map(renderRequirement).join("\n") || "(none)"}`);
+  if (prd.constraints?.length) parts.push(`## Constraints\n\n${prd.constraints.map((c) => `- ${c}`).join("\n")}`);
+  const open = (prd.open_questions ?? []).filter((q) => q.status === "open");
+  if (open.length) parts.push(`## Open questions — unanswered; take the most visible reading and say so\n\n${open.map((q) => `- ${q.id} ${q.question} (${q.owner})`).join("\n")}`);
+  return parts.join("\n\n");
+}
+
+export function renderPrototype(proto) {
+  const screens = (proto.screens ?? []).map((s) => `- **${s.id}** "${s.name}" on ${s.surface_ref} — ${s.req_refs.join(", ") || "(no requirements)"}`).join("\n") || "(no screens)";
+  const lines = [`Screens:\n${screens}`];
+  if (proto.uncovered?.length) lines.push(`Not shown by the prototype: ${proto.uncovered.join(", ")}`);
+  if (proto.notes?.trim()) lines.push(`Builder's notes: ${proto.notes.trim()}`);
+  lines.push(`The prototype itself is at \`${proto.file}\` — read it; what it shows is evidence, what this list says is a claim.`);
+  return lines.join("\n\n");
+}
+
+export function renderStories(doc) {
+  const epics = (doc.epics ?? []).map((e) => `- **${e.id}** ← ${e.req_ref}: ${e.title}`).join("\n") || "(no epics)";
+  const stories = (doc.stories ?? []).map((s) => [
+    `### ${s.id} (${s.epic}) — ${s.req_refs.join(", ")} · screens ${s.screen_refs.join(", ") || "(none)"}`,
+    s.statement,
+    ...(s.scenarios ?? []).map((sc) => `**${sc.name}** proves ${sc.proves.join(", ")}\n\`\`\`gherkin\n${sc.gherkin.trim()}\n\`\`\``),
+  ].join("\n\n")).join("\n\n");
+  return `Epics:\n${epics}\n\n${stories || "(no stories)"}`;
+}

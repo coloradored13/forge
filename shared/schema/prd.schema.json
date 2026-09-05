@@ -4,7 +4,7 @@
   "title": "PRD",
   "description": "What a PM signs: the diagnosis, the whole product's shape, the solution and its scope, requirements with criteria, the surfaces that ship, the MVP line, and how success is measured. The workshop fills it one section at a time from a transcript; the runner owns identity, state, flags and the hash. Compiles to the contract; export freezes it.",
   "type": "object",
-  "required": ["id", "created", "meta", "seed", "problem", "shape", "solution", "surfaces", "requirements", "mvp", "okr", "open_questions", "constraints", "flags", "sections", "x-drift-checked"],
+  "required": ["id", "created", "meta", "seed", "problem", "shape", "solution", "surfaces", "requirements", "mvp", "okr", "open_questions", "constraints", "flags", "rulings", "amendments", "sections", "x-drift-checked"],
   "additionalProperties": false,
   "properties": {
     "id": { "type": "string", "x-runner": true, "description": "prd-<slug>." },
@@ -294,6 +294,72 @@
           "section": { "type": "string" },
           "kind": { "enum": ["kill_suggested", "override", "note"] },
           "note": { "type": "string" }
+        }
+      }
+    },
+    "rulings": {
+      "type": "array",
+      "x-runner": true,
+      "description": "Rulings are spec (R3): a PM's answer made a criterion in one operation — attributed, pinned to the PRD version it landed in, ridden into every writer, reviewer and judge, never re-raised. Append-only; written by the answer door.",
+      "items": {
+        "type": "object",
+        "required": ["id", "question", "answer", "by", "at", "criterion", "version", "prd_hash"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string", "pattern": "^RUL-\\d+$" },
+          "oq": { "type": "string", "pattern": "^OQ-\\d+$", "description": "The open question this answers, when it answers one." },
+          "question": { "type": "string" },
+          "answer": { "type": "string" },
+          "by": { "type": "string" },
+          "at": { "type": "string" },
+          "criterion": { "type": "string", "pattern": "^REQ-\\d+/AC-\\d+$", "description": "The acceptance criterion the answer became." },
+          "version": { "type": "string", "description": "The PRD version the ruling landed in." },
+          "prd_hash": { "type": "string", "description": "The PRD content hash after the ruling landed." }
+        }
+      }
+    },
+    "amendments": {
+      "type": "array",
+      "x-runner": true,
+      "description": "Amendments are audited at mint (R4): every proposal carries its blast radius and the vocabulary it introduces, and the PM approves the radius, not just the edit. Append-only; written by the amend door.",
+      "items": {
+        "type": "object",
+        "required": ["id", "target", "adds", "to", "rationale", "by", "at", "origin", "material", "radius", "introduces", "status", "against_version", "against_hash"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string", "pattern": "^AMD-\\d+$" },
+          "target": { "type": "string", "description": "JSON pointer into the PRD's model-facing content." },
+          "adds": { "type": "boolean", "description": "True when the target does not exist yet and the amendment creates it." },
+          "from": { "description": "What the target held when the amendment was proposed. Absent when it adds." },
+          "to": { "description": "What the target will hold." },
+          "rationale": { "type": "string" },
+          "by": { "type": "string" },
+          "at": { "type": "string" },
+          "origin": { "enum": ["pm", "reviewer", "delivery"], "description": "Where the need came from. Amendments Delivery sends back are the funnel's leak (R8)." },
+          "material": { "type": "boolean", "description": "True when the target is under a drift-checked pointer: approving it moves the hash and bumps the minor version." },
+          "radius": {
+            "type": "object",
+            "description": "Everything the change touches, computed at mint and recomputed at approval.",
+            "required": ["criteria", "stories", "screens", "terms"],
+            "additionalProperties": false,
+            "properties": {
+              "criteria": { "type": "array", "items": { "type": "string" } },
+              "stories": { "type": "array", "items": { "type": "string" } },
+              "screens": { "type": "array", "items": { "type": "string" } },
+              "terms": { "type": "array", "items": { "type": "string" }, "description": "Vocabulary terms the changed text uses." }
+            }
+          },
+          "introduces": { "type": "array", "items": { "type": "string" }, "description": "Words the new text uses that the PRD's drift-checked content does not — vocabulary arriving undeclared." },
+          "status": { "enum": ["proposed", "approved", "rejected"] },
+          "against_version": { "type": "string" },
+          "against_hash": { "type": "string" },
+          "resulting_version": { "type": "string" },
+          "decided": {
+            "type": "object",
+            "required": ["by", "at"],
+            "additionalProperties": false,
+            "properties": { "by": { "type": "string" }, "at": { "type": "string" }, "note": { "type": "string" } }
+          }
         }
       }
     },

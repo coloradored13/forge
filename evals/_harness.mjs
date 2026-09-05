@@ -29,8 +29,9 @@ export function suite(name) {
  * A scripted SDK: yields what `query()` would — a text block, optional tool uses, a
  * result with cost, usage and structured output — and records every invocation so a
  * suite can read what reached the wire. `text` and `usd` may be arrays, and
- * `structuredSeq` a list, to script successive calls. No model is ever called through
- * this (R15).
+ * `structuredSeq` a list, to script successive calls. `toolUses` are tool names, or
+ * `{ name, input }` when the suite needs to script what the tool was pointed at. No
+ * model is ever called through this (R15).
  */
 export function scripted({ text = "ok", structured, structuredSeq, usd = 0.05, tokens = { in: 1000, out: 200 }, throwWith, resultError, toolUses = [], sessionId = "sess-1" } = {}) {
   const calls = [];
@@ -43,7 +44,8 @@ export function scripted({ text = "ok", structured, structuredSeq, usd = 0.05, t
     const out = structuredSeq ? structuredSeq[Math.min(i, structuredSeq.length - 1)] : structured;
     return (async function* () {
       yield { type: "system", subtype: "init", session_id: sessionId };
-      yield { type: "assistant", session_id: sessionId, message: { content: [...toolUses.map((t) => ({ type: "tool_use", name: t, input: { file_path: "x" } })), { type: "text", text: nth(text, i) }] } };
+      const uses = toolUses.map((t) => (typeof t === "string" ? { type: "tool_use", name: t, input: { file_path: "x" } } : { type: "tool_use", name: t.name, input: t.input ?? {} }));
+      yield { type: "assistant", session_id: sessionId, message: { content: [...uses, { type: "text", text: nth(text, i) }] } };
       yield {
         type: "result", session_id: sessionId, subtype: resultError ? "error_during_execution" : "success", is_error: !!resultError, errors: resultError ? [resultError] : [],
         total_cost_usd: nth(usd, i), num_turns: 3, structured_output: out,
