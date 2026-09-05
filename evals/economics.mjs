@@ -32,6 +32,9 @@ await withRoot({}, async (root) => {
   check("the call returns what it cost", r.usd === 0.12 && r.model === "claude-opus-5" && r.text === "ok", JSON.stringify(r));
   check("the model, the tool policy and the system prompt reach the SDK",
     q.calls[0].options.model === "claude-opus-5" && q.calls[0].options.allowedTools.includes("Write") && q.calls[0].options.systemPrompt === "s");
+  check("the call is isolated from the operator's Claude Code — no settings, CLAUDE.md, MCP servers or hooks load under the identity (first real call: 44k tokens of them did)",
+    Array.isArray(q.calls[0].options.settingSources) && q.calls[0].options.settingSources.length === 0 && q.calls[0].options.strictMcpConfig === true && q.calls[0].options.mcpServers === undefined,
+    JSON.stringify({ settingSources: q.calls[0].options.settingSources, strictMcpConfig: q.calls[0].options.strictMcpConfig }));
 
   const bad = scripted({ usd: 0.03, resultError: "the agent fell over" });
   let threw = null;
