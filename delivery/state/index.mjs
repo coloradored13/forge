@@ -215,6 +215,13 @@ function verdictAt(root, path) {
  * One event through the store: read, guard, write. `verdict` is the root-relative path
  * the wrapper filed (finish, clear, reblock); the approve door reads the stage's recorded
  * verdict and checks its pins against disk itself — nothing about freshness is passed in.
+ *
+ * The record is written before the round is kept. Retention copies what the table already
+ * admitted; a copy that fails must not undo the admission (the verdict is on disk and the
+ * round happened) and must not pass unremarked (a round the reader cannot find is a judge
+ * miss nobody can attribute). So a failed keep takes the table's own door: the stage is
+ * stopped by the store with the error as the flagged reason, and the error is rethrown —
+ * the record says what happened, and the caller hears it.
  */
 export function transition(root, { stage, event, by, reason, override, verdict, now } = {}) {
   const run = needRun(root);
@@ -224,8 +231,16 @@ export function transition(root, { stage, event, by, reason, override, verdict, 
   const freshness = doc ? verdictFreshness(doc, { root }) : null;
   const ctx = { stage, event, by, reason, override, now, verdict: doc ? { verdict: doc.verdict, path } : null, fresh: freshness?.fresh ?? null };
   const out = apply(run, ctx);
-  if (out.filed) retain(root, { stage, event, round: out.run.stages[stage].round, path, doc, stale: freshness.stale, now });
   writeRun(root, out.run);
+  if (out.filed) {
+    try {
+      retain(root, { stage, event, round: out.run.stages[stage].round, path, doc, stale: freshness.stale, now });
+    } catch (err) {
+      const reason = `retention: ${String(err.message).split("\n")[0]}`.slice(0, 400);
+      writeRun(root, apply(out.run, { stage, event: "stop", by: "store", reason, now }).run);
+      throw err;
+    }
+  }
   return out;
 }
 

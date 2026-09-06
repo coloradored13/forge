@@ -19,7 +19,7 @@ import { validate, load, contractOf } from "../shared/schema/index.mjs";
 import { stamp } from "../shared/hash.mjs";
 import { Refused } from "../shared/refused.mjs";
 import {
-  RUN_FILE, STAGES, STATES, EVENTS, TRANSITIONS, GUARDS, DEFAULTS,
+  RUN_FILE, ROUNDS, STAGES, STATES, EVENTS, TRANSITIONS, GUARDS, DEFAULTS,
   createRun, readRun, apply, transition, heartbeat, liveness, view, adoptHandoff,
 } from "../delivery/state/index.mjs";
 
@@ -298,6 +298,24 @@ await withRoot({}, async (tmp) => {
     adopted.run.handoff.version === 4 && adopted.run.handoff.content_hash === v3.handoff.meta.content_hash && adopted.moved.join() === "intake" && readRun(root).stages.intake.status === "stale" && readRun(root).stages.sdd.status === "running" && readRun(root).flags.at(-1).event === "moved" && /v2 → v4/.test(readRun(root).flags.at(-1).reason), JSON.stringify(adopted.moved));
   check("the view over the store reads the file, not memory: intake stale, sdd running and alive, three others pending",
     view(readRun(root), at(180_000)).stages.map((s) => s.shown).join() === "stale,running,pending,pending,pending");
+
+  // Retention comes after the record: a finish is written before its round is kept, and a keep
+  // that fails stops the stage on the record with the error as the reason — never a stage left
+  // running with a verdict on disk, and never a review whose round was silently not kept.
+  const sddVerdict = join("forge", "delivery", "reviews", "sdd-1.json");
+  writeFileSync(join(root, sddVerdict), JSON.stringify({ ...filed, gate: "sdd" }));
+  writeFileSync(join(root, ROUNDS, "sdd"), "a file where the stage's rounds directory goes\n");
+  const unkept = refusal(() => transition(root, { stage: "sdd", event: "finish", by: "wrapper", verdict: sddVerdict, now: at(190_000) }));
+  check("a retention failure is thrown, not swallowed", unkept !== null && /ENOTDIR|not a directory/i.test(unkept.message), unkept?.message);
+  const after = readRun(root);
+  check("…the finish was written before the keep was tried: the verdict path and the counted round are on the record",
+    after.stages.sdd.verdict === sddVerdict && after.stages.sdd.round === 1 && after.stages.sdd.finished_at === at(190_000).toISOString(), JSON.stringify(after.stages.sdd));
+  check("…and the stage is stopped by the store through the table, the retention error as the flagged reason",
+    after.stages.sdd.status === "stopped" && after.flags.at(-1).event === "stop" && after.flags.at(-1).stage === "sdd" && after.flags.at(-1).by === "store" && /^retention: .*(ENOTDIR|not a directory)/i.test(after.flags.at(-1).reason) && after.flags.at(-1).override === false,
+    JSON.stringify(after.flags.at(-1)));
+  check("the stopped record validates — a stop the store takes is a stop the schema admits", validate("run", after).ok, validate("run", after).errors.join("; "));
+  const restarted = refusal(() => transition(root, { stage: "sdd", event: "start", by: "wrapper", now: at(200_000) }));
+  check("start from the stopped stage opens a new episode at round 0, the same as any stop", restarted === null && readRun(root).stages.sdd.status === "running" && readRun(root).stages.sdd.round === 0, restarted?.message);
 });
 
 done();
