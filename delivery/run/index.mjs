@@ -10,9 +10,9 @@
 import { join } from "node:path";
 import { Refused } from "../../shared/refused.mjs";
 import { readDoc } from "../../shared/store.mjs";
-import { rows } from "../../shared/agent-call/index.mjs";
+import { rows, estimate, standing, modelFor } from "../../shared/agent-call/index.mjs";
 import { STAGES, LEDGER, readRun, transition, heartbeat, liveness } from "../state/index.mjs";
-import { intake, takePinned, INTAKE_FILE } from "../intake/index.mjs";
+import { intake, takePinned, compile, slice, INTAKE_FILE } from "../intake/index.mjs";
 import { round as sddRound, rejudge as sddRejudge } from "../sdd/index.mjs";
 
 export { Refused };
@@ -23,20 +23,48 @@ export const PULSE_MS = 15_000;
  * The stages this loop can run, each as `round(root, ctx)` and `rejudge(root, ctx)`
  * returning the root-relative path of the verdict it filed. `writer` says whether a block
  * can be regenerated: a stage with no writer (intake) blocks on what the snapshot carries,
- * and the doors are the human's from the first round.
+ * and the doors are the human's from the first round. `calls` is the shape of one round —
+ * how many writer and judge calls it makes for a given snapshot — which is what an
+ * estimate multiplies by the ledger's history (R1).
  */
 export const AUTHORED = {
   intake: {
     writer: false,
     round: (root, ctx) => intake(root, { now: ctx.now }).verdict,
     rejudge: (root, ctx) => intake(root, { now: ctx.now }).verdict,
+    calls: () => ({ writer: 0, judge: 0 }),
   },
   sdd: {
     writer: true,
     round: async (root, ctx) => (await sddRound(root, ctx)).file,
     rejudge: async (root, ctx) => (await sddRejudge(root, ctx)).file,
+    // one binding for the set, one judge per work item — the items intake sliced, or the ones it will
+    calls: ({ handoff, intake }) => ({ writer: 1, judge: (intake?.work_items ?? slice(handoff, compile(handoff).scenarios)).length }),
   },
 };
+
+/**
+ * What a round of each stage is likely to cost, before it is spent (R1): the round's shape
+ * times the ledger's mean for that role and model — and no number where there is no
+ * history, because a number from a rate card would be shown with the same confidence as a
+ * measured one. `usd` is null until every role the shape needs has history. `standing` is
+ * the spend against the run's budget.
+ */
+export function estimateRun(root, { handoff, intake = null, models = {}, budget = null } = {}) {
+  const ledger = join(root, LEDGER);
+  const stages = Object.entries(AUTHORED).map(([stage, a]) => {
+    const shape = a.calls({ handoff, intake });
+    const roles = Object.entries(shape).filter(([, n]) => n > 0).map(([role, calls]) => {
+      const model = modelFor({ half: "delivery", role }, models);
+      const e = estimate(ledger, { half: "delivery", role, model });
+      return { role, model, calls, per_call: e.usd, n: e.n, usd: e.usd == null ? null : e.usd * calls };
+    });
+    const known = roles.every((r) => r.usd != null);
+    return { stage, calls: roles.reduce((n, r) => n + r.calls, 0), roles, usd: known ? roles.reduce((n, r) => n + r.usd, 0) : null };
+  });
+  const known = stages.every((s) => s.usd != null);
+  return { stages, calls: stages.reduce((n, s) => n + s.calls, 0), usd: known ? stages.reduce((n, s) => n + s.usd, 0) : null, standing: standing(ledger, budget) };
+}
 
 /**
  * Run one stage through one episode, from wherever it stands. Refuses `no-stage`,

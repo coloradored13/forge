@@ -1,12 +1,12 @@
 // owns: R1, R10 · discovery — the PM's views, as data. Each is the record read through the
 // record's own functions — staleness, freshness by pin, the ledger's standing, the doors'
 // state — and never a restatement of it. Cost stands on every view before the trigger it
-// belongs to (R1). SPEC §6 names six views; the four Discovery views are here, and the
-// two Delivery views are projections of the run record and the manifest, landing with them.
+// belongs to (R1). SPEC §6 names six views; the four Discovery views are here, the run
+// view is delivery/console's, and the release view is a projection of the manifest (M3).
 
 import { existsSync } from "node:fs";
 import { basename, join } from "node:path";
-import { roles, defaults, modelFor, standing, quote } from "../../shared/agent-call/index.mjs";
+import { roles, defaults, modelFor, standing, estimate, quote } from "../../shared/agent-call/index.mjs";
 import { verdictFreshness } from "../../shared/judge/index.mjs";
 import { readHandoffs, latestHandoff, handoffFile } from "../../shared/handoff.mjs";
 import { loadProject, ledgerPath, SetupRefused } from "../setup/index.mjs";
@@ -25,7 +25,7 @@ export const VIEWS = [
   { key: "workshop", label: "Workshop" },
   { key: "board", label: "Board" },
   { key: "export", label: "Export" },
-  { key: "run", label: "Delivery run", lands: "M2" },
+  { key: "run", label: "Delivery run" },
   { key: "release", label: "Release", lands: "M3" },
 ];
 
@@ -42,20 +42,24 @@ const tryPrd = (root) => { try { return loadPrd(root); } catch (e) { if (e insta
 
 // ── setup ──
 
-/** The project: repo, model per role (the override named beside the default), the budget's standing, cost by stage. */
+/**
+ * The project: repo, model per role (the override named beside the default, and what a call
+ * of it has cost so far — Discovery's ledger prices Discovery's roles; Delivery's roles are
+ * priced by Delivery's own setup, on the run view), the budget's standing, cost by stage.
+ */
 export function setupView(root) {
   const project = tryProject(root);
-  const roleRows = (overrides = {}) => roles().map((key) => {
+  const roleRows = (overrides = {}, ledger = null) => roles().map((key) => {
     const [half, role] = key.split(".");
     const model = modelFor({ half, role }, overrides);
-    return { key, half, role, model, default: defaults()[key], overridden: model !== defaults()[key] };
+    return { key, half, role, model, default: defaults()[key], overridden: model !== defaults()[key], estimate: ledger && half === "discovery" ? estimate(ledger, { half, role, model }) : null };
   });
   if (!project) return { root, project: null, slug: basename(root), existing: existsSync(join(root, ".git")), roles: roleRows(), standing: null, cost: [] };
   const ledger = ledgerPath(root);
   return {
     root, project: { slug: project.slug, title: project.title, created: project.created, repo: project.repo },
     slug: project.slug, existing: true,
-    roles: roleRows(project.models ?? {}),
+    roles: roleRows(project.models ?? {}, ledger),
     standing: standing(ledger, project.budget ?? null),
     cost: Object.entries(costOf(root).by_stage).map(([stage, c]) => ({ stage, ...c })),
   };

@@ -54,6 +54,26 @@ export function form({ action, fields = [], submit, note }) {
   return `<form method="post" action="${esc(action)}">${fields.map(one).join("")}${note ? `<p class="note">${note}</p>` : ""}<button type="submit">${esc(submit)}</button></form>`;
 }
 
+/** A verdict's tone. Anything not pass or block — advise — is a warning. */
+export const TONE = { pass: "ok", block: "bad" };
+
+/** A verdict as one line: the gate, the word, stale by pin if so, how many findings, the model and what it cost. */
+export function verdictLine(g) {
+  if (g.verdict === null) return `<span class="muted">${esc(g.gate)}: no verdict</span>`;
+  return `${esc(g.gate)}: ${badge(g.verdict, TONE[g.verdict] ?? "warn")}${g.fresh === false ? " " + badge("stale", "warn") : ""}${g.findings.length ? ` <span class="muted">${g.findings.length} finding${g.findings.length === 1 ? "" : "s"}</span>` : ""}${g.model ? ` <code>${esc(g.model)}</code>` : ""}${g.usd != null ? ` <span class="muted">${usd(g.usd)}</span>` : ""}`;
+}
+
+/** Findings as the schema shapes them: severity × confidence, the rule, the subject, the summary, the evidence a human checks in ten seconds. */
+export const findingRows = (findings, first = () => []) => findings.map((f) => [...first(f), `${badge(f.severity, f.severity === "high" ? "bad" : f.severity === "medium" ? "warn" : "muted")} ${badge(f.confidence, "muted")}`, esc(f.rule), esc(f.subject), `${esc(f.summary)}<br><span class="muted">${esc(f.evidence)}</span>${f.remedy ? `<br><span class="muted">→ ${esc(f.remedy)}</span>` : ""}`]);
+
+/** The findings and the deferrals across a set of gates, each row naming its gate. */
+export function findingsHtml(gates, { deferredTitle = "Deferred — noticed past the line (R2)" } = {}) {
+  const rows = gates.flatMap((g) => findingRows(g.findings, () => [esc(g.gate)]));
+  const deferred = gates.flatMap((g) => g.deferred.map((d) => [esc(g.gate), esc(d.subject), esc(d.summary), esc(d.beyond)]));
+  return (rows.length ? `<h2>Findings</h2>${table(["gate", "severity", "rule", "subject", "what"], rows)}` : "")
+    + (deferred.length ? `<h2>${esc(deferredTitle)}</h2>${table(["gate", "subject", "what", "beyond"], deferred)}` : "");
+}
+
 /** The cost strip before a trigger (R1): what the next call is likely to cost, and where the spend stands. */
 export function quoteStrip(q) {
   const est = q.estimate?.usd == null ? `no history yet` : `~${usd(q.estimate.usd)} a call (${q.estimate.n} so far)`;

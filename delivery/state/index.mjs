@@ -163,8 +163,8 @@ function needRun(root) {
   return run;
 }
 
-/** The handoff Delivery may take: present, intact, its design signed. Same three refusals at setup and at adoption. */
-function takeHandoff(root, version) {
+/** The handoff Delivery may take: present, intact, its design signed. Same three refusals at setup and at adoption — and the console asks the same question of every handoff it lists. */
+export function takeHandoff(root, version) {
   const all = readHandoffs(root);
   const h = version ? all.find((x) => x.version === version) : all.at(-1);
   if (!h) throw new Refused("no-handoff", version ? `no handoff v${version} under ${HANDOFFS}` : `no handoff under ${HANDOFFS} — export one from Discovery first`);
