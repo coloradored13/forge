@@ -59,7 +59,14 @@
         "started_at": { "type": ["string", "null"] },
         "heartbeat_at": { "type": ["string", "null"], "description": "Written by the wrapper while it runs. Its age against liveness_ms is the only thing that says dead." },
         "finished_at": { "type": ["string", "null"] },
-        "verdict": { "type": ["string", "null"], "description": "Root-relative path of the verdict the last round filed — a finding document pinned to what it judged. Read back by the approve door; presence is never evidence, the pins are." }
+        "verdict": { "type": ["string", "null"], "description": "Root-relative path of the verdict the last round filed — a finding document pinned to what it judged. Read back by the approve door; presence is never evidence, the pins are." },
+        "reopened": {
+          "type": "object",
+          "description": "Present only while a reopen is being answered: the human's name and reason, set by the reopen and cleared by the finish that files the redo's verdict. The writer of that round reads it; a restart over a stop or a death still knows why the stage runs.",
+          "required": ["by", "reason", "at"],
+          "additionalProperties": false,
+          "properties": { "by": { "type": "string", "minLength": 1 }, "reason": { "type": "string", "minLength": 1 }, "at": { "type": "string" } }
+        }
       }
     },
     "flag": {

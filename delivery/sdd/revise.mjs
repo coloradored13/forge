@@ -6,6 +6,8 @@
 // told to the writer per item, and held: an item outside it that came back different is
 // the previous item again, verbatim, and the churn is filed low on the round. The one
 // line the set may move on a carried item is a shared interface a revised item names too.
+// A reopen is the one declared scope: a human's reason to redo the binding puts every
+// item in it — prose is never resolved to ids to narrow it.
 
 import { canonicalize } from "../../shared/hash.mjs";
 import { fit } from "../../shared/judge/index.mjs";
@@ -21,18 +23,21 @@ const ITEM_KEYS = ["approach", "interfaces", "tests", "controls", "surface", "ri
  * and a finding that names nothing anywhere widens the scope to every item: a revision
  * never narrows on a guess. An intake that moved since the previous binding puts the
  * items whose work item changed in scope; the previous intake not on record widens it too.
- * The carry's own finding names an item restored last round and opens nothing.
+ * A reopen puts every item in scope. The carry's own finding names an item restored last
+ * round and opens nothing.
  * @param prior        the previous binding
  * @param review       the verdict on it, or null
  * @param intake       the intake record this round binds against
  * @param priorIntake  the intake the previous binding was bound against, or null when it is not on record
+ * @param reopened     the reopen being answered ({ by, reason }), or null
  * @returns { all: string | null, items: Map<work_item, string[]> } — `all` is the reason every item is in scope, or null; `items` the reasons per item (every item when `all`)
  */
-export function scopeOfRevision({ prior, review, intake, priorIntake }) {
+export function scopeOfRevision({ prior, review, intake, priorIntake, reopened = null }) {
   const work = intake.work_items ?? [];
   const items = new Map();
   const open = (id, why) => { const had = items.get(id) ?? []; if (!had.includes(why)) had.push(why); items.set(id, had); };
   const everything = (why) => { for (const w of work) items.set(w.id, [why]); return { all: why, items }; };
+  if (reopened) return everything("the binding is reopened");
   const known = idsOf(prior, intake);
 
   for (const f of review?.findings ?? []) {

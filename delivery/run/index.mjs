@@ -1,17 +1,19 @@
 // owns: R6, R5, R1 · delivery — the stage loop: writer → judge → door, every step a
 // transition through the one table (R9) and every model call on the one ledger (R1). A
-// stage runs an episode: open (start, regenerate, escalate or rejudge), heartbeat while
-// the stage's own code writes and judges, finish by pinning the verdict, then dispose —
-// a non-block verdict approves; a block regenerates under the cap or lands in `blocked`,
+// stage runs an episode: open (start, regenerate, escalate, reopen or rejudge), heartbeat
+// while the stage's own code writes and judges, finish by pinning the verdict, then dispose
+// — a non-block verdict approves; a block regenerates under the cap or lands in `blocked`,
 // where the doors are the human's (R6); a stale stage is re-judged, never regenerated (R5).
-// A stage whose code throws is stopped with the error as its reason, on the record. The
-// stages this loop can run are registered here; one it cannot is refused by name.
+// A reopen redoes an approved stage on a human's reason, and every judged stage after it
+// goes stale — judged against what is being rewritten. A stage whose code throws is
+// stopped with the error as its reason, on the record. The stages this loop can run are
+// registered here; one it cannot is refused by name.
 
 import { join } from "node:path";
 import { Refused } from "../../shared/refused.mjs";
 import { readDoc } from "../../shared/store.mjs";
 import { rows, estimate, standing, modelFor, tally } from "../../shared/agent-call/index.mjs";
-import { STAGES, LEDGER, readRun, transition, heartbeat, liveness } from "../state/index.mjs";
+import { STAGES, JUDGED, LEDGER, readRun, transition, heartbeat, liveness } from "../state/index.mjs";
 import { intake, takePinned, compile, slice, INTAKE_FILE } from "../intake/index.mjs";
 import { round as sddRound, rejudge as sddRejudge } from "../sdd/index.mjs";
 import { round as buildRound, rejudge as buildRejudge } from "../build/index.mjs";
@@ -117,6 +119,27 @@ export async function escalate(root, { stage, by, reason, onEvent, _query, _slee
 }
 
 /**
+ * The door over an approved stage: redo it on a human's reason. The reopen is a transition
+ * with the reason on a flag and on the stage; the writer of the redo sees the standing
+ * artifact, its verdict and the reason, and every item is its to revise. What was judged
+ * against the artifact being rewritten — every later stage holding a judgement — goes
+ * stale by the same reason, to be re-judged (R5), never regenerated; a later stage that is
+ * alive refuses the reopen first. Then the episode runs. Refuses the table's own
+ * (`no-transition` when the stage is not approved, `reason-required`).
+ */
+export async function reopen(root, { stage, by, reason, onEvent, _query, _sleep, _now = () => new Date(), _pulse_ms = PULSE_MS } = {}) {
+  const run = needRun(root);
+  const authored = need(stage, run);
+  const now = _now();
+  const later = STAGES.slice(STAGES.indexOf(stage) + 1);
+  const alive = later.find((s) => liveness(run.stages[s], { now, window: run.liveness_ms }).state === "alive");
+  if (alive) throw new Refused("stage-running", `${stage}: ${alive} is running and alive on what ${stage} produced — wait for it, or stop it with a reason`);
+  transition(root, { stage, event: "reopen", by, reason, now });
+  for (const s of later) if (JUDGED.has(run.stages[s].status)) transition(root, { stage: s, event: "moved", by, reason: `${stage} reopened: ${reason}`, now });
+  return episode(root, { stage, authored, mode: "start", by, onEvent, _query, _sleep, _now, _pulse_ms });
+}
+
+/**
  * Stages in order until one does not approve or the loop cannot run it. Returns what
  * each stage came to and where it halted: `{ stages: [result…], halted: { stage, why } | null }`.
  * A stage's refusal (the door's, or a round's — `no-repo`, `containment`) halts the loop
@@ -145,9 +168,11 @@ async function episode(root, { stage, authored, mode, by, onEvent, _query, _slee
   if (mode !== "dispose") {
     const rejudging = mode === "rejudge";
     // a start over a recorded block — an escalated round, or a start after a stop — is
-    // answering that block: the writer sees the findings, as it does on regenerate
+    // answering that block: the writer sees the findings, as it does on regenerate; a
+    // start over a reopen is answering the reason: the writer sees the standing verdict too
     const prior = !rejudging && path ? readDoc(root, path) : null;
-    path = await work(root, { stage, authored, rejudging, review: prior?.verdict === "block" ? prior : null, by, onEvent, _query, _sleep, _now, _pulse_ms });
+    const reopened = Boolean(needRun(root).stages[stage].reopened);
+    path = await work(root, { stage, authored, rejudging, review: prior && (prior.verdict === "block" || reopened) ? prior : null, by, onEvent, _query, _sleep, _now, _pulse_ms });
     if (rejudging) {
       const doc = readDoc(root, path);
       const event = doc?.verdict === "block" ? "reblock" : "clear";
@@ -189,7 +214,7 @@ async function work(root, { stage, authored, rejudging, review = null, by, onEve
   const run = needRun(root);
   const pulse = setInterval(() => { try { heartbeat(root, stage, _now()); } catch { /* the stage moved under us; the next transition says how */ } }, _pulse_ms);
   try {
-    const ctx = { run, now: _now(), by, review, onEvent: (e) => onEvent?.(`${stage} ${e}`), _query, _sleep };
+    const ctx = { run, now: _now(), by, review, reopened: run.stages[stage].reopened ?? null, onEvent: (e) => onEvent?.(`${stage} ${e}`), _query, _sleep };
     if (authored.writer) {
       ctx.handoff = takePinned(root, run);
       ctx.intake = readDoc(root, INTAKE_FILE);

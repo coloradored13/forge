@@ -64,9 +64,11 @@ export async function rejudge(root, ctx) {
  * Compose the binding. With a previous binding and a verdict on it, this is a revision:
  * the writer sees the previous items marked, per item, revise or carry verbatim, and the
  * runner holds it to that — what it changed without cause is restored and filed
- * (revise.mjs). @returns { doc, carried } — the binding on disk and the carry's findings.
+ * (revise.mjs). A reopen (`reopened`: the human's by and reason) is a revision of every
+ * item: the writer reads the reason above the previous binding and the verdict that stood
+ * on it. @returns { doc, carried } — the binding on disk and the carry's findings.
  */
-async function write(root, { run, handoff, intake, review, onEvent, _query, _sleep }) {
+async function write(root, { run, handoff, intake, review, reopened = null, onEvent, _query, _sleep }) {
   const contract = handoff.contract;
   const prior = loadSdd(root);
   const system = assemble({
@@ -74,7 +76,7 @@ async function write(root, { run, handoff, intake, review, onEvent, _query, _sle
     mechanics: mechanics({ kind: "writer", schema: "sdd", scope: scopeOf(contract), rulings: rulingsOf(contract), arithmetic: ARITHMETIC }),
   });
   const findings = review ? renderFindingsForAgent(review) : null;
-  const scope = prior && review ? scopeOfRevision({ prior, review, intake, priorIntake: priorIntakeOf(root, prior, intake) }) : null;
+  const scope = prior && (review || reopened) ? scopeOfRevision({ prior, review, intake, priorIntake: priorIntakeOf(root, prior, intake), reopened }) : null;
   const mark = (it) => (scope.items.has(it.work_item) ? `revise: ${scope.items.get(it.work_item).join(", ")}` : "carry verbatim");
   const prompt = [
     `## Work items\n\n${intake.work_items.map((w) => renderWorkItem(w, intake)).join("\n\n")}`,
@@ -83,7 +85,8 @@ async function write(root, { run, handoff, intake, review, onEvent, _query, _sle
     contract.constraints?.length ? `## Constraints\n\n${contract.constraints.map((c) => `- ${c}`).join("\n")}` : "",
     intake.questions.length ? `## Questions the snapshot still carries — not yours to decide\n\n${intake.questions.map((q) => `- ${q.id} (${q.subject ?? q.source}${q.blocking ? ", blocking" : ""}): ${q.question}`).join("\n")}` : "",
     intake.existing.mode === "brownfield" ? evidence("What the repository holds", renderExisting(intake.existing)) : "",
-    prior && findings ? `## The previous binding\n\n${REVISION}${scope.all ? ` Every item is to revise: ${scope.all}.` : ""}\n\n${prior.items.map((it) => renderItem(it, mark(it))).join("\n\n")}` : "",
+    reopened ? `## Why the binding is reopened\n\n${reopened.reason}\n\n— ${reopened.by}` : "",
+    scope ? `## The previous binding\n\n${REVISION}${scope.all ? ` Every item is to revise: ${scope.all}.` : ""}\n\n${prior.items.map((it) => renderItem(it, mark(it))).join("\n\n")}` : "",
     findings ? `## The judge's findings on the previous binding\n\n${findings}` : "",
   ].filter(Boolean).join("\n\n");
 
