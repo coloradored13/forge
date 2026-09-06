@@ -294,6 +294,8 @@ await withRoot({ "prompts/j.md": IDENTITY }, async (root) => {
   const refusal = (fn) => Promise.resolve().then(fn).then(() => null, (e) => e);
   const clone = () => structuredClone(BINDING);
   const BAD = clone(); BAD.items[0].controls.push({ screen_ref: "SCREEN-1", control: "submit" });
+  // the second writer fixes STORY-1 — and rephrases STORY-2's risks, which nothing named
+  const CHURNED = clone(); CHURNED.items[1].risks = ["the run sheet's order is the store's — a sort would be a design change"];
   const CLEAN = (item) => ({ findings: [], deferred: [{ subject: item, summary: `${item}: the second recording against the same delivery in the same second.`, beyond: "untested" }], checked: 1, skipped: 0 });
   const PROVES_NOTHING = { ...CLEAN("STORY-1"), findings: [{ severity: "high", confidence: "certain", rule: "test-proves-nothing", subject: "T-2", summary: "T-2 asserts that no exported function changes the row without naming a function that is called or what is read afterwards.", evidence: "asserts: \"no exported function changes the row\" · REQ-1/AC-2: A submitted exception cannot be edited.", remedy: "Name the calls attempted and the read that follows each." }] };
   // a scripted SDK that yields slowly, so the wrapper's pulse has something to beat under
@@ -304,7 +306,7 @@ await withRoot({ "prompts/j.md": IDENTITY }, async (root) => {
   await withRoot({}, async (tmp) => {
     const { cold } = await seedDelivery(tmp);
     const events = [];
-    const script = scripted({ structuredSeq: [BAD, BINDING, PROVES_NOTHING, CLEAN("STORY-2"), CLEAN("REQ-4"), BINDING, CLEAN("STORY-1"), CLEAN("STORY-2"), CLEAN("REQ-4")] });
+    const script = scripted({ structuredSeq: [BAD, CHURNED, PROVES_NOTHING, CLEAN("STORY-2"), CLEAN("REQ-4"), BINDING, CLEAN("STORY-1"), CLEAN("STORY-2"), CLEAN("REQ-4")] });
     const opts = { _query: slow(script.query), _now: clock, _pulse_ms: 1, onEvent: (e) => events.push(e) };
 
     check("the loop knows which stages it can run — intake, sdd and build — and says so in one table; build has a writer and no judge",
@@ -333,6 +335,11 @@ await withRoot({ "prompts/j.md": IDENTITY }, async (root) => {
     const p0 = script.calls[0].prompt, p1 = script.calls[1].prompt, pj = script.calls[2].prompt;
     check("the first writer prompt carries the work items, the signed design and no previous binding; the second carries the previous binding and the arithmetic's finding, quoted",
       /^## Work items/.test(p0) && /## The signed design/.test(p0) && !/previous binding/.test(p0) && /## The previous binding/.test(p1) && /## The judge's findings on the previous binding/.test(p1) && /control-not-in-design/.test(p1) && /`submit`/.test(p1), p1.slice(-400));
+    check("the second writer is told, per item, what the round may do: STORY-1 to revise, named by the arithmetic's finding; STORY-2 and REQ-4 to carry verbatim",
+      /### STORY-1 — revise: STORY-1 \(control-not-in-design\)/.test(p1) && /### STORY-2 — carry verbatim/.test(p1) && /### REQ-4 — carry verbatim/.test(p1), p1.slice(p1.indexOf("## The previous binding"), p1.indexOf("## The previous binding") + 400));
+    const carried = v1.findings.filter((f) => f.rule === "item-carried");
+    check("the second writer rephrased STORY-2's risks with nothing naming it: the binding on disk carries the previous STORY-2 verbatim, and the round's verdict files the churn — low, certain, beside the judge's block",
+      carried.length === 1 && carried[0].subject === "STORY-2" && carried[0].severity === "low" && carried[0].confidence === "certain" && loadSdd(cold).items[1].risks.length === 0 && loadSdd(cold).items[0].controls.length === 2, JSON.stringify([carried, loadSdd(cold).items[1].risks]));
     check("a judge sees one item: the work item, the screens it runs on, its binding, the interfaces the others name",
       /^## The work item/.test(pj) && /## The signed design — the screens this item runs on/.test(pj) && /## The binding/.test(pj) && /## Interfaces the other items name/.test(pj) && /STORY-2 · `deliveries.forShift`/.test(pj) && !/STORY-2 · `exceptions.record`/.test(pj), pj.slice(0, 300));
     check("the contract's vocabulary reaches the writer and every judge — a term the PRD defines is not a question for the binding to ask",
@@ -351,6 +358,8 @@ await withRoot({ "prompts/j.md": IDENTITY }, async (root) => {
     check("escalate with a reason buys one round: the writer answers the recorded block, the judges clear it, approved at round 3 — and the flag names who and why",
       r2.status === "approved" && r2.round === 3 && r2.verdict.verdict === "pass" && r2.run.flags.length === 1 && r2.run.flags[0].event === "escalate" && r2.run.flags[0].by === "Brad" && /one more round/.test(r2.run.flags[0].reason), JSON.stringify(r2.run.flags));
     check("the escalated round's writer saw the judge's finding it was bought to answer", /## The judge's findings on the previous binding/.test(script.calls[5].prompt) && /test-proves-nothing/.test(script.calls[5].prompt));
+    check("the escalated round's writer saw the churn filed against it too, and the carry's finding did not open STORY-2 — STORY-1 to revise for T-2, STORY-2 still to carry",
+      /item-carried/.test(script.calls[5].prompt) && /### STORY-1 — revise: T-2 \(test-proves-nothing\)/.test(script.calls[5].prompt) && /### STORY-2 — carry verbatim/.test(script.calls[5].prompt), script.calls[5].prompt.slice(script.calls[5].prompt.indexOf("## The previous binding"), script.calls[5].prompt.indexOf("## The previous binding") + 300));
     check("R1: nine calls, $0.45, all on one ledger; the result's cost is the stage's whole spend across episodes",
       r2.cost.calls === 9 && Math.abs(r2.cost.usd - 0.45) < 1e-9 && script.calls.length === 9);
     const after = readRun(cold).stages.sdd;

@@ -27,7 +27,8 @@ import { Refused, readDoc, saveDoc, readVerdict, freshVerdict, staleness, DESIGN
 import { answer } from "../discovery/doors/index.mjs";
 import { write, review, signoff, checkDesign, GATE as DESIGN_GATE, REVIEW_GATE as DESIGN_REVIEW, ARITHMETIC as DESIGN_RULES } from "../discovery/design/index.mjs";
 import { intake } from "../delivery/intake/index.mjs";
-import { checkBinding, dependenciesOf, buildOrder, ARITHMETIC as SDD_RULES, UNTESTED, GATE as SDD_GATE, SDD_FILE } from "../delivery/sdd/index.mjs";
+import { checkBinding, dependenciesOf, buildOrder, renderItem, ARITHMETIC as SDD_RULES, UNTESTED, GATE as SDD_GATE, SDD_FILE } from "../delivery/sdd/index.mjs";
+import { scopeOfRevision, carry, CARRIED } from "../delivery/sdd/revise.mjs";
 import { round as buildRound, contain, globToRegExp, loadBuild, checkBuild, ARITHMETIC as BUILD_RULES, BRANCH, WORKTREE, BUILD_FILE, VERDICT_FILE as BUILD_VERDICT } from "../delivery/build/index.mjs";
 import { INTAKE_FILE } from "../delivery/intake/index.mjs";
 import { identity } from "../shared/prompt/index.mjs";
@@ -506,8 +507,76 @@ await withRoot({}, async (tmp) => {
 
   v = held({ items: [], questions: [] });
   check("an empty binding is every work item unbound — three findings, the work items still counted", v.findings.length === 3 && rules(v) === "item-unbound" && v.checked === 3);
+
+  // A regeneration revises what the findings name and what a changed input touches; every
+  // other item comes back character for character, and the runner holds the writer to it —
+  // the build hashes each item, and a second phrasing of an unchanged item is a rebuild
+  // that says nothing.
+  const prior = { ...clone(), traces: { intake: { content_hash: record.meta.content_hash } } };
+  const F = (rule, subject, summary = "", evidence = "") => ({ severity: "high", confidence: "certain", rule, subject, summary, evidence, remedy: "" });
+  const verdictOf = (...findings) => ({ verdict: "block", findings });
+  const scoped = (review, priorIntake = record) => scopeOfRevision({ prior, review, intake: record, priorIntake });
+  const reasons = (s) => [...s.items].map(([id, why]) => `${id}: ${why.join("; ")}`).join(" · ");
+  let scope = scoped(verdictOf(F("test-proves-nothing", "T-2")));
+  check("a finding on a test puts the item holding it in scope and nothing else; the reason is the id and the rule that named it",
+    scope.all === null && reasons(scope) === "STORY-1: T-2 (test-proves-nothing)", reasons(scope));
+  scope = scoped(verdictOf(F("criterion-untested", "REQ-2/AC-1"), F("interface-disagrees", "deliveries.forShift"), F("question", "SCREEN-1")));
+  check("a criterion resolves to the items carrying it, an interface name to every item naming it, a screen to the items running there — REQ-4 is named by none and stays out",
+    scope.all === null && reasons(scope) === "STORY-2: REQ-2/AC-1 (criterion-untested); deliveries.forShift (interface-disagrees) · STORY-1: deliveries.forShift (interface-disagrees); SCREEN-1 (question)", reasons(scope));
+  scope = scoped(verdictOf(F("design-insufficient", "STORY-1 / T-4 (REQ-4/AC-1)"), F("binds-past-the-item", "STORY-2 · T-3")));
+  check("a judge's free-form subject resolves every id in it as a token — STORY-1 and T-4 and the criterion, separators ignored — and an id is never read inside a longer one",
+    scope.all === null && reasons(scope) === "STORY-1: STORY-1 (design-insufficient) · REQ-4: T-4 (design-insufficient); REQ-4/AC-1 (design-insufficient) · STORY-2: STORY-2 (binds-past-the-item); T-3 (binds-past-the-item)", reasons(scope));
+  scope = scoped(verdictOf(F("question", "binding", "Should the run sheet read newest-first? STORY-2 renders arrival order and the design does not say.")));
+  check("a subject that names nothing the record knows falls back to the finding's summary and evidence — the item named there is the scope",
+    scope.all === null && reasons(scope) === "STORY-2: STORY-2 (question)", reasons(scope));
+  scope = scoped(verdictOf(F("question", "binding", "Which clock stamps a record?", "`/questions`")));
+  check("a finding that names nothing anywhere widens the scope to every item, and the reason quotes it — a revision never narrows on a guess",
+    scope.all !== null && /names nothing the record knows/.test(scope.all) && /"binding"/.test(scope.all) && scope.items.size === 3, scope.all);
+  scope = scoped(verdictOf(F("test-proves-nothing", "T-2"), { ...F(CARRIED, "STORY-2"), severity: "low" }));
+  check("the carry's own finding does not widen the scope — an item restored last round is not thereby open this round",
+    scope.all === null && [...scope.items.keys()].join() === "STORY-1", reasons(scope));
+  const was = JSON.parse(JSON.stringify(record)); was.work_items[1].statement += " Withdrawn deliveries are struck through."; was.meta.content_hash = "0".repeat(64);
+  scope = scopeOfRevision({ prior: { ...prior, traces: { intake: { content_hash: was.meta.content_hash } } }, review: verdictOf(F("test-proves-nothing", "T-2")), intake: record, priorIntake: was });
+  check("an intake that moved since the previous binding puts the items whose work item changed in scope, beside what the findings name — a changed input touches the item",
+    scope.all === null && reasons(scope) === "STORY-1: T-2 (test-proves-nothing) · STORY-2: its work item changed", reasons(scope));
+  scope = scopeOfRevision({ prior: { ...prior, traces: { intake: { content_hash: was.meta.content_hash } } }, review: verdictOf(F("test-proves-nothing", "T-2")), intake: record, priorIntake: null });
+  check("an intake that moved, with the one the previous binding was bound against not on record, is every item in scope with the reason said", scope.all !== null && /not on record/.test(scope.all), scope.all);
+  scope = scoped(verdictOf());
+  check("a verdict with no findings and an unchanged intake is a scope of nothing — every item carries", scope.all === null && scope.items.size === 0);
+
+  const inScope = (...ids) => ({ all: null, items: new Map(ids.map((id) => [id, ["named"]])) });
+  const carriedFindings = (c) => { c.findings.forEach((f) => emitted.add(f.rule)); return c.findings; };
+  doc = clone(); doc.items[1].risks = ["the run sheet's order is the store's — a sort would be a design change"]; doc.items[1].approach += " Rows are keyed by delivery id.";
+  let c = carry(prior, doc, inScope("STORY-1"), record);
+  check("an item outside the scope that came back different is the previous item again, verbatim, and the churn is one finding — low, certain, the fields that moved named",
+    JSON.stringify(c.items[1]) === JSON.stringify(prior.items[1]) && c.items[0] === doc.items[0] && carriedFindings(c).length === 1 && c.findings[0].rule === CARRIED && c.findings[0].severity === "low" && c.findings[0].confidence === "certain" && c.findings[0].subject === "STORY-2" && /approach, risks/.test(c.findings[0].summary) && /carried verbatim/.test(c.findings[0].summary), JSON.stringify(c.findings));
+  doc = clone(); doc.items[0].approach = "The form posts to the store; the store exposes no update.";
+  c = carry(prior, doc, inScope("STORY-1"), record);
+  check("an item in scope comes back as the writer wrote it — no restore, no finding", c.items[0].approach === doc.items[0].approach && c.findings.length === 0);
+  doc = clone(); doc.items[0].interfaces[1].signature = "forShift(shift: Shift): Delivery[]"; doc.items[1].interfaces[0].signature = "forShift(shift: Shift): Delivery[]";
+  c = carry(prior, doc, inScope("STORY-1"), record);
+  check("a shared interface rewritten on a revised item is rewritten on every item naming it, that line only — the carried item takes the line and nothing is filed, so the set still agrees",
+    c.items[1].interfaces[0].signature === "forShift(shift: Shift): Delivery[]" && c.items[1].approach === prior.items[1].approach && c.findings.length === 0 && checkBinding(record, design, { items: c.items, questions: [] }).verdict === "pass", JSON.stringify(c.findings));
+  doc = clone(); doc.items[0].interfaces.push({ name: "queue.enqueue", signature: "enqueue(write: Write): void", shared: true, from: "REQ-4" }); doc.items[2].interfaces[0].shared = true;
+  c = carry(prior, doc, inScope("STORY-1"), record);
+  check("a revised item that now consumes another item's interface `from` it may flip that line to shared on the carried provider — the line the set forces, and only that",
+    c.items[2].interfaces[0].shared === true && c.findings.length === 0 && checkBinding(record, design, { items: c.items, questions: [] }).verdict === "pass", JSON.stringify(c.findings));
+  doc = clone(); doc.items[0].interfaces.push({ name: "queue.enqueue", signature: "enqueue(write: Write): void", shared: true, from: "REQ-4" }); doc.items[2].interfaces[0].shared = true; doc.items[2].risks = ["the queue's durability is the browser's"];
+  c = carry(prior, doc, inScope("STORY-1"), record);
+  check("the forced line does not open the rest of the item — a risk rewritten beside it is restored and filed",
+    c.items[2].interfaces[0].shared === true && c.items[2].risks.length === 0 && carriedFindings(c).length === 1 && /risks/.test(c.findings[0].summary) && !/interfaces/.test(c.findings[0].summary), JSON.stringify(c.findings));
+  doc = clone(); doc.items.pop();
+  c = carry(prior, doc, inScope("STORY-1"), record);
+  check("an item outside the scope that came back missing is restored from the previous binding and filed as missing — the arithmetic never sees a drop the writer had no cause for",
+    c.items.length === 3 && c.items[2].work_item === "REQ-4" && carriedFindings(c).length === 1 && /came back missing/.test(c.findings[0].summary), JSON.stringify(c.findings));
+  doc = clone(); doc.items[1].risks = ["churn"];
+  c = carry(prior, doc, { all: "reopened", items: new Map() }, record);
+  check("a scope of everything restores nothing — the writer's binding stands as written", c.items[1].risks[0] === "churn" && c.findings.length === 0);
   check("every rule the arithmetic can emit is declared to the writer and the judge as arithmetic, and nothing declared is idle",
-    [...emitted].every((r) => SDD_RULES.includes(r)) && SDD_RULES.every((r) => emitted.has(r)), `emitted ${[...emitted].sort().join()} · declared ${[...SDD_RULES].sort().join()}`);
+    [...emitted].every((r) => SDD_RULES.includes(r)) && SDD_RULES.every((r) => emitted.has(r)) && SDD_RULES.includes(CARRIED), `emitted ${[...emitted].sort().join()} · declared ${[...SDD_RULES].sort().join()}`);
+  const bound = clone().items[0]; bound.interfaces.push({ name: "queue.enqueue", signature: "enqueue(write: Write): void", shared: true, from: "REQ-4" });
+  check("an item renders its dependencies to a reader — an interface consumed `from` another item says so on the line; a mark on the heading says what the round may do with it",
+    /`queue\.enqueue`: `enqueue\(write: Write\): void` \(shared\) · from REQ-4/.test(renderItem(bound)) && /^### STORY-1 — carry verbatim\n/.test(renderItem(bound, "carry verbatim")) && /^### STORY-1\n/.test(renderItem(bound)), renderItem(bound).slice(0, 300));
 
   const judge = identity(join(ROOT, "delivery", "sdd", "prompts", "judge.md"));
   check("R10: the judge's one falsification deferral is asked in the identity with the word the runner keys on — exactly one, never a finding, `beyond` = untested",
@@ -517,6 +586,8 @@ await withRoot({}, async (tmp) => {
     /compares the signatures verbatim/.test(writer) && /The design is the whole vocabulary/.test(writer));
   check("the writer is told how a dependency is written — a consumed interface names its provider in `from`; a control a test drives on another item's screen is bound on the screen that holds it — and that the order of the build follows from it",
     /names that item in `from`/.test(writer) && /another item's screen/.test(writer) && /built first/.test(writer) && /hides the dependency/.test(writer), writer.slice(writer.indexOf("## The controls"), writer.indexOf("## The controls") + 900));
+  check("the writer is told what a second round is — the items marked to carry come back character for character, the one line the set may move is a shared interface a revised item rewrote, and the runner restores what it changed without cause",
+    /## A second round/.test(writer) && /carry verbatim/.test(writer) && /character for character/.test(writer) && /that line and nothing else/.test(writer) && /restored/.test(writer), writer.slice(writer.indexOf("## A second round"), writer.indexOf("## A second round") + 600));
 });
 
 // ── R2 in build: the surface is the fence — the change set is held to the binding's globs, and the verdict is arithmetic ──
