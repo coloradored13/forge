@@ -1,8 +1,13 @@
-// owns: R1 · shared — the only place a model is invoked. Every call names its half,
+// owns: R1, R14 · shared — the only place a model is invoked. Every call names its half,
 // stage and role; the model comes from one config; the budget is checked before the
 // call and refused at the cap (never degraded); a usage gap pauses; and one ledger row
-// records model, tokens, cost and duration whether the call succeeded or not.
+// records model, tokens, cost, duration and every tool use whether the call succeeded
+// or not. The seam is drawn here too (R14): a Delivery agent runs sandboxed with
+// discovery/ denied to it, and a tool use that touched it anyway is a refusal with the
+// row as proof — like a judge's write. No agent inherits the pipeline's credentials.
 
+import { isAbsolute, relative, resolve, sep } from "node:path";
+import { Refused } from "../refused.mjs";
 import { modelFor } from "./models.mjs";
 import { append, spent } from "./ledger.mjs";
 import { isUsageGap, withUsagePause } from "./usage-pause.mjs";
@@ -40,6 +45,15 @@ export const TOOLS = {
 const NEVER = ["WebFetch", "WebSearch", "Task", "NotebookEdit"];
 
 /**
+ * Credentials the pipeline holds for its own doors (a tracker export, a release) and no
+ * agent has any business with. Everything else in the environment passes through — an
+ * agent that cannot find `node` is not contained, it is broken.
+ */
+export const HELD_BACK = ["JIRA_EMAIL", "JIRA_API_TOKEN", "GH_TOKEN", "GITHUB_TOKEN"];
+/** What a Delivery agent may not touch, relative to its cwd: the seam is a snapshot it was handed, not a directory it reads. */
+const CONTAINED = "discovery";
+
+/**
  * @param half         discovery | delivery
  * @param stage        e.g. stories, sdd
  * @param role         a key in models.json under this half: writer | reviewer | judge | workshop
@@ -67,6 +81,7 @@ export async function call({
   if (!stage || !role) throw new Error("call: stage and role are required — every call is accounted");
   if (!ledger) throw new Error("call: a ledger path is required — every call is recorded");
   if (!TOOLS[kind]) throw new Error(`call: unknown kind ${kind}`);
+  if (half === "delivery" && !cwd) throw new Error("call: a Delivery call names its cwd — containment is drawn around it");
   const model = modelFor({ half, role }, models);
 
   if (budget != null) {
@@ -86,6 +101,7 @@ async function once({ half, stage, role, kind, model, system, prompt, cwd, outpu
   let text = "", structured, result, errorKind, sessionId;
 
   const policy = TOOLS[kind];
+  const fence = half === "delivery" ? resolve(cwd, CONTAINED) : null;
   const options = {
     model,
     systemPrompt: system,
@@ -99,6 +115,10 @@ async function once({ half, stage, role, kind, model, system, prompt, cwd, outpu
     allowedTools: policy.allowed,
     disallowedTools: NEVER,
     permissionMode: policy.mode,
+    // The environment an agent gets is the pipeline's minus what the pipeline holds for
+    // itself. Passed explicitly: omitted, the SDK inherits process.env whole.
+    env: Object.fromEntries(Object.entries(process.env).filter(([k]) => !HELD_BACK.includes(k))),
+    ...(fence ? containment(fence) : {}),
     ...(maxTurns ? { maxTurns } : {}),
     ...(resume ? { resume } : {}),
     ...(outputSchema ? { outputFormat: { type: "json_schema", schema: outputSchema } } : {}),
@@ -135,7 +155,16 @@ async function once({ half, stage, role, kind, model, system, prompt, cwd, outpu
     throw e;
   }
 
+  // Containment, after the fact: the sandbox refused the read before it happened; this is
+  // the chokepoint saying so on the record and refusing the call — a Delivery agent that
+  // reached for discovery/ did not do the work it was given.
+  const breach = fence ? toolUses.find((t) => touches(t, cwd)) : null;
+  if (breach) errorKind = `containment: ${breach.name} ${targetOf(breach.input)}`;
+
   const row = record({ ok: !errorKind, error: errorKind ? String(errorKind).split("\n")[0] : undefined });
+  if (breach) {
+    throw new Refused("containment", `${half}/${stage}/${role}: ${breach.name} touched ${targetOf(breach.input)} — Delivery reads the handoff through its prompt, never ${CONTAINED}/ (R14)`, { tools: row.tools });
+  }
   if (errorKind) {
     const message = `${half}/${stage}/${role} failed: ${errorKind}`;
     // A usage gap surfaces as a result error too; the pause wrapper reads the message.
@@ -167,6 +196,46 @@ async function once({ half, stage, role, kind, model, system, prompt, cwd, outpu
       ms: Date.now() - started,
       turns: result?.num_turns ?? 0,
       tokens,
+      tools: toolUses.map((t) => ({ name: t.name, target: targetOf(t.input) })),
     });
   }
+}
+
+/**
+ * The SDK's side of the seam, set before the model runs: the sandbox denies the fenced
+ * directory to every command and refuses to start if it cannot be had (a run that
+ * degrades to unsandboxed is the v1 fusion by accident); the Read, Edit and Write tools
+ * are denied the same path by permission rule, which is what governs them.
+ */
+function containment(dir) {
+  return {
+    sandbox: { enabled: true, failIfUnavailable: true, filesystem: { denyRead: [dir], denyWrite: [dir] } },
+    settings: { permissions: { deny: ["Read", "Edit", "Write"].map((tool) => `${tool}(/${dir}/**)`) } },
+  };
+}
+
+/** The one string a tool use is about, for the row and the event line. */
+function targetOf(input = {}) {
+  const v = [input.file_path, input.notebook_path, input.command, input.path, input.pattern].find((x) => typeof x === "string" && x.trim());
+  return v ? v.slice(0, 160) : "";
+}
+
+/**
+ * Did this tool use reach into the fenced directory? File paths are resolved against
+ * the cwd; a shell line is split into tokens and any token that is a path — it carries a
+ * separator — is resolved the same way. A bare word is not a path: `--grep discovery` is
+ * not a read, and `ls discovery` is the sandbox's to refuse.
+ */
+function touches({ input = {} }, cwd) {
+  const paths = [input.file_path, input.notebook_path, input.path].filter((p) => typeof p === "string" && p.trim());
+  if (typeof input.command === "string") {
+    for (const tok of input.command.split(/\s+/)) {
+      const bare = tok.replace(/^["']+|["']+$/g, "");
+      if (bare.includes("/")) paths.push(bare);
+    }
+  }
+  return paths.some((p) => {
+    const rel = relative(cwd, isAbsolute(p) ? p : resolve(cwd, p));
+    return rel === CONTAINED || rel.startsWith(`${CONTAINED}${sep}`);
+  });
 }

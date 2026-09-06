@@ -1,0 +1,196 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forge.local/schema/intake.schema.json",
+  "title": "Intake record",
+  "description": "What Delivery made of the handoff it took (SPEC §5 intake): the snapshot pinned, drift per item against the latest snapshot exported since (reported, never resolved — R14), what exists in the repository (R11), every scenario compiled to steps, the backlog sliced into work items the writers take, and the questions the snapshot still carries, counted against the budget (R13). No model writes a byte of this — every field is the runner's, so the output contract derived from it is empty. Hashed over the compile so a judge that pinned it goes stale when it moves.",
+  "type": "object",
+  "required": ["id", "meta", "handoff", "taken_at", "drift", "existing", "scenarios", "work_items", "questions", "budget", "x-drift-checked"],
+  "additionalProperties": false,
+  "properties": {
+    "id": { "type": "string", "x-runner": true, "description": "intake-<slug>." },
+    "meta": {
+      "type": "object",
+      "x-runner": true,
+      "additionalProperties": false,
+      "properties": {
+        "content_hash": { "type": "string" },
+        "hash_algorithm": { "type": "string" }
+      }
+    },
+    "handoff": {
+      "type": "object",
+      "x-runner": true,
+      "description": "The run's pin at the time of taking — version, root-relative path, content hash. Intake refuses a file that is not this.",
+      "required": ["version", "path", "content_hash"],
+      "additionalProperties": false,
+      "properties": {
+        "version": { "type": "integer", "minimum": 1 },
+        "path": { "type": "string" },
+        "content_hash": { "type": "string" }
+      }
+    },
+    "taken_at": { "type": "string", "x-runner": true },
+    "drift": {
+      "type": "object",
+      "x-runner": true,
+      "description": "The pinned snapshot against the latest one exported, item by item over each item's hashed fields. `against` is null when the pin is the latest. Delivery cannot see Discovery's live record; a snapshot exported since is the only drift it can report.",
+      "required": ["against", "unchanged", "changed", "added", "removed"],
+      "additionalProperties": false,
+      "properties": {
+        "against": {
+          "type": ["object", "null"],
+          "required": ["version", "content_hash"],
+          "additionalProperties": false,
+          "properties": { "version": { "type": "integer", "minimum": 1 }, "content_hash": { "type": "string" } }
+        },
+        "unchanged": { "type": "array", "items": { "type": "string" } },
+        "changed": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "kind", "fields"],
+            "additionalProperties": false,
+            "properties": {
+              "id": { "type": "string" },
+              "kind": { "type": "string" },
+              "fields": {
+                "type": "array",
+                "description": "Each hashed field whose value differs, with both sides.",
+                "items": { "type": "object", "required": ["field", "was", "now"], "additionalProperties": false, "properties": { "field": { "type": "string" }, "was": {}, "now": {} } }
+              }
+            }
+          }
+        },
+        "added": { "$ref": "#/$defs/ref-list" },
+        "removed": { "$ref": "#/$defs/ref-list" }
+      }
+    },
+    "existing": {
+      "type": "object",
+      "x-runner": true,
+      "description": "What the repository holds before the build (R11): mode, the prior manifest's summary if one is carried, a count and the top-level names. Rendered into writer prompts as evidence, never as instruction.",
+      "required": ["mode", "manifest", "files", "top_level"],
+      "additionalProperties": false,
+      "properties": {
+        "mode": { "enum": ["greenfield", "brownfield"] },
+        "manifest": {
+          "type": ["object", "null"],
+          "required": ["path", "summary"],
+          "additionalProperties": false,
+          "properties": { "path": { "type": "string" }, "summary": { "type": "array", "items": { "type": "string" } } }
+        },
+        "files": { "type": "integer", "minimum": 0 },
+        "top_level": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "scenarios": {
+      "type": "array",
+      "x-runner": true,
+      "description": "Every scenario in the backlog, compiled: its story, the criteria it proves, the screens its story runs on, and its steps — each with a skeleton step id the sdd writer fills.",
+      "items": {
+        "type": "object",
+        "required": ["id", "story", "name", "proves", "screens", "steps"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string", "description": "<STORY-n>/<ordinal>." },
+          "story": { "type": "string" },
+          "name": { "type": "string" },
+          "proves": { "type": "array", "items": { "type": "string" } },
+          "screens": { "type": "array", "items": { "type": "string" } },
+          "steps": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["kind", "text", "step"],
+              "additionalProperties": false,
+              "properties": {
+                "kind": { "enum": ["given", "when", "then"], "description": "And and But take the kind of the step before them." },
+                "text": { "type": "string" },
+                "step": { "type": "string", "description": "Skeleton id: the kind and the text, slugged." }
+              }
+            }
+          }
+        }
+      }
+    },
+    "work_items": {
+      "type": "array",
+      "x-runner": true,
+      "description": "The backlog sliced for the writers: one item per story, in epic order, and one per non-functional or constraint requirement inside the line that no story carries. Ids are the backlog's own — no new namespace.",
+      "items": {
+        "type": "object",
+        "required": ["id", "kind", "epic", "statement", "req_refs", "criteria", "screens", "scenarios"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string" },
+          "kind": { "enum": ["story", "requirement"] },
+          "epic": { "type": ["string", "null"] },
+          "statement": { "type": "string" },
+          "req_refs": { "type": "array", "items": { "type": "string" } },
+          "criteria": {
+            "type": "array",
+            "description": "The criteria this item discharges, by join id (REQ-n/AC-m) with the contract's text.",
+            "items": { "type": "object", "required": ["id", "statement"], "additionalProperties": false, "properties": { "id": { "type": "string" }, "statement": { "type": "string" } } }
+          },
+          "screens": {
+            "type": "array",
+            "description": "The signed design's screens this item runs on, with their control ids and state names — what the builder wires and the oracle drives.",
+            "items": {
+              "type": "object",
+              "required": ["screen_ref", "name", "controls", "states"],
+              "additionalProperties": false,
+              "properties": {
+                "screen_ref": { "type": "string" },
+                "name": { "type": ["string", "null"] },
+                "controls": { "type": "array", "items": { "type": "string" } },
+                "states": { "type": "array", "items": { "type": "string" } }
+              }
+            }
+          },
+          "scenarios": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "questions": {
+      "type": "array",
+      "x-runner": true,
+      "description": "Every question the snapshot still carries — the contract's open questions, the stories' and the design's — attributed to the story it lands on where the subject allows (STORY-n directly; REQ-n and SCREEN-n through the stories that carry them). Never trimmed: the budget is a meter, not a filter.",
+      "items": {
+        "type": "object",
+        "required": ["id", "subject", "story", "question", "blocking", "source"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string" },
+          "subject": { "type": ["string", "null"] },
+          "story": { "type": ["string", "null"] },
+          "question": { "type": "string" },
+          "blocking": { "type": "boolean", "description": "Carried from the source. A blocking question blocks intake's verdict — the door is the PM's: answer it in Discovery and adopt the re-export, or override with a reason." },
+          "source": { "enum": ["contract", "stories", "design"] }
+        }
+      }
+    },
+    "budget": {
+      "type": "object",
+      "x-runner": true,
+      "description": "The R13 meter: questions per story the seam allows (SPEC §10.5), and every story over it. Each is a funnel row — a Discovery gate-miss, counted.",
+      "required": ["per_story", "over"],
+      "additionalProperties": false,
+      "properties": {
+        "per_story": { "type": "integer", "minimum": 0 },
+        "over": { "type": "array", "items": { "type": "object", "required": ["story", "count"], "additionalProperties": false, "properties": { "story": { "type": "string" }, "count": { "type": "integer", "minimum": 0 } } } }
+      }
+    },
+    "x-drift-checked": {
+      "type": "array",
+      "x-runner": true,
+      "description": "The pointers the content hash covers: the pin and the compile. Drift and what-exists are observations about the moment, not the backlog.",
+      "const": ["/handoff", "/scenarios", "/work_items", "/questions"]
+    }
+  },
+  "$defs": {
+    "ref-list": {
+      "type": "array",
+      "items": { "type": "object", "required": ["id", "kind"], "additionalProperties": false, "properties": { "id": { "type": "string" }, "kind": { "type": "string" } } }
+    }
+  }
+}

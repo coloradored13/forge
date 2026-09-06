@@ -1,18 +1,27 @@
 #!/usr/bin/env node
 // owns: R14 · shared — eval: the seam. The static half — the import rule — and the
 // project-repo half: one repo per project, created or attached by Discovery's setup,
-// never a directory inside the pipeline checkout. The cold-intake half (a handoff read
-// in a temp root with discovery/ absent) joins at M2 and lives in this file. git and gh
-// are scripted — no real repo is ever created here (R15).
+// never a directory inside the pipeline checkout. The cold half: Delivery takes a
+// handoff in a temp root holding nothing of Discovery's record, reports drift per id
+// against a seeded edit, compiles the backlog, asks its questions within budget, and
+// the run's machine takes the result through its doors. Containment: a Delivery agent
+// that touches discovery/ is refused at the chokepoint and its ledger row says so; the
+// SDK is told the same before the model runs. git, gh and the SDK are scripted — no real
+// repo, no model (R15).
 
-import { existsSync, readFileSync, readdirSync, symlinkSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { suite, withRoot, scripted, ROOT } from "./_harness.mjs";
 import { seedProject, seedPrototype, seedStories, seedDesign, STORIES } from "./_fixture.mjs";
 import { violations } from "../tools/import-rule.mjs";
 import { load, inlineRefs, outputContract, fields, validate } from "../shared/schema/index.mjs";
-import { verify } from "../shared/hash.mjs";
+import { stamp, verify } from "../shared/hash.mjs";
 import { KINDS, itemFields, itemsOf, verifyHandoff, readHandoffs, latestHandoff, handoffFile, HANDOFFS } from "../shared/handoff.mjs";
+import { call, HELD_BACK } from "../shared/agent-call/index.mjs";
+import { rows as ledgerRows } from "../shared/agent-call/ledger.mjs";
+import { rows as funnelRows, funnelPath } from "../shared/funnel.mjs";
+import { createRun, readRun, transition, adoptHandoff, LEDGER } from "../delivery/state/index.mjs";
+import { intake, parseGherkin, INTAKE_FILE, VERDICT_FILE, GATE as INTAKE_GATE, QUESTION_BUDGET } from "../delivery/intake/index.mjs";
 import { setupProject, loadProject, ledgerPath, insidePipeline, SetupRefused, PIPELINE_ROOT } from "../discovery/setup/index.mjs";
 import { loadPrd } from "../discovery/workshop/index.mjs";
 import { readDoc, readVerdict, isSigned, DESIGN_FILE, REVIEWS } from "../discovery/record/index.mjs";
@@ -398,6 +407,155 @@ await withRoot({}, async (tmp) => {
   check("the next export resumes: the idea and REQ-1 are left alone, the rest created — nothing duplicated",
     jAgain.handoff.version === 2 && seqOf(jr.calls) === "POST /issue | POST /issue | POST /issue | POST /issue" && jAgain.tracker.created.join() === "REQ-2,REQ-4,STORY-1,STORY-2" && jAgain.tracker.unchanged.join() === "PRD,REQ-1", seqOf(jr.calls));
   check("the reviews directory holds the export verdict beside the others", existsSync(join(kiln, REVIEWS, `${EXPORT_GATE}.json`)));
+});
+
+// ── R14 · cold intake: a handoff taken in a root holding nothing of Discovery's record; drift per id against a seeded edit; the door is the PM's ──
+await withRoot({}, async (tmp) => {
+  const T0 = new Date("2026-09-06T09:00:00Z");
+  // Discovery, whole, somewhere else: a signed handoff, then an edit that moves REQ-1 and STORY-1 and adds a ruling.
+  const asked = [
+    { subject: "STORY-1", question: "Is a shortfall of zero cases an exception?", blocking: false },
+    { subject: "STORY-1", question: "Can two exceptions be recorded against one delivery?", blocking: false },
+    { subject: "STORY-1", question: "Which reason applies when a case is short and damaged?", blocking: false },
+  ];
+  const disc = seedProject(tmp, { slug: "dock" });
+  seedPrototype(disc);
+  seedStories(disc, { open_questions: [...asked, { subject: "REQ-2", question: "Does the run sheet show deliveries already received?", blocking: true }] });
+  seedDesign(disc);
+  await review({ root: disc, _query: clean() });
+  signoff(disc, { by: "Ana Ruiz" });
+  const go = () => exportHandoff({ root: disc, exit: "delivery", by: "Brad", _exec: noExec, _fetch: noExec, _env: {}, _now: () => T0 });
+  const v1 = await go();
+  answer({ root: disc, req: "REQ-1", oq: "OQ-1", answer: "Yes, until the shift ends.", criterion: "An exception can be recorded until the shift ends.", by: "Brad" });
+  const proving = structuredClone(STORIES);
+  proving[0].scenarios.push({ name: "After the truck has left", gherkin: "Given a delivery whose truck has left\nWhen I record an exception before the shift ends\nThen the exception is recorded against that delivery", proves: ["REQ-1/AC-3"] });
+  seedStories(disc, { stories: proving, open_questions: asked });
+  const v2 = await go();
+  check("Discovery stands at v2: the edit moved REQ-1 and STORY-1 and added RUL-1", v2.handoff.version === 2 && v2.handoff.contract.rulings.length === 1 && v2.handoff.stories.open_questions.length === 3);
+
+  // The cold root: a repository holding the handoffs and nothing else of Discovery's.
+  const cold = join(tmp, "cold");
+  mkdirSync(join(cold, ".git"), { recursive: true });
+  mkdirSync(join(cold, HANDOFFS), { recursive: true });
+  for (const f of readdirSync(join(disc, HANDOFFS))) copyFileSync(join(disc, HANDOFFS, f), join(cold, HANDOFFS, f));
+  check("the cold root holds two handoffs and no PRD, stories, design, prototype or review",
+    readHandoffs(cold).length === 2 && readdirSync(join(cold, "discovery")).join() === "handoffs" && !existsSync(join(cold, "discovery", "prd.json")));
+  const noRun = await refusal(() => intake(cold));
+  check("intake with no run is refused — the run pins the handoff intake takes", noRun?.code === "no-run", noRun?.message);
+  createRun(cold, { by: "Brad", version: 1, now: T0 });
+
+  const first = intake(cold, { now: T0 });
+  const rec = first.record;
+  check("intake takes the pinned snapshot, v1, and writes one record that validates and is stamped",
+    rec.handoff.version === 1 && rec.handoff.content_hash === v1.handoff.meta.content_hash && validate("intake", rec).ok && verify(rec).verdict === "pass" && existsSync(join(cold, INTAKE_FILE)), validate("intake", rec).errors?.join("; "));
+  const d = rec.drift;
+  check("drift is reported per id against the live snapshot, v2: REQ-1 and STORY-1 changed, RUL-1 added, nothing removed, every other item unchanged",
+    d.against.version === 2 && d.against.content_hash === v2.handoff.meta.content_hash && d.changed.map((c) => c.id).join() === "REQ-1,STORY-1" && d.added.map((a) => `${a.kind}:${a.id}`).join() === "ruling:RUL-1" && d.removed.length === 0 && d.unchanged.length === itemsOf(v1.handoff).length - 2 && ["REQ-2", "REQ-4", "EPIC-1", "STORY-2", "SCREEN-1"].every((id) => d.unchanged.includes(id)), JSON.stringify(d).slice(0, 400));
+  const req1 = d.changed[0];
+  check("a change names the field and carries both sides — REQ-1's criteria went from two to three",
+    req1.fields.length === 1 && req1.fields[0].field === "acceptance_criteria" && req1.fields[0].was.length === 2 && req1.fields[0].now.length === 3 && req1.fields[0].now[2].id === "AC-3", JSON.stringify(req1));
+  check("nothing is resolved: the record compiles v1 — three scenarios, not four", rec.scenarios.length === 3 && !rec.scenarios.some((s) => s.name === "After the truck has left"));
+
+  // Compile: every scenario to steps with a skeleton; the joins re-run.
+  const s1 = rec.scenarios[0];
+  check("a scenario compiles to its story, name, the criteria it proves, the screens it runs on and its steps",
+    s1.id === "STORY-1/1" && s1.story === "STORY-1" && s1.proves.join() === "REQ-1/AC-1" && s1.screens.join() === "SCREEN-1" && s1.steps.map((st) => st.kind).join() === "given,when,then", JSON.stringify(s1));
+  check("a step keeps its text and gets a skeleton id the sdd writer fills",
+    s1.steps[0].text === "a delivery from Harvest Foods on the run sheet" && s1.steps[0].step === "given_a_delivery_from_harvest_foods_on_the_run_sheet" && s1.steps[2].step.startsWith("then_the_exception_shows"), JSON.stringify(s1.steps));
+  check("And and But inherit the keyword before them; a line with no keyword is refused",
+    parseGherkin("Given a\nAnd b\nWhen c\nBut d\nThen e\nAnd f").map((s) => s.kind).join() === "given,given,when,when,then,then" && (() => { try { parseGherkin("Given a\nthe truck leaves"); return false; } catch (e) { return e.code === "bad-gherkin"; } })());
+
+  // Slice: work items.
+  const wi = rec.work_items;
+  check("work items: one per story, one per non-functional requirement inside the line — ids are the backlog's, no new namespace",
+    wi.map((w) => `${w.kind}:${w.id}`).join() === "story:STORY-1,story:STORY-2,requirement:REQ-4", JSON.stringify(wi.map((w) => w.id)));
+  check("a story item carries its epic, statement, criteria by join id with their text, the design's screens with their controls and states, and its scenarios",
+    wi[0].epic === "EPIC-1" && wi[0].criteria.map((c) => c.id).join() === "REQ-1/AC-1,REQ-1/AC-2" && wi[0].criteria[1].statement === "A submitted exception cannot be edited." && wi[0].screens[0].screen_ref === "SCREEN-1" && wi[0].screens[0].controls.join() === "reason-chip,record-exception" && wi[0].screens[0].states.join() === "choosing,recorded" && wi[0].scenarios.join() === "STORY-1/1,STORY-1/2", JSON.stringify(wi[0]).slice(0, 400));
+  check("a requirement item carries the criterion, no screens, no scenarios — verified by measurement or inspection", wi[2].criteria.map((c) => c.id).join() === "REQ-4/AC-1" && wi[2].screens.length === 0 && wi[2].scenarios.length === 0 && wi[2].epic === null);
+
+  // Ask: the questions the snapshot still carries go back across the seam.
+  const q = rec.questions;
+  check("questions: the contract's two open questions unattributed, the stories' three on STORY-1 and one blocking on REQ-2's story",
+    q.length === 6 && q.filter((x) => x.source === "contract" && x.story === null).length === 2 && q.filter((x) => x.story === "STORY-1").length === 3 && q.find((x) => x.blocking)?.story === "STORY-2", JSON.stringify(q.map((x) => [x.source, x.story, x.blocking])));
+  check("a story over the budget is a funnel signal — recorded against R13, never trimmed",
+    rec.budget.per_story === QUESTION_BUDGET && JSON.stringify(rec.budget.over) === JSON.stringify([{ story: "STORY-1", count: 3 }]) && funnelRows(funnelPath(cold)).some((r) => r.signal === "intake-questions" && r.story === "STORY-1" && r.count === 3 && r.budget === 2), JSON.stringify(funnelRows(funnelPath(cold))));
+  check("existing: the cold root is greenfield — no product files, no manifest", rec.existing.mode === "greenfield" && rec.existing.manifest === null && rec.existing.files === 0);
+
+  // The verdict: finding-shaped, pinned to the handoff, filed where the machine reads it.
+  const verdict = JSON.parse(readFileSync(join(cold, VERDICT_FILE), "utf8"));
+  check("the verdict is a finding document pinned to the handoff it took; the blocking question blocks; drift and the other questions advise; the joins passed",
+    first.verdict === VERDICT_FILE && validate("finding", verdict).ok && verdict.gate === INTAKE_GATE && verdict.verdict === "block" && verdict.judged.length === 1 && verdict.judged[0].path === handoffFile(1) && verdict.judged[0].content_hash === v1.handoff.meta.content_hash && verdict.findings.filter((f) => f.rule === "drift").length === 3 && verdict.findings.filter((f) => f.rule === "question").length === 6 && verdict.findings.filter((f) => f.rule === "question-budget").length === 1 && !verdict.findings.some((f) => f.rule.startsWith("join")), JSON.stringify(verdict.findings.map((f) => `${f.rule}:${f.subject}:${f.severity}`)));
+  check("the drift finding tells the PM the door: proceed on v1 or adopt v2", /adopt/.test(verdict.findings.find((f) => f.rule === "drift").remedy) && /v2/.test(verdict.findings.find((f) => f.rule === "drift").evidence));
+
+  // The machine takes it: finish on the verdict; approve is refused on the block; the PM's edit is adopted; intake runs again on v2.
+  transition(cold, { stage: "intake", event: "start", by: "runner", now: T0 });
+  const fin = transition(cold, { stage: "intake", event: "finish", by: "runner", verdict: first.verdict, now: T0 });
+  const held = await refusal(() => transition(cold, { stage: "intake", event: "approve", by: "Brad", now: T0 }));
+  check("finish takes the filed verdict into review; approve is refused as judge-blocked — the blocking question is the door",
+    fin.run.stages.intake.status === "review" && fin.run.stages.intake.verdict === VERDICT_FILE && held?.code === "judge-blocked", held?.message);
+  adoptHandoff(cold, { version: 2, by: "Brad", now: T0 });
+  check("adopting v2 moves the pin; intake in review is untouched — it regenerates", readRun(cold).handoff.version === 2 && readRun(cold).stages.intake.status === "review");
+  transition(cold, { stage: "intake", event: "regenerate", by: "runner", now: T0 });
+  const second = intake(cold, { now: T0 });
+  const rec2 = second.record;
+  check("intake on v2: no drift — the pin is the latest; the ruling rides in the contract; four scenarios; OQ-1 answered leaves four questions, the budget still exceeded",
+    rec2.handoff.version === 2 && rec2.drift.against === null && rec2.drift.changed.length === 0 && rec2.scenarios.length === 4 && rec2.questions.length === 4 && !rec2.questions.some((x) => x.blocking) && rec2.budget.over.length === 1, JSON.stringify(rec2.drift));
+  check("the record's hash moved with the compile — a judge that pinned intake.json goes stale with it", rec2.meta.content_hash !== rec.meta.content_hash);
+  const fin2 = transition(cold, { stage: "intake", event: "finish", by: "runner", verdict: second.verdict, now: T0 });
+  const approved = transition(cold, { stage: "intake", event: "approve", by: "Brad", now: T0 });
+  check("the second round advises — questions and the budget signal — and the approve door opens; round 2 of the cap",
+    fin2.run.stages.intake.round === 2 && JSON.parse(readFileSync(join(cold, VERDICT_FILE), "utf8")).verdict === "advise" && approved.run.stages.intake.status === "approved");
+  check("the funnel holds one budget row per intake — the meter, not a tally of rounds", funnelRows(funnelPath(cold)).filter((r) => r.signal === "intake-questions").length === 2);
+
+  // Tampering with the pinned file is caught at the door: by item when the edit left the stamp, by the pin when it re-stamped itself.
+  const file = join(cold, handoffFile(2));
+  const kept = readFileSync(file, "utf8");
+  const edited = JSON.parse(kept);
+  edited.stories.stories[1].statement = "As a supervisor, I want the run sheet, so that I can watch.";
+  writeFileSync(file, JSON.stringify(edited));
+  const forged = await refusal(() => intake(cold, { now: T0 }));
+  writeFileSync(file, JSON.stringify(stamp(edited)));
+  const restamped = await refusal(() => intake(cold, { now: T0 }));
+  check("a snapshot edited under its pin is refused — handoff-integrity names the item; a self-consistent re-stamp is handoff-moved, the pin being the run's word on what it took",
+    forged?.code === "handoff-integrity" && /STORY-2/.test(forged.message) && restamped?.code === "handoff-moved", `${forged?.code} · ${restamped?.code}`);
+  writeFileSync(file, kept);
+
+  // ── R14 · read containment: a Delivery agent that touches discovery/ is refused at the chokepoint; the row records it; the SDK is told first ──
+  const ledger = join(cold, LEDGER);
+  process.env.JIRA_API_TOKEN = "tok-secret-9f3a"; process.env.JIRA_EMAIL = "pm@acme.test"; process.env.GH_TOKEN = "gho-secret";
+  const agent = (q, over = {}) => call({ half: "delivery", stage: "build", role: "writer", kind: "builder", system: "s", prompt: "p", cwd: cold, ledger, _query: q.query, ...over });
+  const peek = scripted({ toolUses: [{ name: "Read", input: { file_path: "src/app.mjs" } }, { name: "Bash", input: { command: "cat discovery/prd.json" } }] });
+  const refused = await refusal(() => agent(peek));
+  check("a Delivery agent reading discovery/ is refused at the chokepoint — the code names containment, the message the tool and what it touched",
+    refused?.code === "containment" && /Bash/.test(refused.message) && /cat discovery\/prd\.json/.test(refused.message), refused?.message);
+  const row = ledgerRows(ledger).at(-1);
+  check("the ledger row records every tool use with its target, ok false and the error naming containment",
+    row.ok === false && /^containment: Bash/.test(row.error) && row.tools.map((t) => `${t.name} ${t.target}`).join(" | ") === "Read src/app.mjs | Bash cat discovery/prd.json", JSON.stringify(row));
+  const opts = peek.calls[0].options;
+  check("the SDK is told the same before the model runs: sandbox on, refuse if unavailable, discovery/ denied to reads and writes, the Read, Edit and Write tools denied the path",
+    opts.sandbox?.enabled === true && opts.sandbox.failIfUnavailable === true && opts.sandbox.filesystem.denyRead.join() === join(cold, "discovery") && opts.sandbox.filesystem.denyWrite.join() === join(cold, "discovery") && opts.settings?.permissions?.deny.join() === ["Read", "Edit", "Write"].map((t) => `${t}(/${join(cold, "discovery")}/**)`).join(), JSON.stringify({ sandbox: opts.sandbox, settings: opts.settings }));
+  check("no credential the pipeline holds reaches an agent's environment; the rest of it does",
+    HELD_BACK.every((k) => !(k in opts.env)) && HELD_BACK.includes("JIRA_API_TOKEN") && HELD_BACK.includes("GH_TOKEN") && opts.env.PATH === process.env.PATH, Object.keys(opts.env).filter((k) => /JIRA|GH_/.test(k)).join());
+  const abs = scripted({ toolUses: [{ name: "Read", input: { file_path: join(cold, "discovery", "handoffs", "handoff-v2.json") } }] });
+  const absolute = await refusal(() => agent(abs));
+  const write = scripted({ toolUses: [{ name: "Write", input: { file_path: "./discovery/prd.json", content: "{}" } }] });
+  const wrote = await refusal(() => agent(write));
+  check("an absolute path into discovery/ is the same refusal — the handoff reaches an agent through its prompt — and so is a write there",
+    absolute?.code === "containment" && wrote?.code === "containment" && /Write/.test(wrote.message), wrote?.message);
+  const fine = scripted({ toolUses: [{ name: "Read", input: { file_path: "src/app.mjs" } }, { name: "Grep", input: { pattern: "discovery", path: "src" } }, { name: "Bash", input: { command: "npm test -- --grep discovery" } }] });
+  const ok = await agent(fine);
+  const okRow = ledgerRows(ledger).at(-1);
+  check("a call that stays inside the product is fine — the word is not the path — and its tool uses are on its row too",
+    ok.text === "ok" && okRow.ok === true && okRow.tools.map((t) => `${t.name} ${t.target}`).join(" | ") === "Read src/app.mjs | Grep src | Bash npm test -- --grep discovery", JSON.stringify(okRow.tools));
+  const disco = scripted({ toolUses: [{ name: "Read", input: { file_path: "discovery/prd.json" } }] });
+  await call({ half: "discovery", stage: "stories", role: "writer", kind: "compose", system: "s", prompt: "p", cwd: disc, ledger, _query: disco.query });
+  check("Discovery's own agents read their record — containment is the seam's, not a rule against reading; their environment is still stripped of credentials",
+    ledgerRows(ledger).at(-1).ok === true && disco.calls[0].options.sandbox === undefined && !("JIRA_API_TOKEN" in disco.calls[0].options.env));
+  const gone = scripted({ resultError: "Sandbox unavailable: bubblewrap is not installed" });
+  const failed = await refusal(() => agent(gone));
+  check("a sandbox the SDK cannot provide is a failed call named on its row — never a call run unsandboxed",
+    /Sandbox unavailable/.test(failed?.message) && ledgerRows(ledger).at(-1).ok === false && /Sandbox unavailable/.test(ledgerRows(ledger).at(-1).error), failed?.message);
+  delete process.env.JIRA_API_TOKEN; delete process.env.JIRA_EMAIL; delete process.env.GH_TOKEN;
 });
 
 done();

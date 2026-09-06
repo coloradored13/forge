@@ -11,11 +11,13 @@ import { join } from "node:path";
 import { suite, withRoot, scripted } from "./_harness.mjs";
 import { canonicalize, sha256, resolve, contentHash, itemHash, stamp, stampItems, verify, ALGORITHM } from "../shared/hash.mjs";
 import { repoBrief, productFiles, readManifest, manifestSummary, MANIFEST } from "../discovery/workshop/brief.mjs";
+import { whatExists } from "../shared/existing.mjs";
 import { setupProject } from "../discovery/setup/index.mjs";
 import { openPrd, systemFor, turn } from "../discovery/workshop/index.mjs";
 import { evidence } from "../shared/prompt/index.mjs";
 
 const { check, done } = suite("provenance · hash chain, brownfield brief");
+const eqList = (a, b) => JSON.stringify([...a].sort()) === JSON.stringify([...b].sort());
 
 // ── canonical form ──
 {
@@ -86,6 +88,9 @@ withRoot({ "README.md": "# Oven", ".gitignore": "node_modules", "discovery/.keep
   const b = repoBrief(root);
   check("scaffolding alone is greenfield — README, .gitignore, discovery/ and forge/ are not the product",
     b.mode === "greenfield" && b.manifest === null && /^## What exists/.test(b.text) && /Nothing yet/.test(b.text) && /Elicit the whole shape/.test(b.text), b.text);
+  const w = whatExists(root);
+  check("both halves read what exists through one reader: the scaffolding is listed as files and dropped from the product, and the mode is the brief's",
+    w.mode === b.mode && eqList(w.files, ["README.md", ".gitignore"]) && w.product.length === 0 && w.manifest === null, JSON.stringify(w));
   check("the pipeline's own directories are never product files", productFiles(root).join() === ".gitignore,README.md", productFiles(root).join());
 });
 
@@ -112,6 +117,7 @@ withRoot({
 // A product not built by Forge, and a manifest that cannot be read: both are brownfield, both said plainly.
 withRoot({ "src/main.py": "print(1)", "requirements.txt": "flask" }, (root) => {
   const b = repoBrief(root);
+  check("product files make it brownfield in the shared reader too, with the files themselves — what Delivery's intake records", whatExists(root).mode === "brownfield" && eqList(whatExists(root).product, ["requirements.txt", "src/main.py"]), JSON.stringify(whatExists(root)));
   check("product files without a manifest are brownfield with the manifest's absence stated", b.mode === "brownfield" && b.manifest === null && b.text.includes(`No \`${MANIFEST}\``) && /not built by Forge/.test(b.text), b.text);
   check("the file listing is by type and top level", /- by type: \.txt 1, \.py 1\n/.test(b.text) && /- top level: requirements\.txt, src$/.test(b.text), b.text.split("### Files")[1]);
 });

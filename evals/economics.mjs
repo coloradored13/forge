@@ -40,7 +40,7 @@ await withRoot({}, async (root) => {
 
   const bad = scripted({ usd: 0.03, resultError: "the agent fell over" });
   let threw = null;
-  try { await call({ half: "delivery", stage: "sdd", role: "writer", kind: "writer", system: "s", prompt: "p", ledger, _query: bad.query }); } catch (e) { threw = e; }
+  try { await call({ half: "delivery", stage: "sdd", role: "writer", kind: "writer", system: "s", prompt: "p", cwd: root, ledger, _query: bad.query }); } catch (e) { threw = e; }
   const failed = rows(ledger)[1];
   check("a failed call still records its row — it billed", threw && failed?.ok === false && failed.usd === 0.03 && failed.error.includes("fell over"), JSON.stringify(failed));
 
@@ -82,12 +82,12 @@ await withRoot({}, async (root) => {
   const ledger = join(root, "calls.jsonl");
   const waits = [];
   const q = scripted({ throwWith: ["usage limit reached — resets at 4pm", null], usd: 0.2 });
-  const r = await call({ half: "delivery", stage: "qa", role: "judge", system: "s", prompt: "p", ledger, _query: q.query, _sleep: async (ms) => waits.push(ms) });
+  const r = await call({ half: "delivery", stage: "qa", role: "judge", system: "s", prompt: "p", cwd: root, ledger, _query: q.query, _sleep: async (ms) => waits.push(ms) });
   check("a usage gap pauses and retries the whole call", r.usd === 0.2 && q.calls.length === 2 && waits.length === 1 && waits[0] === 5 * 60_000, `${q.calls.length} calls · waits ${waits}`);
   check("both attempts are on the ledger — the failed one is not hidden", rows(ledger).length === 2 && rows(ledger)[0].ok === false && rows(ledger)[1].ok === true);
 
   const q2 = scripted({ throwWith: ["TypeError: cannot read properties of undefined"] });
-  const err = await call({ half: "delivery", stage: "qa", role: "judge", system: "s", prompt: "p", ledger, _query: q2.query, _sleep: async () => {} }).then(() => null, (e) => e);
+  const err = await call({ half: "delivery", stage: "qa", role: "judge", system: "s", prompt: "p", cwd: root, ledger, _query: q2.query, _sleep: async () => {} }).then(() => null, (e) => e);
   check("any other error rethrows at once", err && /TypeError/.test(err.message) && q2.calls.length === 1);
 });
 
