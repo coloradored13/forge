@@ -9,7 +9,7 @@
 import { join } from "node:path";
 import { load } from "../../shared/schema/index.mjs";
 import { canonicalize, resolve, stamp } from "../../shared/hash.mjs";
-import { deriveVerdict, pin } from "../../shared/judge/index.mjs";
+import { deriveVerdict, pin, fit } from "../../shared/judge/index.mjs";
 import { record as recordSignal, funnelPath } from "../../shared/funnel.mjs";
 import { loadPrd, savePrd, PRD_FILE } from "../workshop/index.mjs";
 import { Refused, readDoc, saveVerdict, PROTOTYPE_FILE, STORIES_FILE, bumpVersion } from "../record/index.mjs";
@@ -151,7 +151,7 @@ export function auditOf(amendment) {
   if (amendment.introduces.length) {
     findings.push({
       severity: "medium", confidence: "certain", rule: "undeclared-vocabulary", subject: amendment.id,
-      summary: `${amendment.id} introduces ${amendment.introduces.length} word(s) the PRD does not use: ${amendment.introduces.join(", ")}.`.slice(0, 400),
+      summary: fit(`${amendment.id} introduces ${amendment.introduces.length} word(s) the PRD does not use: ${amendment.introduces.join(", ")}.`),
       evidence: `\`${amendment.target}\` → ${textOf(amendment.to).slice(0, 200)}; none of ${amendment.introduces.join(", ")} appear in the PRD's drift-checked content or its vocabulary.`,
       remedy: "Define the term in the shape's vocabulary in the same amendment, or reword to the words the PRD already holds.",
     });

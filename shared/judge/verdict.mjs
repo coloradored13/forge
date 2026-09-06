@@ -12,6 +12,10 @@ const ladder = (list) => Object.fromEntries(list.map((w, i) => [w, list.length -
 export const SEVERITY = ladder(schema.$defs.finding.properties.severity.enum);
 export const CONFIDENCE = ladder(schema.$defs.finding.properties.confidence.enum);
 
+/** The schema's ceiling on a summary. A mechanical finding that quotes text fits it with `fit`, the whole text riding in `evidence`. */
+export const SUMMARY_MAX = schema.$defs.finding.properties.summary.maxLength;
+export const fit = (s) => (s.length > SUMMARY_MAX ? `${s.slice(0, SUMMARY_MAX - 1)}…` : s);
+
 const [BLOCKING_SEVERITY] = Object.keys(SEVERITY);
 const [BLOCKING_CONFIDENCE] = Object.keys(CONFIDENCE);
 
