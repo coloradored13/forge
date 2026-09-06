@@ -15,6 +15,14 @@ export const KINDS = ["judge", "reviewer", "writer", "conversant"];
 const PLACEHOLDER = /\{\{[^}]*\}\}/g;
 const FIELD = /`(\/[^`\s]+)`/g;
 
+/**
+ * Where to aim under a ceiling. Told only the ceiling, a model writes to it — Bakehouse's
+ * sdd judges averaged 382 of 400 and one landed at 403 after five retries, and a round
+ * with a judge that cannot answer is a blocked round. A model cannot count characters
+ * exactly; it can hold a margin. Three quarters, rounded down to a round number.
+ */
+export const target = (max) => Math.floor((max * 3) / 4 / 10) * 10;
+
 /** Every contract field a rendered mechanics names — the eval joins this to the schema. */
 export function namedFields(text) {
   return [...new Set([...text.matchAll(FIELD)].map((m) => m[1]))];
@@ -59,8 +67,9 @@ export function mechanics({ kind, schema, only, scope, rulings = [], arithmetic 
   out.push(`## ${conversing ? "This section captures" : "Output contract"} — \`${schema}\`\n\n` + held.map(({ path, required, description, enum: e, maxLength }) => {
     const bits = [`- \`${path}\``, required ? "(required)" : "(optional)"];
     if (e) bits.push(`one of ${e.map((x) => `\`${x}\``).join(", ")}`);
-    // the ceiling is stated with the field: a bound learned only by rejection is written to, then overrun
-    if (maxLength != null) bits.push(`at most ${maxLength} characters`);
+    // the ceiling is stated with the field: a bound learned only by rejection is written to, then overrun —
+    // and a bound stated alone is written to as well, so the line also says where to aim
+    if (maxLength != null) bits.push(`at most ${maxLength} characters — aim for ${target(maxLength)}; the ceiling is counted exactly, and an answer past it is discarded`);
     if (description) bits.push(`— ${description}`);
     return bits.join(" ");
   }).join("\n"));
