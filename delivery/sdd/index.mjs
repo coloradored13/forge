@@ -8,7 +8,10 @@
 // including the one question that never blocks: what failure class nothing here tests
 // (R2 — it rides in `deferred`, never a finding). sdd never invents an interface, and it
 // never decides a question the snapshot still carries: the question crosses as a question.
+// A second round revises what the findings name and what a changed input touches; the rest
+// is carried verbatim and held to it (revise.mjs).
 
+import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { outputContract, validateAgainst } from "../../shared/schema/index.mjs";
@@ -19,15 +22,16 @@ import { scopeOf } from "../../shared/scope.mjs";
 import { renderDesign } from "../../shared/handoff.mjs";
 import { readDoc, saveDoc, saveVerdict } from "../../shared/store.mjs";
 import { Refused } from "../../shared/refused.mjs";
-import { LEDGER } from "../state/index.mjs";
+import { LEDGER, rounds } from "../state/index.mjs";
 import { INTAKE_FILE } from "../intake/index.mjs";
+import { scopeOfRevision, carry, CARRIED } from "./revise.mjs";
 
 const PROMPTS = join(dirname(fileURLToPath(import.meta.url)), "prompts");
 export const GATE = "sdd";
 export const SDD_FILE = join("forge", "delivery", "sdd.json");
 export const VERDICT_FILE = join("forge", "delivery", "reviews", "sdd.json");
 /** Checked mechanically, never the judge's to report (R10). */
-export const ARITHMETIC = ["item-unbound", "item-bound-twice", "item-unknown", "control-not-in-design", "control-unbound", "criterion-untested", "criterion-not-on-item", "scenario-unknown", "test-id-duplicate", "interface-disagrees", "interface-unshared", "interface-from-unknown", "dependency-cycle", "question"];
+export const ARITHMETIC = ["item-unbound", "item-bound-twice", "item-unknown", "control-not-in-design", "control-unbound", "criterion-untested", "criterion-not-on-item", "scenario-unknown", "test-id-duplicate", "interface-disagrees", "interface-unshared", "interface-from-unknown", "dependency-cycle", "question", CARRIED];
 /** The `beyond` a judge writes on the one failure class nothing tests — fixed, so release can list them apart from scope deferrals. */
 export const UNTESTED = "untested";
 const WRITES = new Set(["Write", "Edit", "Bash", "NotebookEdit"]);
@@ -45,17 +49,23 @@ export function loadSdd(root) { return readDoc(root, SDD_FILE); }
  * @returns { doc, verdict, file }
  */
 export async function round(root, ctx) {
-  const doc = await write(root, ctx);
-  return judgeAll(root, { ...ctx, doc });
+  const { doc, carried } = await write(root, ctx);
+  return judgeAll(root, { ...ctx, doc, carried });
 }
 
 /** A re-judge (R5): the standing binding judged again against a moved handoff — never a regeneration. */
 export async function rejudge(root, ctx) {
   const doc = loadSdd(root);
   if (!doc) throw new Refused("no-sdd", "sdd: there is no binding to re-judge");
-  return judgeAll(root, { ...ctx, doc });
+  return judgeAll(root, { ...ctx, doc, carried: [] });
 }
 
+/**
+ * Compose the binding. With a previous binding and a verdict on it, this is a revision:
+ * the writer sees the previous items marked, per item, revise or carry verbatim, and the
+ * runner holds it to that — what it changed without cause is restored and filed
+ * (revise.mjs). @returns { doc, carried } — the binding on disk and the carry's findings.
+ */
 async function write(root, { run, handoff, intake, review, onEvent, _query, _sleep }) {
   const contract = handoff.contract;
   const prior = loadSdd(root);
@@ -64,6 +74,8 @@ async function write(root, { run, handoff, intake, review, onEvent, _query, _sle
     mechanics: mechanics({ kind: "writer", schema: "sdd", scope: scopeOf(contract), rulings: rulingsOf(contract), arithmetic: ARITHMETIC }),
   });
   const findings = review ? renderFindingsForAgent(review) : null;
+  const scope = prior && review ? scopeOfRevision({ prior, review, intake, priorIntake: priorIntakeOf(root, prior, intake) }) : null;
+  const mark = (it) => (scope.items.has(it.work_item) ? `revise: ${scope.items.get(it.work_item).join(", ")}` : "carry verbatim");
   const prompt = [
     `## Work items\n\n${intake.work_items.map((w) => renderWorkItem(w, intake)).join("\n\n")}`,
     `## ${VOCABULARY}\n\n${renderVocabulary(contract)}`,
@@ -71,7 +83,7 @@ async function write(root, { run, handoff, intake, review, onEvent, _query, _sle
     contract.constraints?.length ? `## Constraints\n\n${contract.constraints.map((c) => `- ${c}`).join("\n")}` : "",
     intake.questions.length ? `## Questions the snapshot still carries — not yours to decide\n\n${intake.questions.map((q) => `- ${q.id} (${q.subject ?? q.source}${q.blocking ? ", blocking" : ""}): ${q.question}`).join("\n")}` : "",
     intake.existing.mode === "brownfield" ? evidence("What the repository holds", renderExisting(intake.existing)) : "",
-    prior && findings ? `## The previous binding\n\n${prior.items.map(renderItem).join("\n\n")}` : "",
+    prior && findings ? `## The previous binding\n\n${REVISION}${scope.all ? ` Every item is to revise: ${scope.all}.` : ""}\n\n${prior.items.map((it) => renderItem(it, mark(it))).join("\n\n")}` : "",
     findings ? `## The judge's findings on the previous binding\n\n${findings}` : "",
   ].filter(Boolean).join("\n\n");
 
@@ -86,21 +98,36 @@ async function write(root, { run, handoff, intake, review, onEvent, _query, _sle
   if (res.structured === undefined) throw new Refused("no-structured-output", "sdd: the writer returned no binding");
   const v = validateAgainst(outputContract("sdd"), res.structured);
   if (!v.ok) throw new Refused("sdd-invalid", `sdd: the binding does not fit the contract — ${v.errors.slice(0, 5).join("; ")}`, v.errors);
+  const { items, findings: carried } = scope ? carry(prior, res.structured, scope, intake) : { items: res.structured.items, findings: [] };
 
   const doc = {
     id: `sdd-${run.id}`, meta: {},
     traces: { handoff: { version: handoff.version, content_hash: handoff.meta.content_hash }, intake: { content_hash: intake.meta.content_hash } },
-    ...res.structured,
+    ...res.structured, items,
     "x-drift-checked": ["/items", "/questions"],
   };
-  return saveDoc(root, SDD_FILE, "sdd", doc);
+  return { doc: saveDoc(root, SDD_FILE, "sdd", doc), carried };
 }
 
-async function judgeAll(root, { run, handoff, intake, doc, onEvent, _query, _sleep }) {
+/** The intake the previous binding was bound against — kept with the round that filed it (R8) — or null when it is the current one or not on record. */
+function priorIntakeOf(root, prior, intake) {
+  const want = prior.traces?.intake?.content_hash;
+  if (!want || want === intake.meta?.content_hash) return intake;
+  for (const r of rounds(root, GATE)) {
+    const kept = (r.kept ?? []).find((k) => k.path === INTAKE_FILE && k.content_hash === want);
+    if (kept) { try { return JSON.parse(readFileSync(join(root, r.dir, kept.as), "utf8")); } catch { return null; } }
+  }
+  return null;
+}
+
+/** The legend the writer reads above the previous binding — the marks, not the rule (the identity holds the rule). */
+const REVISION = "Each item is marked: *revise* — a finding names it or its work item changed — or *carry verbatim*.";
+
+async function judgeAll(root, { run, handoff, intake, doc, carried = [], onEvent, _query, _sleep }) {
   const judged = pins(run, handoff, intake, doc);
   const arithmetic = checkBinding(intake, handoff.design, doc);
   if (arithmetic.verdict === "block") {
-    const verdict = { ...arithmetic, judged, cost: { model: "none", usd: 0, ms: 0 } };
+    const verdict = { ...arithmetic, findings: rank([...arithmetic.findings, ...carried]), judged, cost: { model: "none", usd: 0, ms: 0 } };
     saveVerdict(root, VERDICT_FILE, verdict);
     return { doc, verdict, file: VERDICT_FILE };
   }
@@ -127,7 +154,7 @@ async function judgeAll(root, { run, handoff, intake, doc, onEvent, _query, _sle
     scope: scopeOf(contract), rulings: rulingsOf(contract), arithmetic: ARITHMETIC,
     cwd: root, ledger: join(root, LEDGER), budget: run.budget, models: run.models, onEvent, _query, _sleep,
   });
-  const findings = rank([...arithmetic.findings, ...judge.findings]);
+  const findings = rank([...arithmetic.findings, ...carried, ...judge.findings]);
   const verdict = {
     gate: GATE, verdict: deriveVerdict(findings), findings, deferred: judge.deferred,
     checked: arithmetic.checked + judge.checked, skipped: judge.skipped, reraised: judge.reraised, judged, cost: judge.cost,
@@ -171,11 +198,12 @@ export function renderWorkItem(w, intake) {
   return parts.join("\n\n");
 }
 
-export function renderItem(it) {
+/** One item as a reader sees it; `mark` is what the round may do with it (revise: why · carry verbatim), on the heading. */
+export function renderItem(it, mark = null) {
   return [
-    `### ${it.work_item}`,
+    `### ${it.work_item}${mark ? ` — ${mark}` : ""}`,
     `Approach: ${it.approach}`,
-    `Interfaces:\n${it.interfaces.map((i) => `- \`${i.name}\`: \`${i.signature}\`${i.shared ? " (shared)" : ""}`).join("\n") || "(none)"}`,
+    `Interfaces:\n${it.interfaces.map((i) => `- \`${i.name}\`: \`${i.signature}\`${i.shared ? " (shared)" : ""}${i.from ? ` · from ${i.from}` : ""}`).join("\n") || "(none)"}`,
     `Tests:\n${it.tests.map((t) => `- ${t.id} [${t.level}] proves ${t.proves.join(", ")}${t.scenario ? ` · ${t.scenario}` : ""}\n    exercises: ${t.exercises}\n    asserts: ${t.asserts}`).join("\n") || "(none)"}`,
     `Controls: ${it.controls.map((c) => `${c.screen_ref}/\`${c.control}\``).join(", ") || "(none)"}`,
     `Surface: ${it.surface.join(", ") || "(none)"}`,

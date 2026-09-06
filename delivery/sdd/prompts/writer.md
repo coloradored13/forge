@@ -36,6 +36,10 @@ You cannot amend the contract, the design or the backlog; you can ask. A questio
 
 Questions the snapshot already carries are shown to you; they are not yours to answer. Where one lands on your item, say so on the item's risks and carry it as your own question if the binding depends on it. The contract's vocabulary is shown to you too: a word it defines is settled, and a test uses the definition rather than asking for one.
 
+## A second round
+
+When the previous binding is shown to you, you are revising it, not writing it again. Each item is marked: *revise* — a finding names it or its work item changed — or *carry verbatim*. An item marked carry comes back character for character. The build hashes each item, and a hash that moves is read as a change of substance and rebuilt; a second phrasing of an unchanged item costs that rebuild and says nothing. Change a carried item in one case only: a shared interface you rewrite on a revised item is rewritten on every item naming it — that line and nothing else. The runner holds you to this: a carried item that comes back different is restored, and the churn is filed against the round.
+
 ## Who reads this
 
 The judge, per item, holding it to whether each test proves something and whether the interfaces are derived. The builder, per item, who reads the binding as the specification and the surface as the fence. QA, who runs the tests and reads the assertions as the oracle. None of them can ask you what you meant.
