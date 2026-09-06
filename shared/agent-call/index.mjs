@@ -3,8 +3,11 @@
 // call and refused at the cap (never degraded); a usage gap pauses; and one ledger row
 // records model, tokens, cost, duration and every tool use whether the call succeeded
 // or not. The seam is drawn here too (R14): a Delivery agent runs sandboxed with
-// discovery/ denied to it, and a tool use that touched it anyway is a refusal with the
-// row as proof — like a judge's write. No agent inherits the pipeline's credentials.
+// discovery/ under its cwd denied to it, and a tool use that touched it anyway is a
+// refusal with the row as proof — like a judge's write. That is read containment of the
+// record, and it is what this file enforces; containing what a builder may change in
+// the product is delivery/build's, against the sdd's surface. Every agent's environment
+// is an allowlist (PASSED), so the pipeline's own credentials never reach one.
 
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import { Refused } from "../refused.mjs";
@@ -45,11 +48,24 @@ export const TOOLS = {
 const NEVER = ["WebFetch", "WebSearch", "Task", "NotebookEdit"];
 
 /**
+ * The environment an agent runs in — the shape of a working shell, named one variable at
+ * a time. A denylist would be a claim about what the shell holds that no one can keep: an
+ * ssh agent socket, a Kaggle token, the parent session's messaging token were all in the
+ * shell the first real calls ran from. So the list says what passes; what it does not
+ * name does not. HOME carries the CLI's own sign-in (its config and keychain), PATH
+ * carries `node` — an agent that cannot find `node` is not contained, it is broken.
+ * CLAUDE_CONFIG_DIR is a locator the CLI honours when set. A model API key is not on
+ * the list: the pipeline signs in through the CLI, and a key in a builder's shell is a
+ * decision to take when a run needs one.
+ */
+export const PASSED = ["HOME", "PATH", "TMPDIR", "USER", "LOGNAME", "SHELL", "LANG", "LC_ALL", "TERM", "CLAUDE_CONFIG_DIR"];
+/**
  * Credentials the pipeline holds for its own doors (a tracker export, a release) and no
- * agent has any business with. Everything else in the environment passes through — an
- * agent that cannot find `node` is not contained, it is broken.
+ * agent has any business with. Not a filter — the allowlist is — but the names the seam
+ * eval proves are never on it, so a future edit to PASSED cannot let one through quietly.
  */
 export const HELD_BACK = ["JIRA_EMAIL", "JIRA_API_TOKEN", "GH_TOKEN", "GITHUB_TOKEN"];
+const environment = () => Object.fromEntries(PASSED.filter((k) => k in process.env).map((k) => [k, process.env[k]]));
 /** What a Delivery agent may not touch, relative to its cwd: the seam is a snapshot it was handed, not a directory it reads. */
 const CONTAINED = "discovery";
 
@@ -115,9 +131,9 @@ async function once({ half, stage, role, kind, model, system, prompt, cwd, outpu
     allowedTools: policy.allowed,
     disallowedTools: NEVER,
     permissionMode: policy.mode,
-    // The environment an agent gets is the pipeline's minus what the pipeline holds for
-    // itself. Passed explicitly: omitted, the SDK inherits process.env whole.
-    env: Object.fromEntries(Object.entries(process.env).filter(([k]) => !HELD_BACK.includes(k))),
+    // The environment an agent gets is the allowlist and nothing else. Passed explicitly:
+    // omitted, the SDK inherits process.env whole; passed, it is the whole environment.
+    env: environment(),
     ...(fence ? containment(fence) : {}),
     ...(maxTurns ? { maxTurns } : {}),
     ...(resume ? { resume } : {}),
