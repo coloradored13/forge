@@ -17,7 +17,7 @@ import { violations } from "../tools/import-rule.mjs";
 import { load, inlineRefs, outputContract, fields, validate } from "../shared/schema/index.mjs";
 import { stamp, verify } from "../shared/hash.mjs";
 import { KINDS, itemFields, itemsOf, verifyHandoff, readHandoffs, latestHandoff, handoffFile, HANDOFFS } from "../shared/handoff.mjs";
-import { call, HELD_BACK } from "../shared/agent-call/index.mjs";
+import { call, HELD_BACK, PASSED } from "../shared/agent-call/index.mjs";
 import { rows as ledgerRows } from "../shared/agent-call/ledger.mjs";
 import { rows as funnelRows, funnelPath } from "../shared/funnel.mjs";
 import { SUMMARY_MAX } from "../shared/judge/index.mjs";
@@ -529,6 +529,7 @@ await withRoot({}, async (tmp) => {
   // ── R14 · read containment: a Delivery agent that touches discovery/ is refused at the chokepoint; the row records it; the SDK is told first ──
   const ledger = join(cold, LEDGER);
   process.env.JIRA_API_TOKEN = "tok-secret-9f3a"; process.env.JIRA_EMAIL = "pm@acme.test"; process.env.GH_TOKEN = "gho-secret";
+  process.env.SSH_AUTH_SOCK = "/tmp/agent.sock"; process.env.X_TOKEN = "x-secret-not-on-any-list";
   const agent = (q, over = {}) => call({ half: "delivery", stage: "build", role: "writer", kind: "builder", system: "s", prompt: "p", cwd: cold, ledger, _query: q.query, ...over });
   const peek = scripted({ toolUses: [{ name: "Read", input: { file_path: "src/app.mjs" } }, { name: "Bash", input: { command: "cat discovery/prd.json" } }] });
   const refused = await refusal(() => agent(peek));
@@ -540,8 +541,11 @@ await withRoot({}, async (tmp) => {
   const opts = peek.calls[0].options;
   check("the SDK is told the same before the model runs: sandbox on, refuse if unavailable, discovery/ denied to reads and writes, the Read, Edit and Write tools denied the path",
     opts.sandbox?.enabled === true && opts.sandbox.failIfUnavailable === true && opts.sandbox.filesystem.denyRead.join() === join(cold, "discovery") && opts.sandbox.filesystem.denyWrite.join() === join(cold, "discovery") && opts.settings?.permissions?.deny.join() === ["Read", "Edit", "Write"].map((t) => `${t}(/${join(cold, "discovery")}/**)`).join(), JSON.stringify({ sandbox: opts.sandbox, settings: opts.settings }));
-  check("no credential the pipeline holds reaches an agent's environment; the rest of it does",
-    HELD_BACK.every((k) => !(k in opts.env)) && HELD_BACK.includes("JIRA_API_TOKEN") && HELD_BACK.includes("GH_TOKEN") && opts.env.PATH === process.env.PATH, Object.keys(opts.env).filter((k) => /JIRA|GH_/.test(k)).join());
+  check("an agent's environment is the allowlist and nothing else: the pipeline's credentials are absent, so is everything the shell happens to hold — an ssh agent socket, a token on no list — while HOME and PATH arrive as they are",
+    Object.keys(opts.env).every((k) => PASSED.includes(k)) && HELD_BACK.every((k) => !(k in opts.env)) && !("SSH_AUTH_SOCK" in opts.env) && !("X_TOKEN" in opts.env) && opts.env.PATH === process.env.PATH && opts.env.HOME === process.env.HOME,
+    Object.keys(opts.env).filter((k) => !PASSED.includes(k)).join() || "(all on the list)");
+  check("the allowlist names the shape of a working shell, never a credential: HOME and PATH on it, no held-back name on it, nothing matching TOKEN, SECRET, KEY or SOCK",
+    PASSED.includes("HOME") && PASSED.includes("PATH") && HELD_BACK.every((k) => !PASSED.includes(k)) && PASSED.every((k) => !/TOKEN|SECRET|KEY|SOCK|PASSWORD/.test(k)), PASSED.join());
   const abs = scripted({ toolUses: [{ name: "Read", input: { file_path: join(cold, "discovery", "handoffs", "handoff-v2.json") } }] });
   const absolute = await refusal(() => agent(abs));
   const write = scripted({ toolUses: [{ name: "Write", input: { file_path: "./discovery/prd.json", content: "{}" } }] });
@@ -555,13 +559,14 @@ await withRoot({}, async (tmp) => {
     ok.text === "ok" && okRow.ok === true && okRow.tools.map((t) => `${t.name} ${t.target}`).join(" | ") === "Read src/app.mjs | Grep src | Bash npm test -- --grep discovery", JSON.stringify(okRow.tools));
   const disco = scripted({ toolUses: [{ name: "Read", input: { file_path: "discovery/prd.json" } }] });
   await call({ half: "discovery", stage: "stories", role: "writer", kind: "compose", system: "s", prompt: "p", cwd: disc, ledger, _query: disco.query });
-  check("Discovery's own agents read their record — containment is the seam's, not a rule against reading; their environment is still stripped of credentials",
-    ledgerRows(ledger).at(-1).ok === true && disco.calls[0].options.sandbox === undefined && !("JIRA_API_TOKEN" in disco.calls[0].options.env));
+  check("Discovery's own agents read their record — containment is the seam's, not a rule against reading; their environment is the same allowlist",
+    ledgerRows(ledger).at(-1).ok === true && disco.calls[0].options.sandbox === undefined && Object.keys(disco.calls[0].options.env).every((k) => PASSED.includes(k)) && !("JIRA_API_TOKEN" in disco.calls[0].options.env) && !("SSH_AUTH_SOCK" in disco.calls[0].options.env) && disco.calls[0].options.env.HOME === process.env.HOME,
+    Object.keys(disco.calls[0].options.env).filter((k) => !PASSED.includes(k)).join() || "(all on the list)");
   const gone = scripted({ resultError: "Sandbox unavailable: bubblewrap is not installed" });
   const failed = await refusal(() => agent(gone));
   check("a sandbox the SDK cannot provide is a failed call named on its row — never a call run unsandboxed",
     /Sandbox unavailable/.test(failed?.message) && ledgerRows(ledger).at(-1).ok === false && /Sandbox unavailable/.test(ledgerRows(ledger).at(-1).error), failed?.message);
-  delete process.env.JIRA_API_TOKEN; delete process.env.JIRA_EMAIL; delete process.env.GH_TOKEN;
+  delete process.env.JIRA_API_TOKEN; delete process.env.JIRA_EMAIL; delete process.env.GH_TOKEN; delete process.env.SSH_AUTH_SOCK; delete process.env.X_TOKEN;
 });
 
 done();
