@@ -37,7 +37,7 @@ Check an item only when its eval is green in this repo. The v1 path is the sourc
 | Answers that write criteria | R3 | M1 | [x] |
 | Staleness as re-judge | R5 | M2 | [x] |
 | Ranked judges | R7 | M1 | [x] |
-| Setup with estimate, both halves | R1 | M1, M2 | [ ] |
+| Setup with estimate, both halves | R1 | M1, M2 | [x] |
 | Project repo at Discovery setup (create or attach; refusals) — new | R11, R14 | M1 | [x] |
 | Delivery read containment: no `discovery/` reads, tool uses recorded — new | R14 | M2 | [x] |
 | Workshop reads the repo and manifest before its first question (brownfield) — new | R11 | M1 | [x] |

@@ -2,10 +2,11 @@
 // their view models, every trigger a form on a door with its cost shown first, every
 // long door streamed to the page. Nothing here reads the record but through the views,
 // nothing moves it but through the doors, and a refusal is the door's own words. The
-// two Delivery views answer with the milestone that brings their record.
+// Delivery run view is Delivery's (delivery/console); the release view answers with the
+// milestone that brings its record.
 
 import { join } from "node:path";
-import { esc, usd, when, short, badge, table, dl, form, quoteStrip } from "../../shared/console/index.mjs";
+import { esc, usd, when, short, badge, table, dl, form, quoteStrip, TONE, verdictLine, findingRows, findingsHtml } from "../../shared/console/index.mjs";
 import { setupProject } from "../setup/index.mjs";
 import { openPrd, turn, extract } from "../workshop/index.mjs";
 import { generate } from "../prototype/index.mjs";
@@ -20,7 +21,6 @@ import { VIEWS, ARTIFACTS, setupView, workshopView, boardView, exportView } from
 export const nav = VIEWS.map((v) => ({ href: `/${v.key}`, label: v.label }));
 
 const RENDER = { prd: renderPrd, prototype: renderPrototype, stories: renderStories, design: renderDesign };
-const TONE = { pass: "ok", block: "bad" };
 const STATUS = { complete: "ok", in_progress: "warn", pending: "muted" };
 const list = (xs, sep = ", ") => (xs?.length ? esc(xs.join(sep)) : `<span class="muted">none</span>`);
 const blank = (s) => (s?.trim() ? s.trim() : undefined);
@@ -29,7 +29,9 @@ const jsonOrText = (s) => { try { return JSON.parse(s); } catch { return s; } };
 // ── setup ──
 
 function setupPage(v) {
-  const rolesTable = table(["role", "half", "model", ""], v.roles.map((r) => [`<code>${esc(r.key)}</code>`, esc(r.half), `<code>${esc(r.model)}</code>`, r.overridden ? badge(`override · default ${r.default}`, "warn") : badge("default", "muted")]));
+  // a call's likely cost is the ledger's mean for that role and model — never a rate card (R1); Delivery's roles are priced on the run view
+  const history = (r) => (r.estimate == null ? `<span class="muted">${r.half === "delivery" && v.project ? "priced on the Delivery run view" : "—"}</span>` : r.estimate.basis === "none" ? `<span class="muted">no history yet</span>` : `~${usd(r.estimate.usd)} a call <span class="muted">(${r.estimate.n} so far)</span>`);
+  const rolesTable = table(["role", "half", "model", "", "a call, from history"], v.roles.map((r) => [`<code>${esc(r.key)}</code>`, esc(r.half), `<code>${esc(r.model)}</code>`, r.overridden ? badge(`override · default ${r.default}`, "warn") : badge("default", "muted"), history(r)]));
   if (!v.project) {
     return { title: "Setup", body: `<h1>Set up a project</h1><p class="muted">${esc(v.root)}</p>` + form({
       action: "/setup", submit: "Set up",
@@ -85,26 +87,11 @@ function workshopPage(v, key) {
 
 // ── board ──
 
-function gateHtml(g) {
-  if (g.verdict === null) return `<span class="muted">${esc(g.gate)}: no verdict</span>`;
-  return `${esc(g.gate)}: ${badge(g.verdict, TONE[g.verdict] ?? "warn")}${g.fresh === false ? " " + badge("stale", "warn") : ""}${g.findings.length ? ` <span class="muted">${g.findings.length} findings</span>` : ""}${g.model ? ` <code>${esc(g.model)}</code>` : ""}${g.usd != null ? ` <span class="muted">${usd(g.usd)}</span>` : ""}`;
-}
-
 function artifactRow(a) {
   const state = !a.present ? badge("absent", "muted")
     : [a.stale ? badge(`stale · ${a.moved.join("+")} moved${a.since.length ? ` · since ${a.since.join(", ")}` : ""}`, "warn") : badge("current", "ok"), a.kind === "design" ? (a.signed ? badge(`signed by ${a.signoff.by}`, "ok") : badge("unsigned", "muted")) : ""].join(" ");
   const links = a.present ? [`<a href="/artifact/${esc(a.kind)}">read</a>`, a.html ? `<a href="/prototype/index.html">open</a>` : ""].filter(Boolean).join(" · ") : "";
-  return [esc(a.kind), a.present ? `v${esc(a.version)} <code>${esc(short(a.hash))}</code>` : "—", state, a.gates.map(gateHtml).join("<br>") || `<span class="muted">—</span>`, links];
-}
-
-/** Findings as the schema shapes them: severity × confidence, the rule, the subject, the summary, the evidence a human checks in ten seconds. */
-const findingRows = (findings, first = () => []) => findings.map((f) => [...first(f), `${badge(f.severity, f.severity === "high" ? "bad" : f.severity === "medium" ? "warn" : "muted")} ${badge(f.confidence, "muted")}`, esc(f.rule), esc(f.subject), `${esc(f.summary)}<br><span class="muted">${esc(f.evidence)}</span>${f.remedy ? `<br><span class="muted">→ ${esc(f.remedy)}</span>` : ""}`]);
-
-function findingsHtml(gates) {
-  const rows = gates.flatMap((g) => findingRows(g.findings, () => [esc(g.gate)]));
-  const deferred = gates.flatMap((g) => g.deferred.map((d) => [esc(g.gate), esc(d.subject), esc(d.summary), esc(d.beyond)]));
-  return (rows.length ? `<h2>Findings</h2>${table(["gate", "severity", "rule", "subject", "what"], rows)}` : "")
-    + (deferred.length ? `<h2>Deferred — noticed past the line (R2)</h2>${table(["gate", "subject", "what", "beyond"], deferred)}` : "");
+  return [esc(a.kind), a.present ? `v${esc(a.version)} <code>${esc(short(a.hash))}</code>` : "—", state, a.gates.map(verdictLine).join("<br>") || `<span class="muted">—</span>`, links];
 }
 
 function boardPage(v) {
@@ -184,7 +171,7 @@ function exportPage(v) {
 
 function landsPage(key) {
   const v = VIEWS.find((x) => x.key === key);
-  return { title: v.label, body: `<h1>${esc(v.label)}</h1><p class="muted">This view is a projection of the ${key === "run" ? "run record" : "release manifest"} and lands with it at ${esc(v.lands)}.</p>` };
+  return { title: v.label, body: `<h1>${esc(v.label)}</h1><p class="muted">This view is a projection of the release manifest and lands with it at ${esc(v.lands)}.</p>` };
 }
 
 // ── routes ──
@@ -238,7 +225,6 @@ export function routes({ root, _query, _sleep, _exec, _fetch, _env } = {}) {
     { method: "POST", path: "/doors/reject", handler: ({ form: f }) => { reject({ root, id: f.id, by: f.by, reason: f.reason }); return { redirect: "/board" }; } },
     { method: "GET", path: "/export", handler: () => exportPage(exportView(root)) },
     { method: "POST", path: "/export", handler: async ({ form: f }) => { await exportHandoff({ root, exit: f.exit, by: f.by, tracker: trackerOf(f), ...exportSeams }); return { redirect: "/export" }; } },
-    { method: "GET", path: "/run", handler: () => landsPage("run") },
     { method: "GET", path: "/release", handler: () => landsPage("release") },
   ];
 }

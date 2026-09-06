@@ -15,9 +15,9 @@ import { suite, withRoot, scripted } from "./_harness.mjs";
 import { call, BudgetError, rows, quote, modelFor, TOOLS } from "../shared/agent-call/index.mjs";
 import { runJudge, runPerItemJudge, rank, deriveVerdict, weight, renderFindingsForAgent } from "../shared/judge/index.mjs";
 import { apply, DEFAULTS, readRun, transition, LEDGER } from "../delivery/state/index.mjs";
-import { runStage, escalate, advance, AUTHORED, PULSE_MS } from "../delivery/run/index.mjs";
+import { runStage, escalate, advance, estimateRun, AUTHORED, PULSE_MS } from "../delivery/run/index.mjs";
 import { SDD_FILE, VERDICT_FILE as SDD_VERDICT, loadSdd } from "../delivery/sdd/index.mjs";
-import { seedDelivery, BINDING } from "./_fixture.mjs";
+import { seedDelivery, coldRoot, BINDING } from "./_fixture.mjs";
 import { readDoc } from "../shared/store.mjs";
 import { stamp } from "../shared/hash.mjs";
 import { setupProject } from "../discovery/setup/index.mjs";
@@ -131,6 +131,27 @@ await withRoot({}, async (parent) => {
   await turn({ root, key: "shape", text: "An order has a life.", _query: dear.query });
   const refused = await turn({ root, key: "shape", text: "more", _query: dear.query }).then(() => null, (e) => e);
   check("at the project's cap the next turn is refused before the model runs", refused instanceof BudgetError && dear.calls.length === 1 && quoteTurn({ root, key: "shape" }).over === true, refused?.message);
+});
+
+// ── R1 · the estimate before a run: the round's shape times the ledger's history — never a rate card ──
+await withRoot({}, async (tmp) => {
+  const CLEAN = (item) => ({ findings: [], deferred: [{ subject: item, summary: `${item}: the signal dropping mid-write.`, beyond: "untested" }], checked: 1, skipped: 0 });
+  const { disc, cold, handoff } = await seedDelivery(tmp, { slug: "tare" });
+  const e0 = estimateRun(cold, { handoff });
+  check("before any call the estimate has the round's shape — intake asks nothing of a model, sdd is one writer and one judge per work item the slicing will produce — and no price: no history is 'no history', not a number",
+    e0.stages.map((s) => `${s.stage}:${s.calls}`).join() === "intake:0,sdd:4" && e0.stages[1].roles.map((r) => `${r.role}×${r.calls}`).join() === "writer×1,judge×3" && e0.stages[1].roles.every((r) => r.per_call === null && r.n === 0 && r.usd === null) && e0.calls === 4 && e0.usd === null && e0.stages[0].usd === 0 && e0.standing.spent === 0, JSON.stringify(e0));
+  check("the shape names the model each role would run on — the run's override where there is one, the shared default where there is not", e0.stages[1].roles.map((r) => r.model).join() === `${modelFor({ half: "delivery", role: "writer" })},${modelFor({ half: "delivery", role: "judge" })}` && estimateRun(cold, { handoff, models: { "delivery.judge": "claude-sonnet-5" } }).stages[1].roles[1].model === "claude-sonnet-5");
+
+  const q = scripted({ structuredSeq: [BINDING, CLEAN("STORY-1"), CLEAN("STORY-2"), CLEAN("REQ-4")], usd: [0.9, 0.2, 0.3, 0.4] });
+  await advance(cold, { _query: q.query, _now: () => new Date("2026-09-06T09:30:00Z") });
+  const e1 = estimateRun(cold, { handoff, intake: readDoc(cold, "forge/delivery/intake.json") });
+  check("after one round every role has history and the estimate is arithmetic on it: the writer's mean once, the judges' mean per work item the intake sliced, summed by stage and over the run",
+    e1.stages[1].roles[0].per_call === 0.9 && e1.stages[1].roles[0].n === 1 && Math.abs(e1.stages[1].roles[1].per_call - 0.3) < 1e-9 && e1.stages[1].roles[1].n === 3 && Math.abs(e1.stages[1].usd - 1.8) < 1e-9 && Math.abs(e1.usd - 1.8) < 1e-9 && Math.abs(e1.standing.spent - 1.8) < 1e-9, JSON.stringify(e1.stages[1]));
+  check("history is per model, not per role: pointing the judge at a model it has never run on takes the price away again, and the run's total with it",
+    estimateRun(cold, { handoff, models: { "delivery.judge": "claude-sonnet-5" } }).stages[1].roles[1].per_call === null && estimateRun(cold, { handoff, models: { "delivery.judge": "claude-sonnet-5" } }).usd === null && estimateRun(cold, { handoff, models: { "delivery.judge": "claude-sonnet-5" } }).stages[1].roles[0].per_call === 0.9);
+  check("standing is the spend against the run's budget: what remains, and over when the next round would already be refused",
+    Math.abs(estimateRun(cold, { handoff, budget: 5 }).standing.remaining - 3.2) < 1e-9 && estimateRun(cold, { handoff, budget: 1.5 }).standing.over === true && estimateRun(cold, { handoff }).standing.budget === null);
+  check("another cold root of the same project has no history of its own — the ledger is the run's, never borrowed", estimateRun(coldRoot(tmp, disc, "tare-2"), { handoff }).usd === null);
 });
 
 // ── R7 · rank and derive ──
