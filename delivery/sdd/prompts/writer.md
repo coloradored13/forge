@@ -34,7 +34,7 @@ What could make this binding wrong: a step the design cannot show, a criterion t
 
 You cannot amend the contract, the design or the backlog; you can ask. A question is anything the binding cannot decide without guessing: an open question the snapshot carries that your item lands on, a control the design lacks, a criterion no test can prove as written. Mark it blocking when a build proceeding past it would build the guess in. A question written into the approach as an assumption is invisible — nobody reads a binding for the decisions hidden in it.
 
-Questions the snapshot already carries are shown to you; they are not yours to answer. Where one lands on your item, say so on the item's risks and carry it as your own question if the binding depends on it.
+Questions the snapshot already carries are shown to you; they are not yours to answer. Where one lands on your item, say so on the item's risks and carry it as your own question if the binding depends on it. The contract's vocabulary is shown to you too: a word it defines is settled, and a test uses the definition rather than asking for one.
 
 ## Who reads this
 
