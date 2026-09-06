@@ -51,7 +51,7 @@
         "approach": { "type": "string", "minLength": 1, "description": "How it gets built, in prose — the first place mechanism may be discussed. Say what is exercised and where state lives; do not restate the story." },
         "interfaces": {
           "type": "array",
-          "description": "The contracts this item exposes or consumes: functions, routes, events, files. An interface two items share is named here by both, `signature` character for character — the arithmetic compares them verbatim, and a disagreement is a build discovering it.",
+          "description": "The contracts this item exposes or consumes: functions, routes, events, files. An interface two items share is named here by both, `signature` character for character — the arithmetic compares them verbatim, and a disagreement is a build discovering it. One the item consumes names the item that builds it in `from`: that is a dependency, and the build orders itself by it.",
           "items": {
             "type": "object",
             "required": ["name", "signature", "shared"],
@@ -59,7 +59,8 @@
             "properties": {
               "name": { "type": "string", "minLength": 1 },
               "signature": { "type": "string", "minLength": 1 },
-              "shared": { "type": "boolean", "description": "True when another item names the same interface." }
+              "shared": { "type": "boolean", "description": "True when another item names the same interface." },
+              "from": { "type": "string", "pattern": "^(STORY|REQ)-\\d+$", "description": "The item that builds this interface, when this item only calls it. Absent on the item that builds it. Arithmetic: the item exists and names the interface, and no ring of `from` closes." }
             }
           }
         },
@@ -82,7 +83,7 @@
         },
         "controls": {
           "type": "array",
-          "description": "Every design control this item binds to, by the id the signed design gave it, on the screen the design holds it. Controls ⊂ design is arithmetic: an id the design does not carry is an interface nobody decided.",
+          "description": "Every design control this item wires on its own screens, and every one its tests drive on another item's screen — by the id the signed design gave it, on the screen the design holds it. Controls ⊂ design is arithmetic: an id the design does not carry is an interface nobody decided. A control on a screen this item does not run on is a dependency on the item that runs there and binds it; none binding it is arithmetic too.",
           "items": {
             "type": "object",
             "required": ["screen_ref", "control"],

@@ -1,7 +1,9 @@
 // owns: R2, R14, R1 · delivery — build: the code, contained per work item, accounted from
-// base. One builder call per binding item, in the binding's order, each in a worktree of
-// the project on the build branch — a checkout that holds nothing of the record (R14) —
-// starting from the branch's head. The change set is the diff from that base, whoever
+// base. One builder call per binding item, each after what it depends on and in the
+// binding's order otherwise (the order is sdd's, derived from the binding), each in a
+// worktree of the project on the build branch — a checkout that holds nothing of the
+// record (R14) — starting from the branch's head, where what it depends on already
+// stands. The change set is the diff from that base, whoever
 // committed, and it is held to the item's surface (R2): a path outside it, or under the
 // pipeline's own directories, discards the item's work and is a finding. A clean item is
 // committed by the runner; a blocked one is a finding with the builder's reason, and the
@@ -25,7 +27,7 @@ import { readDoc, saveDoc, saveVerdict } from "../../shared/store.mjs";
 import { Refused } from "../../shared/refused.mjs";
 import { LEDGER } from "../state/index.mjs";
 import { INTAKE_FILE } from "../intake/index.mjs";
-import { loadSdd, SDD_FILE, renderWorkItem, renderItem } from "../sdd/index.mjs";
+import { loadSdd, SDD_FILE, renderWorkItem, renderItem, buildOrder, dependenciesOf } from "../sdd/index.mjs";
 
 const PROMPTS = join(dirname(fileURLToPath(import.meta.url)), "prompts");
 export const GATE = "build";
@@ -81,9 +83,14 @@ async function buildAll(root, { run, handoff, intake, sdd, review, onEvent, _que
   const prior = loadBuild(root);
   const wt = worktree(root);
   const redo = new Set((review?.findings ?? []).map((f) => f.subject));
+  const { order, cycle } = buildOrder(sdd, intake);
+  if (cycle) throw new Refused("dependency-cycle", `build: the binding has no order — ${cycle.join(" → ")}: each depends on the next; sdd holds the ring`);
+  const stray = sdd.items.filter((it) => !order.includes(it)).map((it) => it.work_item);
+  if (stray.length) throw new Refused("item-unknown", `build: ${stray.join(", ")} bound but not a work item the intake carries`);
+  const { deps } = dependenciesOf(sdd, intake);
   const items = [];
   let halted = null;
-  for (const it of sdd.items) {
+  for (const it of order) {
     const binding_hash = itemHash(it, BOUND);
     const was = prior?.items.find((p) => p.work_item === it.work_item);
     if (was?.status === "built" && was.binding_hash === binding_hash && !redo.has(it.work_item) && stands(wt, was.commit)) {
@@ -99,7 +106,7 @@ async function buildAll(root, { run, handoff, intake, sdd, review, onEvent, _que
     discard(wt);
     const base = head(wt);
     onEvent?.(`${it.work_item} building from ${base.slice(0, 7)}`);
-    const report = await build(root, wt, { run, handoff, intake, sdd, item: it, review, base, onEvent, _query, _sleep });
+    const report = await build(root, wt, { run, handoff, intake, sdd, item: it, deps: deps.get(it.work_item), built: items, review, base, onEvent, _query, _sleep });
     const changed = changeSet(wt, base);
     const violations = contain(changed, it.surface);
     const { status, summary, suggestions, reason } = report;
@@ -136,11 +143,12 @@ function entry(work_item, { status, binding_hash, base = null, commit = null, ch
 }
 
 /** One builder call for one item, in the worktree, fenced at both roots. Returns the validated report. */
-async function build(root, wt, { run, handoff, intake, sdd, item, review, base, onEvent, _query, _sleep }) {
+async function build(root, wt, { run, handoff, intake, sdd, item, deps, built, review, base, onEvent, _query, _sleep }) {
   const contract = handoff.contract;
   const w = intake.work_items.find((x) => x.id === item.work_item);
   if (!w) throw new Refused("item-unknown", `build: ${item.work_item} is bound but is not a work item the intake carries`);
   const refs = new Set(w.screens.map((s) => s.screen_ref));
+  const dependsOn = renderDependencies(deps, { built, sdd, design: handoff.design });
   const shared = sdd.items.filter((o) => o !== item).flatMap((o) => o.interfaces.filter((i) => i.shared).map((i) => `- ${o.work_item} · \`${i.name}\`: \`${i.signature}\``));
   const questions = [
     ...intake.questions.map((q) => `- ${q.id} (${q.subject ?? q.source}${q.blocking ? ", blocking" : ""}): ${q.question}`),
@@ -158,6 +166,7 @@ async function build(root, wt, { run, handoff, intake, sdd, item, review, base, 
     `## The binding — build exactly this\n\n${renderItem(item)}`,
     `## Shared interfaces the other items name — exact, character for character\n\n${shared.join("\n") || "(none)"}`,
     `## The signed design — the screens this item runs on\n\n${refs.size ? renderDesign({ ...handoff.design, screens: handoff.design.screens.filter((s) => refs.has(s.screen_ref)) }) : "(this item runs on no screen)"}`,
+    dependsOn ? `## What this item depends on\n\n${dependsOn}` : "",
     contract.constraints?.length ? `## Constraints\n\n${contract.constraints.map((c) => `- ${c}`).join("\n")}` : "",
     questions.length ? `## Questions the snapshot still carries — not yours to decide\n\n${questions.join("\n")}` : "",
     mine?.findings.length ? `## The findings on the previous build of this item\n\n${renderFindingsForAgent(mine)}` : "",
@@ -172,6 +181,27 @@ async function build(root, wt, { run, handoff, intake, sdd, item, review, base, 
   const v = validateAgainst(outputContract("build-report"), res.structured);
   if (!v.ok) throw new Refused("build-report-invalid", `build: the report on ${item.work_item} does not fit the contract — ${v.errors.slice(0, 5).join("; ")}`, v.errors);
   return res.structured;
+}
+
+/**
+ * The dependency slice of the builder's prompt: each item this one depends on, at the commit
+ * it stands at in the checkout, with only the ways in — the controls this item drives on
+ * that item's screen (kind and label from the design, so they can be driven by id) and the
+ * interfaces it calls, as written. Nothing else of those items is drawn: the builder drives
+ * and calls them, and builds nothing of them. Empty when the item depends on nothing.
+ */
+function renderDependencies(deps, { built, sdd, design }) {
+  if (!deps?.length) return "";
+  const at = (id) => built.find((b) => b.work_item === id)?.commit?.slice(0, 7) ?? "(not built)";
+  const screen = (ref) => design.screens.find((s) => s.screen_ref === ref);
+  const way = (d) => {
+    if (d.name) return `- \`${d.name}\`: \`${sdd.items.find((o) => o.work_item === d.item)?.interfaces.find((i) => i.name === d.name)?.signature ?? "?"}\``;
+    const s = screen(d.screen_ref), c = s?.controls.find((x) => x.id === d.control);
+    return `- ${d.screen_ref} — ${s?.name ?? "?"}: \`${d.control}\` ${c?.kind ?? "?"} "${c?.label ?? "?"}"${c?.state ? ` in ${c.state}` : ""}`;
+  };
+  const blocks = [];
+  for (const id of [...new Set(deps.map((d) => d.item))]) blocks.push(`### ${id} — built at ${at(id)}\n${deps.filter((d) => d.item === id).map(way).join("\n")}`);
+  return `Built before you, each standing in your checkout at the commit named. Drive these controls by id and call these interfaces as written — build nothing of them; what does not match its binding is a report, not a repair.\n\n${blocks.join("\n\n")}`;
 }
 
 // ── the verdict: arithmetic, filed without a model ──
@@ -206,7 +236,7 @@ export function checkBuild(doc) {
     } else if (it.status === "blocked") {
       f("builder-blocked", it.work_item, `${it.work_item} was not built: ${it.reason}`, `report: ${it.summary}`, "Answer what it turns on — through Discovery if it is the contract or the design, in sdd if it is the binding — or override on the record.");
     } else if (it.status === "unbuilt") {
-      f("unbuilt", it.work_item, `${it.work_item} was not built: ${it.reason}.`, "items are built in the binding's order, and the round halts at the first that is not.", "Clear the item the round halted at; the next round builds on from there.");
+      f("unbuilt", it.work_item, `${it.work_item} was not built: ${it.reason}.`, "each item is built after what it depends on, in the binding's order otherwise, and the round halts at the first that is not.", "Clear the item the round halted at; the next round builds on from there.");
     }
   }
   return findings;

@@ -10,6 +10,8 @@ Implement the approach as written. If it is wrong, infeasible or contradicts the
 
 Where an interface is shared, the binding has already decided it: the name and the signature are used exactly, character for character, on every item that names them. Changing one locally is how four items end up with four incompatible stores.
 
+What this item depends on — a control it drives on another item's screen, an interface it calls that another item builds — was built before you and stands in your checkout at the commit named. Drive the control by its id; call the interface as written. Build nothing of it: no stand-in, no second copy, no fix to what you found. Where it does not match its binding, that is a report, not a repair — the item that owns it is the one that changes.
+
 ## The surface is the fence
 
 The binding names the files this item touches, as globs. Change those and nothing else. Your change set is diffed from the commit you started at after you finish, whoever changed what, and a path outside the surface fails the item and discards the work — the instruction is a courtesy; the diff is the control. If the work genuinely needs a file outside the surface, stop and say so in your report: a surface that is wrong is fixed in the binding, never by exceeding it.

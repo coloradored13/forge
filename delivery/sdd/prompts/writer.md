@@ -10,7 +10,7 @@ The first place mechanism may be discussed, and the only thing you write in pros
 
 ## The interfaces
 
-Functions, routes, events, files — the contracts this item exposes or consumes. Derive each one from the scenario's steps and the design's structure, and from nothing else: a step that records an exception needs a way to record one; a screen that lists deliveries needs the list. An interface no step or screen calls for is an architecture you decided alone. When two items need the same thing, name it the same way on both and mark it shared on both.
+Functions, routes, events, files — the contracts this item exposes or consumes. Derive each one from the scenario's steps and the design's structure, and from nothing else: a step that records an exception needs a way to record one; a screen that lists deliveries needs the list. An interface no step or screen calls for is an architecture you decided alone. When two items need the same thing, name it the same way on both and mark it shared on both. When one item builds it and another only calls it, the caller names that item in `from`: that is a dependency, the item named is built first, and a build that consumes an interface it does not name in `from` hides the dependency — nobody orders the build by it, and the builder finds the interface missing.
 
 ## The tests
 
@@ -20,7 +20,7 @@ A criterion the design puts on a screen is proved in a browser, driving the prod
 
 ## The controls
 
-Every design control this item wires, by the id the signed design gave it, on the screen the design holds it. The design is the whole vocabulary: a control it does not carry does not exist, and a build that needs one has found a gap in the design, which is a question, not an invention. Do not rename; do not abbreviate.
+Every design control this item wires on its own screens, and every one its tests drive on another item's screen — by the id the signed design gave it, on the screen the design holds it. A control on a screen this item does not run on is a dependency: the item that runs there binds and builds it, this one drives it, and that item is built first. Name it on both, or the order of the build does not know. The design is the whole vocabulary: a control it does not carry does not exist, and a build that needs one has found a gap in the design, which is a question, not an invention. Do not rename; do not abbreviate.
 
 ## The surface
 
