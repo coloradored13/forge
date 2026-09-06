@@ -2,8 +2,9 @@
 // the signed design and returns, per item, how it is built, the interfaces it exposes,
 // the tests that prove each criterion by id and the design controls it wires by id —
 // before any code. The runner holds the set to the arithmetic SPEC §5 names (controls ⊂
-// design; tests ↔ criteria; shared interfaces verbatim; a blocking question blocks) and
-// files that verdict without a model when it blocks; otherwise one judge per item asks what only judgement answers,
+// design; tests ↔ criteria; shared interfaces verbatim; dependencies derived and acyclic;
+// a blocking question blocks) and files that verdict without a model when it blocks;
+// otherwise one judge per item asks what only judgement answers,
 // including the one question that never blocks: what failure class nothing here tests
 // (R2 — it rides in `deferred`, never a finding). sdd never invents an interface, and it
 // never decides a question the snapshot still carries: the question crosses as a question.
@@ -26,7 +27,7 @@ export const GATE = "sdd";
 export const SDD_FILE = join("forge", "delivery", "sdd.json");
 export const VERDICT_FILE = join("forge", "delivery", "reviews", "sdd.json");
 /** Checked mechanically, never the judge's to report (R10). */
-export const ARITHMETIC = ["item-unbound", "item-bound-twice", "item-unknown", "control-not-in-design", "criterion-untested", "criterion-not-on-item", "scenario-unknown", "test-id-duplicate", "interface-disagrees", "interface-unshared", "question"];
+export const ARITHMETIC = ["item-unbound", "item-bound-twice", "item-unknown", "control-not-in-design", "control-unbound", "criterion-untested", "criterion-not-on-item", "scenario-unknown", "test-id-duplicate", "interface-disagrees", "interface-unshared", "interface-from-unknown", "dependency-cycle", "question"];
 /** The `beyond` a judge writes on the one failure class nothing tests — fixed, so release can list them apart from scope deferrals. */
 export const UNTESTED = "untested";
 const WRITES = new Set(["Write", "Edit", "Bash", "NotebookEdit"]);
@@ -188,14 +189,77 @@ function renderExisting(ex) {
   return lines.join("\n");
 }
 
-// ── the arithmetic (SPEC §5): controls ⊂ design; tests ↔ criteria; shared interfaces verbatim ──
+// ── the arithmetic (SPEC §5): controls ⊂ design; tests ↔ criteria; shared interfaces verbatim; dependencies derived, acyclic ──
+
+/**
+ * What each item depends on, derived from the binding — never declared. Two ways: a
+ * control bound on a screen the item does not run on depends on the item that runs there
+ * and binds it (that item builds the control; this one's tests drive it); an interface
+ * named `from` another item depends on that item (it builds the interface; this one calls
+ * it). Items the intake does not carry are left out — `item-unknown` is their finding.
+ * @returns { deps: Map<work_item, [{ item, via, screen_ref?, control?, name? }]> in the binding's order of the items depended on — `via` the way in words, the fields the way by id,
+ *            unowned: [{ item, screen_ref, control }] foreign controls no item running there binds,
+ *            unknownFrom: [{ item, name, from, why }] `from` naming no item, an item not naming the interface, or itself }
+ */
+export function dependenciesOf(doc, intake) {
+  const work = new Map((intake.work_items ?? []).map((w) => [w.id, w]));
+  const items = (doc.items ?? []).filter((it) => work.has(it.work_item));
+  const at = new Map(items.map((it, i) => [it.work_item, i]));
+  const runsOn = (it, ref) => work.get(it.work_item).screens.some((s) => s.screen_ref === ref);
+  const binds = (it, ref, id) => it.controls.some((c) => c.screen_ref === ref && c.control === id);
+  const deps = new Map(), unowned = [], unknownFrom = [];
+  for (const it of items) {
+    const ways = [];
+    for (const c of it.controls) {
+      if (runsOn(it, c.screen_ref)) continue;
+      const owners = items.filter((o) => o !== it && runsOn(o, c.screen_ref) && binds(o, c.screen_ref, c.control));
+      if (owners.length === 0) unowned.push({ item: it.work_item, screen_ref: c.screen_ref, control: c.control });
+      for (const o of owners) ways.push({ item: o.work_item, via: `${c.screen_ref}/\`${c.control}\``, screen_ref: c.screen_ref, control: c.control });
+    }
+    for (const i of it.interfaces) {
+      if (!i.from) continue;
+      const from = (doc.items ?? []).find((o) => o.work_item === i.from);
+      const why = i.from === it.work_item ? "itself" : !from ? "no item" : !from.interfaces.some((x) => x.name === i.name) ? "does not name" : null;
+      if (why) { unknownFrom.push({ item: it.work_item, name: i.name, from: i.from, why }); continue; }
+      if (at.has(i.from)) ways.push({ item: i.from, via: `\`${i.name}\``, name: i.name });
+    }
+    const seen = new Set();
+    deps.set(it.work_item, ways.filter((w) => !seen.has(`${w.item} ${w.via}`) && seen.add(`${w.item} ${w.via}`)).sort((a, b) => at.get(a.item) - at.get(b.item)));
+  }
+  return { deps, unowned, unknownFrom };
+}
+
+/**
+ * The order the build takes: each item after what it depends on, the binding's order
+ * otherwise — a depth-first walk in binding order, dependencies pulled forward, everything
+ * else where the writer put it. A ring has no order: `order` is null and `cycle` is the
+ * ring, first item to itself. One home (R10): sdd blocks on the ring, build walks the order.
+ * @returns { order: [binding item] | null, cycle: [work_item] | null }
+ */
+export function buildOrder(doc, intake) {
+  const { deps } = dependenciesOf(doc, intake);
+  const item = new Map((doc.items ?? []).map((it) => [it.work_item, it]));
+  const order = [], state = new Map(), path = [];
+  const visit = (id) => {
+    if (state.get(id) === "done") return null;
+    if (state.get(id) === "open") return [...path.slice(path.indexOf(id)), id];
+    state.set(id, "open"); path.push(id);
+    for (const d of deps.get(id)) { const ring = visit(d.item); if (ring) return ring; }
+    path.pop(); state.set(id, "done"); order.push(item.get(id));
+    return null;
+  };
+  for (const id of deps.keys()) { const ring = visit(id); if (ring) return { order: null, cycle: ring }; }
+  return { order, cycle: null };
+}
 
 /**
  * Finding-shaped like every gate. Exactly one binding per work item and none for an item
- * the intake does not carry; every control the design's, on its screen; every criterion
- * on the item proved by a test and no test proving a criterion the item does not carry;
- * every scenario named one the item runs; test ids unique across the set; an interface
- * two items name written the same way by both, and marked shared by both. And the
+ * the intake does not carry; every control the design's, on its screen; a control on a
+ * screen the item does not run on bound by an item that does; every criterion on the item
+ * proved by a test and no test proving a criterion the item does not carry; every scenario
+ * named one the item runs; test ids unique across the set; an interface two items name
+ * written the same way by both, and marked shared by both; an interface named `from` an
+ * item that exists and names it; the dependencies those two make acyclic. And the
  * binding's own questions: one the writer marked blocking blocks the stage — a human
  * answers it in Discovery or overrides on the record; the writer cannot — and one it did
  * not advises, so it crosses as a question and never as a decision.
@@ -249,6 +313,22 @@ export function checkBinding(intake, design, doc) {
   }
   for (const id of work.keys()) {
     if (!bound.has(id)) f("high", "item-unbound", id, `${id} is a work item and has no binding.`, `the intake's \`/work_items\` holds ${id}; \`/items\` has no entry with work_item ${id}.`, "Bind every work item — a build starts from the binding, and an item without one is built from nothing.");
+  }
+  const { deps, unowned, unknownFrom } = dependenciesOf(doc, intake);
+  for (const u of unowned) {
+    const on = screens.get(u.screen_ref);
+    if (!on || !on.has(u.control)) continue; // control-not-in-design already holds it
+    const there = [...work.values()].filter((w) => w.screens.some((s) => s.screen_ref === u.screen_ref)).map((w) => w.id);
+    f("high", "control-unbound", u.item, `${u.item} drives \`${u.control}\` on ${u.screen_ref}, a screen it does not run on, and no item that runs there binds it — nobody builds it.`, there.length ? `${u.screen_ref} is run on by ${there.join(", ")}; none of them binds \`${u.control}\`.` : `no work item runs on ${u.screen_ref}.`, "Bind the control on the item that runs on that screen — this item's test drives it, that item's build wires it — or raise the gap as a question.");
+  }
+  for (const u of unknownFrom) {
+    const said = u.why === "itself" ? `${u.from}, itself` : u.why === "no item" ? `${u.from}, which is not an item in the binding` : `${u.from}, which does not name \`${u.name}\``;
+    f("high", "interface-from-unknown", u.item, `${u.item} names \`${u.name}\` from ${said}.`, `\`/items\` ${u.item} interfaces \`${u.name}\` from: ${u.from} · ${u.why === "no item" ? `no \`/items\` entry has work_item ${u.from}` : u.why === "itself" ? "an item does not consume its own interface" : `${u.from} interfaces: ${(doc.items.find((o) => o.work_item === u.from)?.interfaces ?? []).map((x) => `\`${x.name}\``).join(", ") || "(none)"}`}.`, "`from` names the item that builds the interface — one that exists and names it; leave `from` off the item that builds it.");
+  }
+  const ring = buildOrder(doc, intake).cycle;
+  if (ring) {
+    const way = (a, b) => deps.get(a).filter((d) => d.item === b).map((d) => d.via).join(", ");
+    f("high", "dependency-cycle", ring[0], `${ring.join(" → ")}: each depends on the next; no order builds them.`, ring.slice(0, -1).map((a, i) => `${a} → ${ring[i + 1]} via ${way(a, ring[i + 1])}`).join(" · "), "Break the ring: move the driven control or the consumed interface onto one item, or split the item that holds both ends.");
   }
   for (const [name, uses] of named) {
     const signatures = new Set(uses.map((u) => u.signature));

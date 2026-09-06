@@ -23,11 +23,11 @@ import { rows as calls } from "../shared/agent-call/ledger.mjs";
 import { SECTIONS, LINE_SECTION, indexOf, section } from "../discovery/workshop/sections.mjs";
 import { openPrd, loadPrd, savePrd, mayOpen, systemFor, turn, extract, readTranscript, parseReply, captured, progress, WorkshopRefused } from "../discovery/workshop/index.mjs";
 import { repoBrief } from "../discovery/workshop/brief.mjs";
-import { Refused, readDoc, readVerdict, freshVerdict, staleness, DESIGN_FILE, HTML_FILE } from "../discovery/record/index.mjs";
+import { Refused, readDoc, saveDoc, readVerdict, freshVerdict, staleness, DESIGN_FILE, HTML_FILE } from "../discovery/record/index.mjs";
 import { answer } from "../discovery/doors/index.mjs";
 import { write, review, signoff, checkDesign, GATE as DESIGN_GATE, REVIEW_GATE as DESIGN_REVIEW, ARITHMETIC as DESIGN_RULES } from "../discovery/design/index.mjs";
 import { intake } from "../delivery/intake/index.mjs";
-import { checkBinding, ARITHMETIC as SDD_RULES, UNTESTED, GATE as SDD_GATE, SDD_FILE } from "../delivery/sdd/index.mjs";
+import { checkBinding, dependenciesOf, buildOrder, ARITHMETIC as SDD_RULES, UNTESTED, GATE as SDD_GATE, SDD_FILE } from "../delivery/sdd/index.mjs";
 import { round as buildRound, contain, globToRegExp, loadBuild, checkBuild, ARITHMETIC as BUILD_RULES, BRANCH, WORKTREE, BUILD_FILE, VERDICT_FILE as BUILD_VERDICT } from "../delivery/build/index.mjs";
 import { INTAKE_FILE } from "../delivery/intake/index.mjs";
 import { identity } from "../shared/prompt/index.mjs";
@@ -467,6 +467,43 @@ await withRoot({}, async (tmp) => {
   doc = clone(); delete doc.questions;
   check("a binding with no questions field is read as none — the arithmetic does not throw on it", held(doc).verdict === "pass");
 
+  // What an item depends on is derived from the binding, never declared: a control bound
+  // on a screen the item does not run on is another item's to wire — the one that runs
+  // there and binds it — and an interface named `from` another item is that item's to
+  // build. The build order follows. A foreign control nobody wires is a slicing gap; a
+  // cycle has no order; both block.
+  const ordered = (d) => buildOrder(d, record).order?.map((it) => it.work_item).join() ?? null;
+  const ways = (d, id) => dependenciesOf(d, record).deps.get(id).map((x) => `${x.item}:${x.via}`).join();
+  doc = clone();
+  check("a binding with no foreign controls and no `from` depends on nothing, and the build order is the binding's",
+    ["STORY-1", "STORY-2", "REQ-4"].every((id) => ways(doc, id) === "") && dependenciesOf(doc, record).unowned.length === 0 && ordered(doc) === "STORY-1,STORY-2,REQ-4" && buildOrder(doc, record).cycle === null, ordered(doc));
+  doc = clone(); doc.items[0].controls.push({ screen_ref: "SCREEN-2", control: "delivery-row" });
+  check("a control bound on a screen the item does not run on depends on the item that runs there and binds it, the control as the way; the order follows — STORY-2 before STORY-1, REQ-4 where it was — and the arithmetic passes: a dependency is not a finding",
+    ways(doc, "STORY-1") === "STORY-2:SCREEN-2/`delivery-row`" && ways(doc, "STORY-2") === "" && ordered(doc) === "STORY-2,STORY-1,REQ-4" && held(doc).verdict === "pass", `${ways(doc, "STORY-1")} · ${ordered(doc)} · ${rules(held(doc))}`);
+  doc = clone(); doc.items[0].interfaces.push({ name: "queue.enqueue", signature: "enqueue(write: Write): void", shared: true, from: "REQ-4" }); doc.items[2].interfaces[0].shared = true;
+  check("an interface named `from` another item depends on that item, the interface as the way; the provider names no `from` and depends on nothing; the consumer is built after it",
+    ways(doc, "STORY-1") === "REQ-4:`queue.enqueue`" && ways(doc, "REQ-4") === "" && ordered(doc) === "REQ-4,STORY-1,STORY-2" && held(doc).verdict === "pass", `${ways(doc, "STORY-1")} · ${ordered(doc)} · ${rules(held(doc))}`);
+  doc.items[0].controls.push({ screen_ref: "SCREEN-2", control: "delivery-row" });
+  check("two ways to two items are two dependencies, in the binding's order of the items depended on; the dependents keep their own order after them",
+    ways(doc, "STORY-1") === "STORY-2:SCREEN-2/`delivery-row`,REQ-4:`queue.enqueue`" && ordered(doc) === "STORY-2,REQ-4,STORY-1", `${ways(doc, "STORY-1")} · ${ordered(doc)}`);
+
+  for (const [from, why] of [["REQ-9", "no item REQ-9"], ["STORY-2", "STORY-2 does not name"], ["STORY-1", "names itself"]]) {
+    doc = clone(); doc.items[0].interfaces.push({ name: "queue.enqueue", signature: "enqueue(write: Write): void", shared: true, from }); doc.items[2].interfaces[0].shared = true;
+    v = held(doc);
+    check(`\`from\` ${from}: a provider that is no item, one that does not name the interface, or the item itself blocks — interface-from-unknown, the interface and the name quoted (${why})`,
+      v.verdict === "block" && rules(v) === "interface-from-unknown" && v.findings[0].subject === "STORY-1" && /`queue\.enqueue`/.test(v.findings[0].summary) && new RegExp(from).test(v.findings[0].summary), JSON.stringify(v.findings));
+  }
+  doc = clone(); doc.items[0].controls.push({ screen_ref: "SCREEN-2", control: "delivery-row" }); doc.items[1].controls = [];
+  v = held(doc);
+  check("a control driven on a screen the item does not run on, which no item running there binds, blocks — control-unbound: nobody builds it; the screen's items named",
+    v.verdict === "block" && rules(v) === "control-unbound" && v.findings[0].subject === "STORY-1" && /`delivery-row` on SCREEN-2/.test(v.findings[0].summary) && /SCREEN-2 is run on by STORY-2/.test(v.findings[0].evidence) && dependenciesOf(doc, record).unowned.map((u) => `${u.item}:${u.screen_ref}/${u.control}`).join() === "STORY-1:SCREEN-2/delivery-row", JSON.stringify(v.findings));
+  doc = clone(); doc.items[0].controls.push({ screen_ref: "SCREEN-2", control: "delivery-row" }); doc.items[1].controls.push({ screen_ref: "SCREEN-1", control: "record-exception" });
+  v = held(doc);
+  check("two items each driving the other's screen is a cycle — no order builds them — one blocking finding naming the ring and each way; the order is null",
+    v.verdict === "block" && rules(v) === "dependency-cycle" && v.findings[0].subject === "STORY-1" && /STORY-1 → STORY-2 → STORY-1/.test(v.findings[0].summary) && /SCREEN-2\/`delivery-row`/.test(v.findings[0].evidence) && /SCREEN-1\/`record-exception`/.test(v.findings[0].evidence) && buildOrder(doc, record).order === null && buildOrder(doc, record).cycle.join() === "STORY-1,STORY-2,STORY-1", JSON.stringify(v.findings));
+  doc = clone(); doc.items.push({ ...clone().items[1], work_item: "STORY-9", tests: [], controls: [{ screen_ref: "SCREEN-1", control: "reason-chip" }] });
+  check("an item the intake does not carry is left out of the dependencies — item-unknown is its finding, and the derivation does not throw on it", rules(held(doc)) === "item-unknown" && ordered(doc) === "STORY-1,STORY-2,REQ-4");
+
   v = held({ items: [], questions: [] });
   check("an empty binding is every work item unbound — three findings, the work items still counted", v.findings.length === 3 && rules(v) === "item-unbound" && v.checked === 3);
   check("every rule the arithmetic can emit is declared to the writer and the judge as arithmetic, and nothing declared is idle",
@@ -478,6 +515,8 @@ await withRoot({}, async (tmp) => {
   const writer = identity(join(ROOT, "delivery", "sdd", "prompts", "writer.md"));
   check("the writer is told the arithmetic compares signatures verbatim and that the design is the whole control vocabulary",
     /compares the signatures verbatim/.test(writer) && /The design is the whole vocabulary/.test(writer));
+  check("the writer is told how a dependency is written — a consumed interface names its provider in `from`; a control a test drives on another item's screen is bound on the screen that holds it — and that the order of the build follows from it",
+    /names that item in `from`/.test(writer) && /another item's screen/.test(writer) && /built first/.test(writer) && /hides the dependency/.test(writer), writer.slice(writer.indexOf("## The controls"), writer.indexOf("## The controls") + 900));
 });
 
 // ── R2 in build: the surface is the fence — the change set is held to the binding's globs, and the verdict is arithmetic ──
@@ -545,6 +584,48 @@ await withRoot({}, async (tmp) => {
   const builderId = identity(join(ROOT, "delivery", "build", "prompts", "builder.md"));
   check("the builder is told the diff is the control, to commit nothing, to name tests by criterion id, and the design's hooks — data-screen and data-control — which QA will drive by",
     /the diff is the control/.test(builderId) && /Commit nothing/.test(builderId) && /`data-screen`/.test(builderId) && /`data-control`/.test(builderId) && /REQ-5\/AC-1/.test(builderId) && /not an element to invent/.test(builderId));
+  check("the builder is told what it depends on was built before it and stands in its checkout — drive it by id, call it as written, build nothing of it, report what does not match",
+    /built before you/.test(builderId) && /[Bb]uild nothing of it/.test(builderId) && /a report, not a repair/.test(builderId), builderId.slice(0, 1200));
+});
+
+// ── R2 in build: the order is the binding's dependencies — an item after what it drives and calls — and the builder sees what it stands on ──
+// No new call: the dependency section is prompt tokens on the calls the round makes anyway (§8).
+await withRoot({}, async (tmp) => {
+  const binding = JSON.parse(JSON.stringify(BINDING));
+  binding.items[0].controls.push({ screen_ref: "SCREEN-2", control: "delivery-row" }); // STORY-1's test reaches the delivery through the run sheet's row
+  binding.items[0].interfaces.push({ name: "queue.enqueue", signature: "enqueue(write: Write): void", shared: true, from: "REQ-4" }); // and writes through REQ-4's queue
+  binding.items[2].interfaces[0].shared = true;
+  const { cold, sdd } = await seedBuild(tmp, { slug: "weir", binding, files: { "README.md": "# Weir\n" } });
+  check("the binding with `from` on a consumed interface is the sdd's approved record — the optional field fits the contract", sdd?.items[0].interfaces.at(-1).from === "REQ-4" && roundCtx(cold).run.stages.sdd.status === "approved", JSON.stringify(roundCtx(cold).run.stages.sdd));
+
+  const b = builder([BUILT("Run sheet built."), BUILT("Queue built."), BUILT("Exceptions built.")], { 0: (cwd) => put(cwd, "src/deliveries/store.js", "a"), 1: (cwd) => put(cwd, "src/queue/q.js", "b"), 2: (cwd) => put(cwd, "src/exceptions/store.js", "c") });
+  const r = await buildRound(cold, { ...roundCtx(cold), _query: b.query });
+  const called = b.calls.map((c) => c.prompt.match(/## The work item\n\n### ((?:STORY|REQ)-\d+) — /)[1]);
+  check("items are built after what they depend on — STORY-2 and REQ-4 before STORY-1, the binding's order otherwise — the record in the order built, the round passing",
+    called.join() === "STORY-2,REQ-4,STORY-1" && r.doc.items.map((i) => `${i.work_item}:${i.status}`).join() === "STORY-2:built,REQ-4:built,STORY-1:built" && r.verdict.verdict === "pass" && gitIn(cold, ["log", "--format=%s", BRANCH]).split("\n").map((l) => l.split(":")[0]).join() === "STORY-1,REQ-4,STORY-2,seed", `${called.join()} · ${JSON.stringify(r.verdict.findings)}`);
+  const p = b.calls[2].prompt;
+  const section = (prompt, h) => { const i = prompt.indexOf(`## ${h}`); return i < 0 ? "" : prompt.slice(i, prompt.indexOf("\n## ", i + 1) < 0 ? undefined : prompt.indexOf("\n## ", i + 1)); };
+  const deps = section(p, "What this item depends on");
+  const [s2, q4] = r.doc.items;
+  check("the dependent item's builder is shown what it stands on: each dependency with the commit it stands at, the controls this item drives on that item's screen by id — kind and label — the interface it calls as written, and the instruction to build nothing of them",
+    deps.includes(`### STORY-2 — built at ${s2.commit.slice(0, 7)}`) && /SCREEN-2 — The run sheet: `delivery-row` link "the delivery"/.test(deps) && deps.includes(`### REQ-4 — built at ${q4.commit.slice(0, 7)}`) && /`queue\.enqueue`: `enqueue\(write: Write\): void`/.test(deps) && /build nothing of them/.test(deps), deps || p.slice(0, 800));
+  check("the design slice stays the item's own screens in full — SCREEN-2 is not drawn in STORY-1's design section, and the items that depend on nothing carry no dependency section",
+    /### SCREEN-1 — Recording an exception/.test(section(p, "The signed design — the screens this item runs on")) && !/### SCREEN-2/.test(section(p, "The signed design — the screens this item runs on")) && !b.calls[0].prompt.includes("## What this item depends on") && !b.calls[1].prompt.includes("## What this item depends on"), section(p, "The signed design — the screens this item runs on").slice(0, 300));
+
+  // A halt lands on the build order: what follows the halted item in that order is unbuilt, and the finding says which order.
+  const { cold: halted, sdd: haltedSdd } = await seedBuild(tmp, { slug: "sluice", binding, files: { "README.md": "# Sluice\n" } });
+  const h = builder([BLOCKED("the design has no delivery-row control on SCREEN-2")]);
+  const rh = await buildRound(halted, { ...roundCtx(halted), _query: h.query });
+  check("the round halts at the first item in the build order that does not build — here STORY-2, first because STORY-1 depends on it — and the unbuilt finding names the order it was built in",
+    rh.doc.items.map((i) => `${i.work_item}:${i.status}`).join() === "STORY-2:blocked,REQ-4:unbuilt,STORY-1:unbuilt" && h.calls.length === 1 && rh.verdict.findings.filter((f) => f.rule === "unbuilt").every((f) => /after what it depends on/.test(f.evidence) && /halted at STORY-2/.test(f.summary)), JSON.stringify(rh.verdict.findings));
+
+  // A binding that was approved with a cycle in it — before the arithmetic held them — has no order: the round refuses by name before any call.
+  const ring = JSON.parse(JSON.stringify(haltedSdd));
+  ring.items[1].controls.push({ screen_ref: "SCREEN-1", control: "record-exception" });
+  saveDoc(halted, SDD_FILE, "sdd", ring);
+  const cyc = builder([BUILT()]);
+  const refused = await buildRound(halted, { ...roundCtx(halted), _query: cyc.query }).then(() => null, (e) => e);
+  check("a cycle in the binding refuses the build round — dependency-cycle, the ring named — and no builder is called", refused?.code === "dependency-cycle" && /STORY-1 → STORY-2 → STORY-1/.test(refused.message) && cyc.calls.length === 0, refused?.message);
 });
 
 done();
