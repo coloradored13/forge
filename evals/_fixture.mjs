@@ -3,12 +3,17 @@
 // writers the doors use. Nothing here reaches a model or a real repository.
 
 import { createHash } from "node:crypto";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { skeleton } from "../shared/schema/index.mjs";
+import { HANDOFFS } from "../shared/handoff.mjs";
+import { scripted } from "./_harness.mjs";
 import { setupProject } from "../discovery/setup/index.mjs";
 import { openPrd, loadPrd, savePrd } from "../discovery/workshop/index.mjs";
 import { readDoc, saveDoc, traceOf, PROTOTYPE_FILE, HTML_FILE, STORIES_FILE, DESIGN_FILE } from "../discovery/record/index.mjs";
+import { review, signoff } from "../discovery/design/index.mjs";
+import { exportHandoff } from "../discovery/export/index.mjs";
+import { createRun } from "../delivery/state/index.mjs";
 
 export const HTML = "<!doctype html><title>Dock</title><main><h1>Run sheet</h1><button>Record an exception</button></main>\n";
 
@@ -130,3 +135,77 @@ export function seedDesign(root, design = DESIGN) {
   const doc = { ...skeleton("design"), id: `design-${prd.meta.slug}`, traces: traceOf(prd, proto, stories), ...structuredClone(design) };
   return saveDoc(root, DESIGN_FILE, "design", doc);
 }
+
+// ── Delivery: a cold root holding a signed handoff and nothing else of Discovery's (R14) ──
+
+const noExec = () => { throw new Error("no command expected"); };
+const cleanJudge = () => scripted({ structured: { findings: [], deferred: [], checked: 2, skipped: 0 } }).query;
+
+/**
+ * Discovery whole in `tmp/<slug>` — PRD, prototype, backlog, design reviewed clean and
+ * signed — exported through the Delivery exit; then a cold root beside it holding `.git/`
+ * and the handoffs only, with a run pinned to v1. `open_questions` ride on the stories.
+ * @returns { disc, cold, handoff }
+ */
+export async function seedDelivery(tmp, { slug = "dock", open_questions = [], by = "Brad", now = new Date("2026-09-06T09:00:00Z") } = {}) {
+  const disc = seedProject(tmp, { slug });
+  seedPrototype(disc);
+  seedStories(disc, { open_questions });
+  seedDesign(disc);
+  await review({ root: disc, _query: cleanJudge() });
+  signoff(disc, { by: "Ana Ruiz" });
+  const { handoff } = await exportHandoff({ root: disc, exit: "delivery", by, _exec: noExec, _fetch: noExec, _env: {}, _now: () => now });
+  const cold = coldRoot(tmp, disc, `${slug}-cold`);
+  createRun(cold, { by, version: 1, now });
+  return { disc, cold, handoff };
+}
+
+/** A repository with `.git/` and Discovery's handoffs, nothing else. */
+export function coldRoot(tmp, disc, name = "cold") {
+  const cold = join(tmp, name);
+  mkdirSync(join(cold, ".git"), { recursive: true });
+  mkdirSync(join(cold, HANDOFFS), { recursive: true });
+  for (const f of readdirSync(join(disc, HANDOFFS))) copyFileSync(join(disc, HANDOFFS, f), join(cold, HANDOFFS, f));
+  return cold;
+}
+
+/** Re-export Discovery as it now stands and copy the new snapshot into the cold root. */
+export async function reexport(disc, cold, { by = "Brad", now = new Date("2026-09-06T10:00:00Z") } = {}) {
+  const { handoff } = await exportHandoff({ root: disc, exit: "delivery", by, _exec: noExec, _fetch: noExec, _env: {}, _now: () => now });
+  for (const f of readdirSync(join(disc, HANDOFFS))) copyFileSync(join(disc, HANDOFFS, f), join(cold, HANDOFFS, f));
+  return handoff;
+}
+
+/**
+ * A binding that adds up for the seeded backlog: STORY-1 and STORY-2 on their screens'
+ * controls, REQ-4 with no screen; every criterion tested once; one interface shared
+ * verbatim. What the sdd writer would return — the runner adds id, traces and the stamp.
+ */
+export const BINDING = {
+  items: [
+    {
+      work_item: "STORY-1", approach: "The exception form posts to the exceptions store; a submitted exception is a row that is never updated — the store exposes no update.",
+      interfaces: [{ name: "exceptions.record", signature: "record(delivery_id: string, reason: 'short' | 'damaged' | 'wrong-item', quantity: number): Exception", shared: false }, { name: "deliveries.forShift", signature: "forShift(shift_id: string): Delivery[]", shared: true }],
+      tests: [
+        { id: "T-1", proves: ["REQ-1/AC-1"], scenario: "STORY-1/1", level: "browser", exercises: "choose the Short chip, set two cases, press Record the exception on SCREEN-1", asserts: "the recorded state shows the delivery, Harvest Foods and Short ×2" },
+        { id: "T-2", proves: ["REQ-1/AC-2"], scenario: "STORY-1/2", level: "integration", exercises: "record an exception, then call every exported function of the store with its id and a new reason", asserts: "no exported function changes the row; a read returns the original reason" },
+      ],
+      controls: [{ screen_ref: "SCREEN-1", control: "reason-chip" }, { screen_ref: "SCREEN-1", control: "record-exception" }],
+      surface: ["src/exceptions/**", "src/screens/record/**"], risks: ["the reason vocabulary is the design's three chips; a fourth reason is a design change"],
+    },
+    {
+      work_item: "STORY-2", approach: "The run sheet reads the shift's deliveries in arrival order from the deliveries store and renders one row per delivery.",
+      interfaces: [{ name: "deliveries.forShift", signature: "forShift(shift_id: string): Delivery[]", shared: true }],
+      tests: [{ id: "T-3", proves: ["REQ-2/AC-1"], scenario: "STORY-2/1", level: "browser", exercises: "seed four deliveries for the shift and open SCREEN-2", asserts: "four delivery-row controls in arrival order; the populated state" }],
+      controls: [{ screen_ref: "SCREEN-2", control: "delivery-row" }],
+      surface: ["src/deliveries/**", "src/screens/run-sheet/**"], risks: [],
+    },
+    {
+      work_item: "REQ-4", approach: "Every write goes to a local queue first and is flushed to the store when the signal returns; the queue is durable across a reload.",
+      interfaces: [{ name: "queue.enqueue", signature: "enqueue(write: Write): void", shared: false }],
+      tests: [{ id: "T-4", proves: ["REQ-4/AC-1"], scenario: null, level: "integration", exercises: "record three exceptions with the network stubbed offline, reload, restore the network", asserts: "all three are in the store afterwards, none duplicated" }],
+      controls: [], surface: ["src/queue/**"], risks: [],
+    },
+  ],
+  questions: [],
+};

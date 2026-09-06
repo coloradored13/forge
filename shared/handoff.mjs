@@ -92,3 +92,20 @@ export function verifyHandoff(handoff) {
   }
   return { gate: GATE, verdict: deriveVerdict(findings), findings, deferred: [], checked: live.size + 1, skipped: 0 };
 }
+
+// ── how the snapshot's design reads to an agent — one rendering, used by every prompt in either half that shows it ──
+
+/** The design as a writer or judge reads it: tokens, stylesheet, then each screen — its moment, structure, states and controls by id. */
+export function renderDesign(doc) {
+  const tokens = Object.entries(doc.tokens ?? {}).map(([k, v]) => `- ${k}: ${v}`).join("\n") || "(none)";
+  const screens = (doc.screens ?? []).map((s) => [
+    `### ${s.screen_ref} — ${s.name}`,
+    `Read: ${s.moment}`,
+    `Structure:\n${s.structure}`,
+    `States:\n${(s.states ?? []).map((st) => `- **${st.name}**${st.entered_by ? ` (${st.entered_by})` : ""}: ${st.renders}`).join("\n")}`,
+    `Controls:\n${(s.controls ?? []).map((c) => `- \`${c.id}\` ${c.kind} "${c.label}"${c.state ? ` in ${c.state}` : ""}`).join("\n") || "(none)"}`,
+  ].join("\n\n")).join("\n\n");
+  const parts = [`Tokens:\n${tokens}`, `Stylesheet:\n\`\`\`css\n${String(doc.stylesheet ?? "").trim()}\n\`\`\``, screens || "(no screens)"];
+  if (doc.notes?.trim()) parts.push(`Writer's notes: ${doc.notes.trim()}`);
+  return parts.join("\n\n");
+}
