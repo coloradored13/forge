@@ -20,6 +20,7 @@ import { KINDS, itemFields, itemsOf, verifyHandoff, readHandoffs, latestHandoff,
 import { call, HELD_BACK } from "../shared/agent-call/index.mjs";
 import { rows as ledgerRows } from "../shared/agent-call/ledger.mjs";
 import { rows as funnelRows, funnelPath } from "../shared/funnel.mjs";
+import { SUMMARY_MAX } from "../shared/judge/index.mjs";
 import { createRun, readRun, transition, adoptHandoff, LEDGER } from "../delivery/state/index.mjs";
 import { intake, parseGherkin, INTAKE_FILE, VERDICT_FILE, GATE as INTAKE_GATE, QUESTION_BUDGET } from "../delivery/intake/index.mjs";
 import { setupProject, loadProject, ledgerPath, insidePipeline, SetupRefused, PIPELINE_ROOT } from "../discovery/setup/index.mjs";
@@ -410,13 +411,15 @@ await withRoot({}, async (tmp) => {
 });
 
 // ── R14 · cold intake: a handoff taken in a root holding nothing of Discovery's record; drift per id against a seeded edit; the door is the PM's ──
+const LONG_QUESTION = `Which reason applies when a case is short and damaged? ${"The reviewer set out every reading of the criterion, the two screens each reading would touch, and the scenario neither reading names; ".repeat(3)}the PM has not chosen.`;
 await withRoot({}, async (tmp) => {
   const T0 = new Date("2026-09-06T09:00:00Z");
   // Discovery, whole, somewhere else: a signed handoff, then an edit that moves REQ-1 and STORY-1 and adds a ruling.
   const asked = [
     { subject: "STORY-1", question: "Is a shortfall of zero cases an exception?", blocking: false },
     { subject: "STORY-1", question: "Can two exceptions be recorded against one delivery?", blocking: false },
-    { subject: "STORY-1", question: "Which reason applies when a case is short and damaged?", blocking: false },
+    // A reviewer's question at Bakehouse length — past the schema's ceiling on a finding's summary (2026-09-05).
+    { subject: "STORY-1", question: LONG_QUESTION, blocking: false },
   ];
   const disc = seedProject(tmp, { slug: "dock" });
   seedPrototype(disc);
@@ -486,6 +489,9 @@ await withRoot({}, async (tmp) => {
   check("the verdict is a finding document pinned to the handoff it took; the blocking question blocks; drift and the other questions advise; the joins passed",
     first.verdict === VERDICT_FILE && validate("finding", verdict).ok && verdict.gate === INTAKE_GATE && verdict.verdict === "block" && verdict.judged.length === 1 && verdict.judged[0].path === handoffFile(1) && verdict.judged[0].content_hash === v1.handoff.meta.content_hash && verdict.findings.filter((f) => f.rule === "drift").length === 3 && verdict.findings.filter((f) => f.rule === "question").length === 6 && verdict.findings.filter((f) => f.rule === "question-budget").length === 1 && !verdict.findings.some((f) => f.rule.startsWith("join")), JSON.stringify(verdict.findings.map((f) => `${f.rule}:${f.subject}:${f.severity}`)));
   check("the drift finding tells the PM the door: proceed on v1 or adopt v2", /adopt/.test(verdict.findings.find((f) => f.rule === "drift").remedy) && /v2/.test(verdict.findings.find((f) => f.rule === "drift").evidence));
+  const longQ = verdict.findings.filter((f) => f.rule === "question").find((f) => f.evidence.includes(LONG_QUESTION));
+  check("a question longer than a summary may be still crosses: the finding fits the schema, the summary is clipped, the question rides whole in the evidence and in the record",
+    LONG_QUESTION.length > SUMMARY_MAX && longQ !== undefined && longQ.summary.length <= SUMMARY_MAX && longQ.summary.endsWith("…") && rec.questions.some((x) => x.question === LONG_QUESTION), longQ?.summary.length);
 
   // The machine takes it: finish on the verdict; approve is refused on the block; the PM's edit is adopted; intake runs again on v2.
   transition(cold, { stage: "intake", event: "start", by: "runner", now: T0 });

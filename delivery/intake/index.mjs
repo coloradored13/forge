@@ -14,7 +14,7 @@ import { validate } from "../../shared/schema/index.mjs";
 import { canonicalize, resolve } from "../../shared/hash.mjs";
 import { saveDoc, saveVerdict } from "../../shared/store.mjs";
 import { KINDS, itemFields, itemsOf, verifyHandoff, latestHandoff } from "../../shared/handoff.mjs";
-import { deriveVerdict, rank } from "../../shared/judge/verdict.mjs";
+import { deriveVerdict, rank, fit } from "../../shared/judge/verdict.mjs";
 import { record as signal, funnelPath } from "../../shared/funnel.mjs";
 import { whatExists, manifestSummary, MANIFEST } from "../../shared/existing.mjs";
 import { readRun } from "../state/index.mjs";
@@ -73,8 +73,8 @@ export function intake(root, { now } = {}) {
   for (const r of moved.removed) findings.push(driftFinding(r.id, `${r.id} (${r.kind}) is in the snapshot this run pinned and gone from v${moved.against.version}.`, `pinned v${pin.version} holds ${r.kind} ${r.id}; v${moved.against.version} does not`, moved.against.version));
   for (const q of asked.questions) {
     findings.push(q.blocking
-      ? { severity: "high", confidence: "certain", rule: "question", subject: q.story ?? q.subject ?? q.source, summary: `A blocking question rides in the snapshot: ${q.question}`, evidence: `${q.source} open_questions · subject ${q.subject ?? "—"} · blocking`, remedy: "Answer it in Discovery and adopt the re-export, or override with the reason on record." }
-      : { severity: "low", confidence: "likely", rule: "question", subject: q.story ?? q.subject ?? q.source, summary: `An open question rides in the snapshot: ${q.question}`, evidence: `${q.source} open_questions · subject ${q.subject ?? "—"}`, remedy: "Carry it, or answer it in Discovery — the writers will read it as a question, not a decision." });
+      ? { severity: "high", confidence: "certain", rule: "question", subject: q.story ?? q.subject ?? q.source, summary: fit(`A blocking question rides in the snapshot: ${q.question}`), evidence: `${q.source} open_questions · subject ${q.subject ?? "—"} · blocking · ${q.question}`, remedy: "Answer it in Discovery and adopt the re-export, or override with the reason on record." }
+      : { severity: "low", confidence: "likely", rule: "question", subject: q.story ?? q.subject ?? q.source, summary: fit(`An open question rides in the snapshot: ${q.question}`), evidence: `${q.source} open_questions · subject ${q.subject ?? "—"} · ${q.question}`, remedy: "Carry it, or answer it in Discovery — the writers will read it as a question, not a decision." });
   }
   for (const o of asked.budget.over) {
     findings.push({ severity: "low", confidence: "likely", rule: "question-budget", subject: o.story, summary: `${o.story} carries ${o.count} precision questions across the seam; the budget is ${QUESTION_BUDGET}.`, evidence: `R13: syntax crosses for free, precision is what intake compiles — ${o.count} > ${QUESTION_BUDGET} is a Discovery gate-miss, counted in the funnel`, remedy: "Nothing here; the meter is the point. The stories reviewer's bar is where this is fixed." });
@@ -215,7 +215,7 @@ export function compile(handoff) {
       const id = `${st.id}/${i + 1}`;
       let steps = [];
       try { steps = parseGherkin(sn.gherkin); } catch (e) {
-        findings.push({ severity: "high", confidence: "certain", rule: "compile-gherkin", subject: id, summary: `Scenario "${sn.name}" does not compile: ${e.message}`, evidence: sn.gherkin ?? "(no gherkin)", remedy: "Re-export a backlog whose scenarios parse; the stories writer's shape rule is the home of this." });
+        findings.push({ severity: "high", confidence: "certain", rule: "compile-gherkin", subject: id, summary: fit(`Scenario "${sn.name}" does not compile: ${e.message}`), evidence: sn.gherkin ?? "(no gherkin)", remedy: "Re-export a backlog whose scenarios parse; the stories writer's shape rule is the home of this." });
       }
       scenarios.push({ id, story: st.id, name: sn.name, proves: [...(sn.proves ?? [])], screens: [...(st.screen_refs ?? [])], steps });
     });

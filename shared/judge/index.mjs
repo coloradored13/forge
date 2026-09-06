@@ -8,10 +8,10 @@ import { call } from "../agent-call/index.mjs";
 import { outputContract, validate } from "../schema/index.mjs";
 import { identity, mechanics, assemble } from "../prompt/index.mjs";
 import { record } from "../funnel.mjs";
-import { deriveVerdict, rank } from "./verdict.mjs";
+import { deriveVerdict, rank, fit } from "./verdict.mjs";
 import { pin } from "./freshness.mjs";
 
-export { deriveVerdict, rank, weight, SEVERITY, CONFIDENCE } from "./verdict.mjs";
+export { deriveVerdict, rank, weight, fit, SEVERITY, CONFIDENCE, SUMMARY_MAX } from "./verdict.mjs";
 export { pin, verdictFreshness } from "./freshness.mjs";
 export { renderFindingsForAgent } from "./render.mjs";
 
@@ -118,7 +118,7 @@ export async function runPerItemJudge({ gate, items, onEvent, ...rest }) {
       skipped++;
       all.push({
         severity: "high", confidence: "certain", rule: "judge-failed", subject: item.id,
-        summary: `The ${gate} gate could not judge ${item.id}: ${String(e.message).split("\n")[0]}`.slice(0, 400),
+        summary: fit(`The ${gate} gate could not judge ${item.id}: ${String(e.message).split("\n")[0]}`),
         evidence: "The judge did not run, so nothing about this item has been checked.",
         remedy: "Re-run the gate. A stage cannot be approved on items nobody judged.",
       });
