@@ -448,6 +448,25 @@ await withRoot({}, async (tmp) => {
   doc = clone(); doc.items[2].interfaces[0].shared = true;
   check("an interface marked shared that no other item names advises the other way", rules(held(doc)) === "interface-unshared" && /no other item names it/.test(held(doc).findings[0].summary));
 
+  // The binding's own questions. The writer cannot amend the contract; it asks, and marks
+  // the question blocking when a build past it would build the guess in. The schema promises
+  // that such a question blocks the stage until a human answers in Discovery or overrides on
+  // the record — the door has to read them for that to be true.
+  doc = clone(); doc.questions = [{ subject: "STORY-2", question: "Does withdrawing a delivery free its slot for the rest of the shift? REQ-1/AC-2 refuses a duplicate and says nothing about withdrawal.", blocking: true }];
+  v = held(doc);
+  check("a blocking question on the binding blocks — high and certain, the question quoted as evidence, the remedy Discovery's door, no judge asked; the question is counted as checked",
+    v.verdict === "block" && rules(v) === "question" && v.findings[0].severity === "high" && v.findings[0].confidence === "certain" && v.findings[0].subject === "STORY-2" && /free its slot for the rest of the shift/.test(v.findings[0].evidence) && /Answer it in Discovery/.test(v.findings[0].remedy) && v.checked === 7, JSON.stringify(v.findings));
+  doc = clone(); doc.questions = [{ subject: null, question: "Should the run sheet read newest-first? The design does not say.", blocking: false }, { subject: "SCREEN-1", question: "Is the reason chip's label the design's final string?", blocking: false }];
+  v = held(doc);
+  check("questions that do not block advise, low and likely — carried across as questions, the judge still runs; one with no subject is on the binding",
+    v.verdict === "advise" && rules(v) === "question" && v.findings.length === 2 && v.findings.every((f) => f.severity === "low" && f.confidence === "likely") && v.findings.map((f) => f.subject).join() === "binding,SCREEN-1", JSON.stringify(v.findings));
+  doc = clone(); doc.questions = [{ subject: "REQ-4", question: "Which clock stamps the record — the device's or the server's?", blocking: true }]; doc.items[0].tests.pop();
+  v = held(doc);
+  check("a blocking question beside an arithmetic miss is one block with both named — the writer answers the miss, the human the question",
+    v.verdict === "block" && rules(v) === "criterion-untested,question" && v.findings.filter((f) => f.rule === "question")[0].subject === "REQ-4", rules(v));
+  doc = clone(); delete doc.questions;
+  check("a binding with no questions field is read as none — the arithmetic does not throw on it", held(doc).verdict === "pass");
+
   v = held({ items: [], questions: [] });
   check("an empty binding is every work item unbound — three findings, the work items still counted", v.findings.length === 3 && rules(v) === "item-unbound" && v.checked === 3);
   check("every rule the arithmetic can emit is declared to the writer and the judge as arithmetic, and nothing declared is idle",
