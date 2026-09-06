@@ -14,13 +14,13 @@ import { join } from "node:path";
 import { suite, withRoot, scripted } from "./_harness.mjs";
 import { pin, verdictFreshness } from "../shared/judge/index.mjs";
 import { stamp } from "../shared/hash.mjs";
-import { apply, DEFAULTS, readRun, adoptHandoff, rounds, transition, LEDGER } from "../delivery/state/index.mjs";
+import { apply, DEFAULTS, readRun, adoptHandoff, rounds, LEDGER } from "../delivery/state/index.mjs";
 import { rows } from "../shared/agent-call/index.mjs";
-import { advance, runStage } from "../delivery/run/index.mjs";
+import { advance, runStage, reopen } from "../delivery/run/index.mjs";
 import { loadSdd, VERDICT_FILE as SDD_VERDICT, SDD_FILE } from "../delivery/sdd/index.mjs";
 import { rejudge as buildRejudge, checkCurrency, loadBuild, VERDICT_FILE as BUILD_VERDICT, BRANCH } from "../delivery/build/index.mjs";
-import { readDoc, saveDoc } from "../shared/store.mjs";
-import { seedDelivery, seedStories, reexport, BINDING, STORIES, seedBuild, builder, roundCtx, put, gitIn, BUILT } from "./_fixture.mjs";
+import { readDoc } from "../shared/store.mjs";
+import { seedDelivery, seedStories, reexport, BINDING, STORIES, seedBuild, builder, roundCtx, put, gitIn, BUILT, CLEAN } from "./_fixture.mjs";
 import { answer } from "../discovery/doors/index.mjs";
 
 const { check, done } = suite("rejudge · verdict freshness");
@@ -206,9 +206,13 @@ await withRoot({}, async (tmp) => {
   check("an item the binding has that the build does not is unbuilt; one the build has that the binding dropped is not a finding — nothing to hold it to",
     checkCurrency(grown, standing).map((f) => `${f.rule}@${f.subject}`).join() === "unbuilt@REQ-9" && checkCurrency({ ...sdd, items: sdd.items.slice(0, 2) }, standing).length === 0);
 
-  // Through the door: the binding moves on disk, the stage goes stale, the loop re-judges — no builder called — blocks, and regenerates exactly the moved item.
-  saveDoc(cold, SDD_FILE, "sdd", moved);
-  transition(cold, { stage: "build", event: "moved", by: "Brad", reason: "the run-sheet binding moved" });
+  // Through the doors: the human reopens the binding with a reason; the redo writes the moved binding and approves; the build, judged against
+  // what was just rewritten, goes stale by the same reopen — then its loop re-judges — no builder called — blocks, and regenerates exactly the moved item.
+  const redo = scripted({ structuredSeq: [{ items: moved.items, questions: moved.questions }, CLEAN("STORY-1"), CLEAN("STORY-2"), CLEAN("REQ-4")] });
+  const reopenedSdd = await reopen(cold, { stage: "sdd", by: "Brad", reason: "the run sheet is keyed by delivery id — the binding must say so before build reads it", _query: redo.query });
+  const afterReopen = readRun(cold);
+  check("reopen redoes sdd through the door: the binding on disk is the redo's, approved at round 1 of a new episode; build went stale by the reopen — one moved flag naming it — while qa and release stayed pending",
+    reopenedSdd.status === "approved" && reopenedSdd.round === 1 && redo.calls.length === 4 && /keyed by delivery id/.test(loadSdd(cold).items[1].approach) && afterReopen.stages.build.status === "stale" && afterReopen.stages.build.round === 0 && afterReopen.stages.qa.status === "pending" && afterReopen.stages.release.status === "pending" && afterReopen.flags.filter((f) => f.event === "moved").length === 1 && afterReopen.flags.find((f) => f.event === "moved").stage === "build" && /sdd reopened: the run sheet is keyed by delivery id/.test(afterReopen.flags.find((f) => f.event === "moved").reason) && afterReopen.flags.filter((f) => f.event === "reopen").length === 1, JSON.stringify({ sdd: [reopenedSdd.status, reopenedSdd.round], build: afterReopen.stages.build.status, flags: afterReopen.flags.map((f) => `${f.stage}:${f.event}:${f.reason}`) }));
   const events = [];
   const again = builder([BUILT("Run sheet rebuilt.")], { 0: (cwd) => put(cwd, "src/deliveries/store.js", "b2") });
   const r2 = await runStage(cold, { stage: "build", _query: again.query, onEvent: (e) => events.push(e) });

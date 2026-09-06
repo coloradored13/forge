@@ -17,7 +17,7 @@ import { call, BudgetError, rows, quote, modelFor, TOOLS, totals, estimate, tall
 import { append as appendLedger } from "../shared/agent-call/ledger.mjs";
 import { runJudge, runPerItemJudge, rank, deriveVerdict, weight, renderFindingsForAgent } from "../shared/judge/index.mjs";
 import { apply, DEFAULTS, readRun, transition, rounds, LEDGER } from "../delivery/state/index.mjs";
-import { runStage, escalate, advance, estimateRun, AUTHORED, PULSE_MS } from "../delivery/run/index.mjs";
+import { runStage, escalate, reopen, advance, estimateRun, AUTHORED, PULSE_MS } from "../delivery/run/index.mjs";
 import { SDD_FILE, VERDICT_FILE as SDD_VERDICT, loadSdd } from "../delivery/sdd/index.mjs";
 import { seedDelivery, coldRoot, BINDING, seedBuild, builder, put, gitIn, BUILT, BLOCKED } from "./_fixture.mjs";
 import { loadBuild, BRANCH } from "../delivery/build/index.mjs";
@@ -296,6 +296,8 @@ await withRoot({ "prompts/j.md": IDENTITY }, async (root) => {
   const BAD = clone(); BAD.items[0].controls.push({ screen_ref: "SCREEN-1", control: "submit" });
   // the second writer fixes STORY-1 — and rephrases STORY-2's risks, which nothing named
   const CHURNED = clone(); CHURNED.items[1].risks = ["the run sheet's order is the store's — a sort would be a design change"];
+  // the reopened writer answers the reason: the run sheet keyed by delivery id, said in STORY-2's approach
+  const REBOUND = clone(); REBOUND.items[1].approach += " Rows are keyed by delivery id.";
   const CLEAN = (item) => ({ findings: [], deferred: [{ subject: item, summary: `${item}: the second recording against the same delivery in the same second.`, beyond: "untested" }], checked: 1, skipped: 0 });
   const PROVES_NOTHING = { ...CLEAN("STORY-1"), findings: [{ severity: "high", confidence: "certain", rule: "test-proves-nothing", subject: "T-2", summary: "T-2 asserts that no exported function changes the row without naming a function that is called or what is read afterwards.", evidence: "asserts: \"no exported function changes the row\" · REQ-1/AC-2: A submitted exception cannot be edited.", remedy: "Name the calls attempted and the read that follows each." }] };
   // a scripted SDK that yields slowly, so the wrapper's pulse has something to beat under
@@ -306,7 +308,7 @@ await withRoot({ "prompts/j.md": IDENTITY }, async (root) => {
   await withRoot({}, async (tmp) => {
     const { cold } = await seedDelivery(tmp);
     const events = [];
-    const script = scripted({ structuredSeq: [BAD, CHURNED, PROVES_NOTHING, CLEAN("STORY-2"), CLEAN("REQ-4"), BINDING, CLEAN("STORY-1"), CLEAN("STORY-2"), CLEAN("REQ-4")] });
+    const script = scripted({ structuredSeq: [BAD, CHURNED, PROVES_NOTHING, CLEAN("STORY-2"), CLEAN("REQ-4"), BINDING, CLEAN("STORY-1"), CLEAN("STORY-2"), CLEAN("REQ-4"), REBOUND, CLEAN("STORY-1"), CLEAN("STORY-2"), CLEAN("REQ-4")] });
     const opts = { _query: slow(script.query), _now: clock, _pulse_ms: 1, onEvent: (e) => events.push(e) };
 
     check("the loop knows which stages it can run — intake, sdd and build — and says so in one table; build has a writer and no judge",
@@ -382,6 +384,28 @@ await withRoot({ "prompts/j.md": IDENTITY }, async (root) => {
     check("what is kept is what the verdict pinned under the record — the intake record and the binding, none stale; the handoff is not copied, being versioned outside the record",
       kept[0].kept.map((k) => k.path).join() === `forge/delivery/intake.json,${SDD_FILE}` && kept[0].stale.length === 0 && !existsSync(join(cold, kept[0].dir, "handoff-v1.json")) && existsSync(join(cold, kept[0].dir, "intake.json")), JSON.stringify(kept[0].kept));
     check("intake's one round keeps its verdict alone — intake pins the handoff, not the record it compiles", rounds(cold, "intake").length === 1 && rounds(cold, "intake")[0].kept.length === 0 && rounds(cold, "intake")[0].verdict.verdict === "advise" && rounds(cold, "build").length === 0);
+
+    // Reopen (R6): the approved stage's one door. A human's reason redoes it — the writer sees
+    // the standing binding, the verdict that approved it, and the reason; then it is judged and
+    // disposed like any round, a new episode counted from zero. Refused before anything runs
+    // without a reason, on a stage that is not approved, or while a later stage is alive on
+    // what this one produced. A later stage that is stopped is left alone — nothing judged there.
+    const noReason = await refusal(() => reopen(cold, { stage: "sdd", by: "Brad", ...opts }));
+    const notDone = await refusal(() => reopen(cold, { stage: "build", by: "Brad", reason: "again", ...opts }));
+    transition(cold, { stage: "build", event: "start", by: "Brad", now: clock() });
+    const underBuild = await refusal(() => reopen(cold, { stage: "sdd", by: "Brad", reason: "again", ...opts }));
+    transition(cold, { stage: "build", event: "stop", by: "Brad", reason: "back to stopped", now: clock() });
+    check("reopen is refused before any call: without a reason, on a stage that is not approved, and while the stage after it is running on what it produced — sdd stays approved through all three",
+      noReason?.code === "reason-required" && notDone?.code === "no-transition" && underBuild?.code === "stage-running" && /build is running/.test(underBuild.message) && readRun(cold).stages.sdd.status === "approved" && script.calls.length === 9, `${noReason?.code} ${notDone?.code} ${underBuild?.code}`);
+    const r3 = await reopen(cold, { stage: "sdd", by: "Claude, for Brad", reason: "the run sheet is keyed by delivery id — the binding must say so before build reads it", ...opts });
+    const p3 = script.calls[9].prompt;
+    check("reopen redoes the stage: one writer and three judges ran, the redo approved at round 1 of a new episode, the reopen is a flag naming who and why, and the stage no longer holds it",
+      r3.status === "approved" && r3.round === 1 && r3.verdict.verdict === "pass" && script.calls.length === 13 && readRun(cold).flags.at(-1).event === "reopen" && readRun(cold).flags.at(-1).by === "Claude, for Brad" && /keyed by delivery id/.test(readRun(cold).flags.at(-1).reason) && readRun(cold).stages.sdd.reopened === undefined, `${r3.status} r${r3.round} calls ${script.calls.length} ${JSON.stringify(readRun(cold).stages.sdd)}`);
+    check("the writer was told why, shown the standing binding with every item to revise, and shown the verdict that approved it — a reopen answers a reason, not a block",
+      /## Why the binding is reopened\n\nthe run sheet is keyed by delivery id[^\n]*\n\n— Claude, for Brad/.test(p3) && /Every item is to revise: the binding is reopened\./.test(p3) && /### STORY-1 — revise: the binding is reopened/.test(p3) && /### REQ-4 — revise: the binding is reopened/.test(p3) && !/carry verbatim\n/.test(p3) && /## The judge's findings on the previous binding/.test(p3), p3.slice(p3.indexOf("## Why the binding"), p3.indexOf("## Why the binding") + 400));
+    check("the redo is on the record like any round: a fourth sdd verdict kept, numbered across episodes; the binding on disk is the redone one; build, stopped and never judged, was left alone",
+      rounds(cold, "sdd").map((k) => `${k.seq}:${k.round}:${k.event}:${k.verdict.verdict}`).join() === "1:1:finish:block,2:2:finish:block,3:3:finish:pass,4:1:finish:pass" && /keyed by delivery id/.test(loadSdd(cold).items[1].approach) && readRun(cold).stages.build.status === "stopped" && !readRun(cold).flags.some((f) => f.stage === "build" && f.event === "moved"), JSON.stringify(rounds(cold, "sdd").map((k) => [k.seq, k.round, k.event])));
+    check("an approved stage is still done: run again is stage-done, and says the door", (await refusal(() => runStage(cold, { stage: "sdd", ...opts })))?.message.includes("reopen with a reason"));
   });
 
   // A stage whose code throws is stopped on the record, by the wrapper, with the error as the reason; it starts again from stopped.

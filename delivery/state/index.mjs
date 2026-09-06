@@ -80,12 +80,14 @@ export const TRANSITIONS = [
   { from: "stale",     event: "rejudge",    to: "rejudging", guards: [] },
   { from: "rejudging", event: "clear",      to: "approved",  guards: ["verdict", "non-block"], noWord: true },
   { from: "rejudging", event: "reblock",    to: "review",    guards: ["verdict", "block"] },
-  { from: "approved",  event: "reopen",     to: "review",    guards: ["reason"], opens: true },
+  { from: "approved",  event: "reopen",     to: "running",   guards: ["reason"], opens: true },
   { from: "*",         event: "stop",       to: "stopped",   guards: ["reason"] },
 ];
 export const EVENTS = [...new Set(TRANSITIONS.map((r) => r.event))];
 /** Events that leave a flag on the record whenever they go through: a human's reason is history. */
 const FLAGGED = new Set(["escalate", "reopen", "stop", "moved"]);
+/** The states a stage holds a judgement in — what `moved` sends stale (R5): the rows the table moves from. Read by the adopt door here and the reopen door in the loop. */
+export const JUDGED = new Set(TRANSITIONS.filter((r) => r.event === "moved").map((r) => r.from));
 
 const iso = (d) => (d instanceof Date ? d : new Date(d ?? Date.now())).toISOString();
 
@@ -123,6 +125,10 @@ export function apply(run, ctx) {
   const next = { ...st, status: row.to };
   if (row.opens) next.round = 0;
   if (row.counts) next.round = st.round + 1;
+  // a reopen is the human's reason to redo an approved stage: it rides the episode on the
+  // stage until the redo files a verdict — a restart still knows why it runs; a later round does not need to
+  if (event === "reopen") next.reopened = { by: ctx.by, reason: ctx.reason, at: now };
+  if (row.counts) delete next.reopened;
   if (LIVE.has(row.to)) { next.started_at = now; next.heartbeat_at = now; next.finished_at = null; }
   const filed = Boolean(ctx.verdict?.path && row.guards.includes("verdict"));
   if (filed) { next.verdict = ctx.verdict.path; next.finished_at = now; }
@@ -314,7 +320,6 @@ export function heartbeat(root, stage, now) {
  * verdict pins what it judged, so a judge that pinned the handoff among its inputs goes
  * stale with it at the door; one that did not, does not. That pin is the stage loop's to write.
  */
-const JUDGED = new Set(TRANSITIONS.filter((r) => r.event === "moved").map((r) => r.from));
 export function adoptHandoff(root, { version, by, now } = {}) {
   let run = needRun(root);
   const { pin } = takeHandoff(root, version);

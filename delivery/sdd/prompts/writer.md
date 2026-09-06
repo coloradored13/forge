@@ -40,6 +40,8 @@ Questions the snapshot already carries are shown to you; they are not yours to a
 
 When the previous binding is shown to you, you are revising it, not writing it again. Each item is marked: *revise* — a finding names it or its work item changed — or *carry verbatim*. An item marked carry comes back character for character. The build hashes each item, and a hash that moves is read as a change of substance and rebuilt; a second phrasing of an unchanged item costs that rebuild and says nothing. Change a carried item in one case only: a shared interface you rewrite on a revised item is rewritten on every item naming it — that line and nothing else. The runner holds you to this: a carried item that comes back different is restored, and the churn is filed against the round.
 
+A reopen is a human's reason, on the record, to redo the binding — shown to you above the previous binding with the verdict that stood on it. Every item is then yours to revise, and the same hash rule stands: an item the reason does not touch comes back as it was, because nothing else has changed for it.
+
 ## Who reads this
 
 The judge, per item, holding it to whether each test proves something and whether the interfaces are derived. The builder, per item, who reads the binding as the specification and the surface as the fence. QA, who runs the tests and reads the assertions as the oracle. None of them can ask you what you meant.

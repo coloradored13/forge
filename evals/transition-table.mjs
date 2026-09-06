@@ -215,8 +215,24 @@ for (const from of ["review", "blocked"]) {
 check("moved from running, rejudging, pending or stopped is refused no-transition — nothing judged there is stale",
   ["running", "rejudging", "pending", "stopped"].every((from) => refusal(() => apply(inState(from), { stage: "sdd", event: "moved", by: "runner", reason: "handoff v4 → v5" }))?.code === "no-transition"));
 
-check("reopen takes a reason and opens a new episode in review", (() => { const r = apply(appr, { stage: "sdd", event: "reopen", by: "Brad", reason: "the dock lead found the run sheet reads oldest-first" }); return r.run.stages.sdd.status === "review" && r.run.stages.sdd.round === 0 && r.flags[0].event === "reopen"; })());
+// Reopen (R6): a human's reason redoes an approved stage — a new episode in running, the
+// reason held on the stage until the redo approves, so a restart over a dead or stopped
+// reopen still knows what it is answering; the flag keeps it as history after.
+const reopened = apply(appr, { stage: "sdd", event: "reopen", by: "Brad", reason: "the dock lead found the run sheet reads oldest-first", now: at(0) });
+check("reopen takes a reason and opens a new episode in running, round 0, the verdict kept, the reason on the stage and on a flag",
+  reopened.run.stages.sdd.status === "running" && reopened.run.stages.sdd.round === 0 && reopened.run.stages.sdd.verdict === appr.stages.sdd.verdict && reopened.run.stages.sdd.reopened?.by === "Brad" && /oldest-first/.test(reopened.run.stages.sdd.reopened.reason) && reopened.run.stages.sdd.reopened.at === T0.toISOString() && reopened.flags.length === 1 && reopened.flags[0].event === "reopen" && reopened.flags[0].override === false, JSON.stringify(reopened.run.stages.sdd));
 check("reopen without a reason is refused", refusal(() => apply(appr, { stage: "sdd", event: "reopen", by: "Brad" }))?.code === "reason-required");
+check("the reopen rides the episode until a binding answers it: a stop keeps it, a start from stopped keeps it, a dead restart keeps it — the finish that files the redo's verdict clears it, so a later round is scoped by the findings, not the reason",
+  (() => {
+    const stopped = apply(reopened.run, { stage: "sdd", event: "stop", by: "Brad", reason: "parking it" }).run;
+    const restarted = apply(stopped, { stage: "sdd", event: "start", by: "Brad" }).run;
+    const dead = { ...restarted, stages: { ...restarted.stages, sdd: { ...restarted.stages.sdd, heartbeat_at: T0.toISOString() } } };
+    const recovered = apply(dead, { stage: "sdd", event: "start", by: "wrapper", now: at(300_001) }).run;
+    const finished = apply(recovered, { stage: "sdd", event: "finish", by: "wrapper", verdict: V("advise") }).run;
+    const approved = apply(finished, { stage: "sdd", event: "approve", by: "runner", verdict: V("advise"), fresh: true }).run;
+    return stopped.stages.sdd.reopened?.by === "Brad" && restarted.stages.sdd.reopened?.by === "Brad" && recovered.stages.sdd.reopened?.by === "Brad" && finished.stages.sdd.status === "review" && !("reopened" in finished.stages.sdd) && approved.stages.sdd.status === "approved" && !("reopened" in approved.stages.sdd) && validate("run", finished).ok && validate("run", approved).ok;
+  })());
+check("the schema is the home of it: an open reopen is by, reason, at on the stage — nothing else, and never required", (() => { const s = load("run").$defs.stage.properties.reopened; return s?.required?.join() === "by,reason,at" && s.additionalProperties === false && !load("run").$defs.stage.required.includes("reopened"); })());
 
 // Liveness is read, never written.
 check("liveness: a running stage heartbeated inside the window is alive, past it dead, and the silence is measured",
