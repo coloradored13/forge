@@ -3,7 +3,8 @@
 // writers the doors use. Nothing here reaches a model or a real repository.
 
 import { createHash } from "node:crypto";
-import { copyFileSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { copyFileSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { skeleton } from "../shared/schema/index.mjs";
 import { HANDOFFS } from "../shared/handoff.mjs";
@@ -13,7 +14,10 @@ import { openPrd, loadPrd, savePrd } from "../discovery/workshop/index.mjs";
 import { readDoc, saveDoc, traceOf, PROTOTYPE_FILE, HTML_FILE, STORIES_FILE, DESIGN_FILE } from "../discovery/record/index.mjs";
 import { review, signoff } from "../discovery/design/index.mjs";
 import { exportHandoff } from "../discovery/export/index.mjs";
-import { createRun } from "../delivery/state/index.mjs";
+import { createRun, readRun } from "../delivery/state/index.mjs";
+import { runStage } from "../delivery/run/index.mjs";
+import { takePinned, INTAKE_FILE } from "../delivery/intake/index.mjs";
+import { loadSdd, UNTESTED } from "../delivery/sdd/index.mjs";
 
 export const HTML = "<!doctype html><title>Dock</title><main><h1>Run sheet</h1><button>Record an exception</button></main>\n";
 
@@ -209,3 +213,65 @@ export const BINDING = {
   ],
   questions: [],
 };
+
+// ── the build's ground: a real repository with the binding approved ──
+
+/** What a judge returns when it finds nothing on an item: one deferral, nothing else. */
+export const CLEAN = (subject) => ({ findings: [], deferred: [{ subject, summary: "Nothing tests the store under a full disk.", beyond: UNTESTED }], checked: 1, skipped: 0 });
+
+/** The Forge identity the runner commits under — the same env the builder's commits are refused by. */
+export const FORGE_GIT = { GIT_AUTHOR_NAME: "Forge", GIT_AUTHOR_EMAIL: "forge@forge.local", GIT_COMMITTER_NAME: "Forge", GIT_COMMITTER_EMAIL: "forge@forge.local" };
+
+/**
+ * A builder's report, as the scripted seam returns it. `built` with nothing changed is
+ * recorded as blocked by the runner — the seam says built; the diff says otherwise.
+ */
+export const BUILT = (summary = "Built the item as bound: interfaces exposed, tests T-1 and T-2 written by criterion id.") => ({ status: "built", summary, suggestions: [], reason: null });
+export const BLOCKED = (reason) => ({ status: "blocked", summary: `Not built: ${reason}`, suggestions: [], reason });
+
+/**
+ * Discovery exported and a cold root that is a real repository — the handoffs and the run
+ * record committed on `main` under Forge's name, plus `files` — with intake approved and
+ * the binding approved through the same doors the run loop uses. Nothing here reaches a
+ * model: the sdd writer and its judges are scripted.
+ * @returns { disc, cold, handoff, intake, sdd }
+ */
+export async function seedBuild(tmp, { slug = "dock", binding = BINDING, files = {}, open_questions = [], by = "Brad", now = new Date("2026-09-06T09:00:00Z") } = {}) {
+  const { disc, cold, handoff } = await seedDelivery(tmp, { slug, open_questions, by, now });
+  rmSync(join(cold, ".git"), { recursive: true, force: true });
+  for (const [rel, body] of Object.entries(files)) put(cold, rel, body);
+  gitIn(cold, ["init", "-q", "-b", "main"]);
+  gitIn(cold, ["add", "-A"]);
+  gitIn(cold, ["commit", "-q", "-m", "seed"]);
+  await runStage(cold, { stage: "intake", by, _now: () => now });
+  const items = binding.items.map((it) => it.work_item);
+  await runStage(cold, { stage: "sdd", by, _now: () => now, _query: scripted({ structuredSeq: [binding, ...items.map(CLEAN)] }).query });
+  return { disc, cold, handoff, intake: readDoc(cold, INTAKE_FILE), sdd: loadSdd(cold) };
+}
+
+/** Write one file under a root, making its directories. */
+export function put(root, rel, body) {
+  mkdirSync(dirname(join(root, rel)), { recursive: true });
+  writeFileSync(join(root, rel), body);
+}
+
+/** git in a seeded root, under Forge's identity; trimmed stdout. */
+export function gitIn(cwd, args) {
+  return execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, ...FORGE_GIT } }).trim();
+}
+
+/**
+ * A scripted builder with side effects: `reports` in call order, and `effects[i]` runs in
+ * the i-th call's cwd before its report — the builder writing to the worktree. Returns the
+ * harness's `calls` for the prompts and options seen.
+ */
+export function builder(reports, effects = {}, extra = {}) {
+  const q = scripted({ structuredSeq: reports, usd: 0.5, ...extra });
+  return { calls: q.calls, query: (a) => { effects[q.calls.length]?.(a.options.cwd, a); return q.query(a); } };
+}
+
+/** The context a stage's round gets from the loop, for calling `round()` directly. */
+export function roundCtx(cold, { review = null, now = new Date("2026-09-06T11:00:00Z"), by = "runner" } = {}) {
+  const run = readRun(cold);
+  return { run, now, by, review, handoff: takePinned(cold, run), intake: readDoc(cold, INTAKE_FILE) };
+}

@@ -13,12 +13,12 @@ Check an item only when its eval is green in this repo. The v1 path is the sourc
 | `tools/judges.mjs` — `deriveVerdict`, `verdictFreshness`, `renderFindingsForAgent` | `shared/judge/` | M1 | [x] |
 | `tools/stage.mjs` + `tools/usage.mjs` — the agent-call chokepoint | `shared/agent-call/` | M1 | [x] |
 | `tools/provenance.mjs` + verifier | `delivery/release/` | M3 | [ ] |
-| `tools/containment.mjs` | `delivery/build/` | M3 | [ ] |
+| `tools/containment.mjs` | `delivery/build/` | M3 | [x] |
 | `tests/browser` | `delivery/qa/` | M3 | [ ] |
 | prompt `prototype` (identity half only) | `discovery/prototype/` | M1 | [x] |
 | prompts `uxd-writer`, `uxd-judge` (identity halves; the declared-standard pattern, §10.6) | `discovery/design/` | M1 | [x] |
 | prompts `sdd-writer`, `sdd-judge` (identity halves) | `delivery/sdd/` | M2 | [x] |
-| prompt `dev` (identity half — the largest upgrade; containment lines drop, they are mechanical) | `delivery/build/` | M3 | [ ] |
+| prompt `dev` (identity half — the largest upgrade; containment lines drop, they are mechanical) | `delivery/build/` | M3 | [x] |
 | prompt `acceptance-oracle` (identity half) | `delivery/qa/` | M3 | [ ] |
 | `lib/workshop.ts` + `app/api/{chat,extract}/route.ts` — grows shape and the MVP line; the `Capture:` enumerations become generated mechanics | `discovery/workshop/` | M1 | [x] |
 | eval `coherence` | `evals/coherence.mjs` | M1 | [x] |

@@ -9,16 +9,18 @@
 // clears it, or blocks it and only then regenerates.
 
 import { writeFileSync } from "node:fs";
+import { join as pathJoin } from "node:path";
 import { join } from "node:path";
 import { suite, withRoot, scripted } from "./_harness.mjs";
 import { pin, verdictFreshness } from "../shared/judge/index.mjs";
 import { stamp } from "../shared/hash.mjs";
-import { apply, DEFAULTS, readRun, adoptHandoff, rounds, LEDGER } from "../delivery/state/index.mjs";
+import { apply, DEFAULTS, readRun, adoptHandoff, rounds, transition, LEDGER } from "../delivery/state/index.mjs";
 import { rows } from "../shared/agent-call/index.mjs";
-import { advance } from "../delivery/run/index.mjs";
-import { loadSdd, VERDICT_FILE as SDD_VERDICT } from "../delivery/sdd/index.mjs";
-import { readDoc } from "../shared/store.mjs";
-import { seedDelivery, seedStories, reexport, BINDING, STORIES } from "./_fixture.mjs";
+import { advance, runStage } from "../delivery/run/index.mjs";
+import { loadSdd, VERDICT_FILE as SDD_VERDICT, SDD_FILE } from "../delivery/sdd/index.mjs";
+import { rejudge as buildRejudge, checkCurrency, loadBuild, VERDICT_FILE as BUILD_VERDICT, BRANCH } from "../delivery/build/index.mjs";
+import { readDoc, saveDoc } from "../shared/store.mjs";
+import { seedDelivery, seedStories, reexport, BINDING, STORIES, seedBuild, builder, roundCtx, put, gitIn, BUILT } from "./_fixture.mjs";
 import { answer } from "../discovery/doors/index.mjs";
 
 const { check, done } = suite("rejudge · verdict freshness");
@@ -131,13 +133,48 @@ await withRoot({}, async (tmp) => {
   const moved = await advance(cold, { _query: writer.query, _now: clock, onEvent: (e) => events.push(e) });
   const sdd3 = readDoc(cold, SDD_VERDICT);
   check("v3 carries RUL-1 and REQ-2/AC-2: intake clears; sdd's re-judge blocks on the arithmetic — criterion untested, no model asked — lands in review at round 0, and the loop regenerates from there: one writer, three judges, approved at round 1",
-    v3.contract.rulings.length === 1 && events.filter((e) => /re-judged|round/.test(e)).slice(-4).join(" | ") === "intake re-judged: clear | sdd re-judged: reblock | sdd block · round 0 of 2 — regenerating | sdd pass · round 1 — approved" && moved.stages.map((r) => `${r.stage}:${r.status}:${r.round}`).join() === "intake:approved:0,sdd:approved:1" && moved.halted?.why === "stage-unauthored" && writer.calls.length === 4 && rows(join(cold, LEDGER)).slice(before).map((r) => r.role).join() === "writer,judge,judge,judge", `${events.slice(-8).join(" | ")} · ${JSON.stringify(moved.stages.map((r) => [r.stage, r.status, r.round]))}`);
+    v3.contract.rulings.length === 1 && events.filter((e) => /re-judged|round/.test(e)).slice(-4).join(" | ") === "intake re-judged: clear | sdd re-judged: reblock | sdd block · round 0 of 2 — regenerating | sdd pass · round 1 — approved" && moved.stages.map((r) => `${r.stage}:${r.status}:${r.round}`).join() === "intake:approved:0,sdd:approved:1" && moved.halted?.why === "no-repo" && moved.halted.stage === "build" && writer.calls.length === 4 && rows(join(cold, LEDGER)).slice(before).map((r) => r.role).join() === "writer,judge,judge,judge", `${events.slice(-8).join(" | ")} · ${JSON.stringify(moved.stages.map((r) => [r.stage, r.status, r.round]))}`);
   check("the writer answered the arithmetic's finding — criterion-untested on REQ-2/AC-2, quoted — and the binding is now traced to v3 with the new test",
     /## The judge's findings on the previous binding/.test(writer.calls[0].prompt) && /criterion-untested/.test(writer.calls[0].prompt) && /REQ-2\/AC-2/.test(writer.calls[0].prompt) && loadSdd(cold).traces.handoff.version === 3 && loadSdd(cold).items[1].tests.length === 2 && sdd3.verdict === "pass" && sdd3.judged[0].id === "handoff-v3", writer.calls[0].prompt.slice(-500));
   check("R3: the ruling rode into the writer's and the judges' mechanics, and the new scenario into the work item",
     /RUL-1/.test(writer.calls[0].options.systemPrompt) && /names the vendor from the manifest/.test(writer.calls[0].options.systemPrompt) && /RUL-1/.test(writer.calls[2].options.systemPrompt) && /STORY-2\/2/.test(writer.calls[2].prompt), writer.calls[2].prompt.slice(0, 300));
   check("the record of the whole: two moves flagged per stage, no override anywhere, the run pinned at v3",
     readRun(cold).handoff.version === 3 && readRun(cold).flags.filter((f) => f.event === "moved").length === 4 && !readRun(cold).flags.some((f) => f.override), JSON.stringify(readRun(cold).flags.map((f) => `${f.stage}:${f.event}`)));
+});
+
+// ── R5 in build: a re-judge is manifest currency — the standing build held to the binding as it now stands, never a rebuild; a block rebuilds only what moved ──
+await withRoot({}, async (tmp) => {
+  const { cold } = await seedBuild(tmp, { slug: "moor", files: { "README.md": "# Moor\n" } });
+  const b = builder([BUILT(), BUILT("Run sheet built."), BUILT("Queue built.")], { 0: (cwd) => put(cwd, "src/exceptions/store.js", "a"), 1: (cwd) => put(cwd, "src/deliveries/store.js", "b"), 2: (cwd) => put(cwd, "src/queue/q.js", "c") });
+  const built = await runStage(cold, { stage: "build", _query: b.query });
+  const standing = loadBuild(cold);
+  check("the build approves in one round, three calls", built.status === "approved" && built.round === 1 && b.calls.length === 3);
+
+  // The arithmetic alone: the binding as it stands against the build as it stands.
+  const sdd = readDoc(cold, SDD_FILE);
+  check("nothing moved: currency finds nothing", checkCurrency(sdd, standing).length === 0);
+  const moved = structuredClone(sdd); moved.items[1].approach += " Rows are keyed by delivery id.";
+  check("an item whose bound fields changed is binding-moved — that item, high and certain, the hashes in the evidence — and no other",
+    checkCurrency(moved, standing).map((f) => `${f.rule}@${f.subject}:${f.severity}/${f.confidence}`).join() === "binding-moved@STORY-2:high/certain" && /^built from [0-9a-f]{64}; the binding now hashes [0-9a-f]{64}$/.test(checkCurrency(moved, standing)[0].evidence), JSON.stringify(checkCurrency(moved, standing)));
+  const risk = structuredClone(sdd); risk.items[0].risks.push("a fourth reason");
+  check("risks are bound too — the builder read them", checkCurrency(risk, standing).map((f) => f.subject).join() === "STORY-1");
+  const grown = structuredClone(sdd); grown.items.push({ ...sdd.items[2], work_item: "REQ-9" });
+  check("an item the binding has that the build does not is unbuilt; one the build has that the binding dropped is not a finding — nothing to hold it to",
+    checkCurrency(grown, standing).map((f) => `${f.rule}@${f.subject}`).join() === "unbuilt@REQ-9" && checkCurrency({ ...sdd, items: sdd.items.slice(0, 2) }, standing).length === 0);
+
+  // Through the door: the binding moves on disk, the stage goes stale, the loop re-judges — no builder called — blocks, and regenerates exactly the moved item.
+  saveDoc(cold, SDD_FILE, "sdd", moved);
+  transition(cold, { stage: "build", event: "moved", by: "Brad", reason: "the run-sheet binding moved" });
+  const events = [];
+  const again = builder([BUILT("Run sheet rebuilt.")], { 0: (cwd) => put(cwd, "src/deliveries/store.js", "b2") });
+  const r2 = await runStage(cold, { stage: "build", _query: again.query, onEvent: (e) => events.push(e) });
+  const after = loadBuild(cold);
+  check("stale → re-judge: reblock on binding-moved with no call; then the round rebuilds STORY-2 alone — one builder call — and keeps STORY-1 and REQ-4 at their commits for $0; approved",
+    events.filter((e) => /re-judged|round|reused|building/.test(e)).join(" | ") === `build re-judged: reblock | build block · round 0 of 2 — regenerating | build STORY-1 reused — binding unchanged, ${standing.items[0].commit.slice(0, 7)} stands | build STORY-2 building from ${standing.items[2].commit.slice(0, 7)} | build REQ-4 reused — binding unchanged, ${standing.items[2].commit.slice(0, 7)} stands | build pass · round 1 — approved` && r2.status === "approved" && again.calls.length === 1 && after.items.map((i) => `${i.work_item}:${i.reused ? 1 : 0}`).join() === "STORY-1:1,STORY-2:0,REQ-4:1" && after.items[0].commit === standing.items[0].commit && after.items[2].commit === standing.items[2].commit && after.items[1].commit !== standing.items[1].commit && after.items[1].binding_hash !== standing.items[1].binding_hash, events.join(" | "));
+  check("the rebuild's prompt carried the finding it was bought to answer; the record traces the binding as it now stands; the branch grew by one commit",
+    /binding-moved/.test(again.calls[0].prompt) && after.traces.sdd.content_hash === readDoc(cold, SDD_FILE).meta.content_hash && gitIn(cold, ["log", "--format=%s", BRANCH]).split("\n").length === 5 && gitIn(cold, ["log", "--format=%s", "-1", BRANCH]) === "STORY-2: Run sheet rebuilt.", gitIn(cold, ["log", "--format=%s", BRANCH]));
+  const clear = await buildRejudge(cold, roundCtx(cold));
+  check("re-judged again with nothing moved: clear — a pass with no findings, the same four pins", clear.verdict.verdict === "pass" && clear.verdict.findings.length === 0 && clear.verdict.judged.length === 4 && readDoc(cold, BUILD_VERDICT).verdict === "pass");
 });
 
 done();

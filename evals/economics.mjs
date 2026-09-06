@@ -19,7 +19,8 @@ import { runJudge, runPerItemJudge, rank, deriveVerdict, weight, renderFindingsF
 import { apply, DEFAULTS, readRun, transition, rounds, LEDGER } from "../delivery/state/index.mjs";
 import { runStage, escalate, advance, estimateRun, AUTHORED, PULSE_MS } from "../delivery/run/index.mjs";
 import { SDD_FILE, VERDICT_FILE as SDD_VERDICT, loadSdd } from "../delivery/sdd/index.mjs";
-import { seedDelivery, coldRoot, BINDING } from "./_fixture.mjs";
+import { seedDelivery, coldRoot, BINDING, seedBuild, builder, put, gitIn, BUILT, BLOCKED } from "./_fixture.mjs";
+import { loadBuild, BRANCH } from "../delivery/build/index.mjs";
 import { readDoc } from "../shared/store.mjs";
 import { stamp } from "../shared/hash.mjs";
 import { setupProject } from "../discovery/setup/index.mjs";
@@ -164,17 +165,17 @@ await withRoot({}, async (tmp) => {
   const CLEAN = (item) => ({ findings: [], deferred: [{ subject: item, summary: `${item}: the signal dropping mid-write.`, beyond: "untested" }], checked: 1, skipped: 0 });
   const { disc, cold, handoff } = await seedDelivery(tmp, { slug: "tare" });
   const e0 = estimateRun(cold, { handoff });
-  check("before any call the estimate has the round's shape — intake asks nothing of a model, sdd is one writer and one judge per work item the slicing will produce — and no price: no history is 'no history', not a number",
-    e0.stages.map((s) => `${s.stage}:${s.calls}`).join() === "intake:0,sdd:4" && e0.stages[1].roles.map((r) => `${r.role}×${r.calls}`).join() === "writer×1,judge×3" && e0.stages[1].roles.every((r) => r.per_call === null && r.n === 0 && r.usd === null) && e0.calls === 4 && e0.usd === null && e0.stages[0].usd === 0 && e0.standing.spent === 0, JSON.stringify(e0));
+  check("before any call the estimate has the round's shape — intake asks nothing of a model, sdd is one writer and one judge per work item the slicing will produce, build one builder per item and no judge — and no price: no history is 'no history', not a number",
+    e0.stages.map((s) => `${s.stage}:${s.calls}`).join() === "intake:0,sdd:4,build:3" && e0.stages[1].roles.map((r) => `${r.role}×${r.calls}`).join() === "writer×1,judge×3" && e0.stages[2].roles.map((r) => `${r.role}×${r.calls}`).join() === "builder×3" && e0.stages.slice(1).every((s) => s.roles.every((r) => r.per_call === null && r.n === 0 && r.usd === null)) && e0.calls === 7 && e0.usd === null && e0.stages[0].usd === 0 && e0.standing.spent === 0, JSON.stringify(e0));
   check("the shape names the model each role would run on — the run's override where there is one, the shared default where there is not", e0.stages[1].roles.map((r) => r.model).join() === `${modelFor({ half: "delivery", role: "writer" })},${modelFor({ half: "delivery", role: "judge" })}` && estimateRun(cold, { handoff, models: { "delivery.judge": "claude-sonnet-5" } }).stages[1].roles[1].model === "claude-sonnet-5");
 
   const q = scripted({ structuredSeq: [BINDING, CLEAN("STORY-1"), CLEAN("STORY-2"), CLEAN("REQ-4")], usd: [0.9, 0.2, 0.3, 0.4] });
   await advance(cold, { _query: q.query, _now: () => new Date("2026-09-06T09:30:00Z") });
   const e1 = estimateRun(cold, { handoff, intake: readDoc(cold, "forge/delivery/intake.json") });
-  check("after one round every role has history and the estimate is arithmetic on it: the writer's mean once, the judges' mean per work item the intake sliced, summed by stage and over the run",
-    e1.stages[1].roles[0].per_call === 0.9 && e1.stages[1].roles[0].n === 1 && Math.abs(e1.stages[1].roles[1].per_call - 0.3) < 1e-9 && e1.stages[1].roles[1].n === 3 && Math.abs(e1.stages[1].usd - 1.8) < 1e-9 && Math.abs(e1.usd - 1.8) < 1e-9 && Math.abs(e1.standing.spent - 1.8) < 1e-9, JSON.stringify(e1.stages[1]));
+  check("after one sdd round its roles have history and the stage's estimate is arithmetic on it: the writer's mean once, the judges' mean per work item the intake sliced — and the run's total is still no number, because the builder has none",
+    e1.stages[1].roles[0].per_call === 0.9 && e1.stages[1].roles[0].n === 1 && Math.abs(e1.stages[1].roles[1].per_call - 0.3) < 1e-9 && e1.stages[1].roles[1].n === 3 && Math.abs(e1.stages[1].usd - 1.8) < 1e-9 && e1.stages[2].usd === null && e1.usd === null && Math.abs(e1.standing.spent - 1.8) < 1e-9, JSON.stringify(e1.stages.slice(1)));
   check("history is per model, not per role: pointing the judge at a model it has never run on takes the price away again, and the run's total with it",
-    estimateRun(cold, { handoff, models: { "delivery.judge": "claude-sonnet-5" } }).stages[1].roles[1].per_call === null && estimateRun(cold, { handoff, models: { "delivery.judge": "claude-sonnet-5" } }).usd === null && estimateRun(cold, { handoff, models: { "delivery.judge": "claude-sonnet-5" } }).stages[1].roles[0].per_call === 0.9);
+    estimateRun(cold, { handoff, models: { "delivery.judge": "claude-sonnet-5" } }).stages[1].roles[1].per_call === null && estimateRun(cold, { handoff, models: { "delivery.judge": "claude-sonnet-5" } }).stages[1].usd === null && estimateRun(cold, { handoff, models: { "delivery.judge": "claude-sonnet-5" } }).stages[1].roles[0].per_call === 0.9);
   check("standing is the spend against the run's budget: what remains, and over when the next round would already be refused",
     Math.abs(estimateRun(cold, { handoff, budget: 5 }).standing.remaining - 3.2) < 1e-9 && estimateRun(cold, { handoff, budget: 1.5 }).standing.over === true && estimateRun(cold, { handoff }).standing.budget === null);
   check("another cold root of the same project has no history of its own — the ledger is the run's, never borrowed", estimateRun(coldRoot(tmp, disc, "tare-2"), { handoff }).usd === null);
@@ -306,11 +307,12 @@ await withRoot({ "prompts/j.md": IDENTITY }, async (root) => {
     const script = scripted({ structuredSeq: [BAD, BINDING, PROVES_NOTHING, CLEAN("STORY-2"), CLEAN("REQ-4"), BINDING, CLEAN("STORY-1"), CLEAN("STORY-2"), CLEAN("REQ-4")] });
     const opts = { _query: slow(script.query), _now: clock, _pulse_ms: 1, onEvent: (e) => events.push(e) };
 
-    check("the loop knows which stages it can run — intake and sdd — and says so in one table", Object.keys(AUTHORED).join() === "intake,sdd" && AUTHORED.intake.writer === false && AUTHORED.sdd.writer === true && PULSE_MS === 15_000);
+    check("the loop knows which stages it can run — intake, sdd and build — and says so in one table; build has a writer and no judge",
+      Object.keys(AUTHORED).join() === "intake,sdd,build" && AUTHORED.intake.writer === false && AUTHORED.sdd.writer === true && AUTHORED.build.writer === true && PULSE_MS === 15_000);
     const order = await refusal(() => runStage(cold, { stage: "sdd", ...opts }));
-    const unauthored = await refusal(() => runStage(cold, { stage: "build", ...opts }));
+    const unauthored = await refusal(() => runStage(cold, { stage: "qa", ...opts }));
     const nostage = await refusal(() => runStage(cold, { stage: "ship", ...opts }));
-    check("a stage runs from an approved one: sdd before intake is stage-order; build is stage-unauthored (M3); a name that is not a stage is no-stage — nothing was called",
+    check("a stage runs from an approved one: sdd before intake is stage-order; qa is stage-unauthored (M3); a name that is not a stage is no-stage — nothing was called",
       order?.code === "stage-order" && /intake is pending/.test(order.message) && unauthored?.code === "stage-unauthored" && nostage?.code === "no-stage" && script.calls.length === 0, `${order?.code} ${unauthored?.code} ${nostage?.code}`);
 
     const r0 = await runStage(cold, { stage: "intake", ...opts });
@@ -354,7 +356,8 @@ await withRoot({ "prompts/j.md": IDENTITY }, async (root) => {
       Date.parse(after.heartbeat_at) > Date.parse(after.started_at) && Date.parse(after.finished_at) >= Date.parse(after.heartbeat_at) && Date.parse(after.started_at) > Date.parse(before.finished_at), JSON.stringify({ before, after }));
     check("the binding on disk is the approved one, traced to the handoff it was bound from", loadSdd(cold).items.length === 3 && loadSdd(cold).traces.handoff.version === 1 && readDoc(cold, SDD_VERDICT).verdict === "pass");
     const rest = await advance(cold, opts);
-    check("advance over an approved run: nothing to do until build, which is unauthored — halted there, no call made", rest.stages.length === 0 && rest.halted?.why === "stage-unauthored" && rest.halted.stage === "build" && script.calls.length === 9);
+    check("advance over an approved run: nothing to do until build, which refuses — this cold root is no repository — halted there with the refusal's code, the stage stopped on the record with the reason, no call made",
+      rest.stages.length === 0 && rest.halted?.why === "no-repo" && rest.halted.stage === "build" && readRun(cold).stages.build.status === "stopped" && /no-repo/.test(readRun(cold).flags.at(-1).reason) && script.calls.length === 9, JSON.stringify([rest.halted, readRun(cold).flags.at(-1)]));
 
     // Every filed verdict is kept with what it judged (R8): the next round overwrites both on their fixed
     // paths, and a judge miss — a finding a later verdict contradicts — is only attributable while the
@@ -382,8 +385,8 @@ await withRoot({ "prompts/j.md": IDENTITY }, async (root) => {
     check("the wrapper said so", events.at(-1) === "sdd stopped — Error: the socket closed", events.join(" | "));
     const good = scripted({ structuredSeq: [BINDING, CLEAN("STORY-1"), CLEAN("STORY-2"), CLEAN("REQ-4")] });
     const again = await advance(cold, { _query: good.query, _now: clock });
-    check("from stopped, start opens a new episode: the round is counted from zero, sdd approves at round 1, and advance halts at build",
-      again.stages.length === 1 && again.stages[0].stage === "sdd" && again.stages[0].status === "approved" && again.stages[0].round === 1 && again.halted?.why === "stage-unauthored" && good.calls.length === 4, JSON.stringify(again.halted));
+    check("from stopped, start opens a new episode: the round is counted from zero, sdd approves at round 1, and advance halts at build's refusal (no repository here)",
+      again.stages.length === 1 && again.stages[0].stage === "sdd" && again.stages[0].status === "approved" && again.stages[0].round === 1 && again.halted?.why === "no-repo" && again.halted.stage === "build" && good.calls.length === 4, JSON.stringify(again.halted));
 
     // A live stage is left alone; a dead one is restarted with a flag; a dead re-judge has no door but stop.
     transition(cold, { stage: "sdd", event: "stop", by: "Brad", reason: "the binding names a store the product does not have", now: clock() });
@@ -399,5 +402,32 @@ await withRoot({ "prompts/j.md": IDENTITY }, async (root) => {
     check("a dead re-judge is not restarted by the loop — stage-dead: stop it with a reason, then start", dead?.code === "stage-dead" && /stop it with a reason/.test(dead.message));
   });
 }
+
+// ── R1 in build: one builder per item that needs building, nothing for one that stands; the verdict costs nothing; the estimate learns the builder's price ──
+await withRoot({}, async (tmp) => {
+  const { cold, handoff, intake } = await seedBuild(tmp, { slug: "silt", files: { "README.md": "# Silt\n" } });
+  const ledger = join(cold, LEDGER);
+  const spentBefore = rows(ledger).length;
+  const events = [];
+  // Round 1: STORY-1 built, STORY-2 blocked → the round halts, REQ-4 unbuilt → block → regenerate under the cap.
+  // Round 2: STORY-1 stands (no call), STORY-2 built, REQ-4 built → pass → approved at round 2.
+  const b = builder([BUILT(), BLOCKED("the design has no delivery-row control on SCREEN-2"), BUILT("Run sheet built."), BUILT("Queue built.")], {
+    0: (cwd) => put(cwd, "src/exceptions/store.js", "a"),
+    2: (cwd) => put(cwd, "src/deliveries/store.js", "b"),
+    3: (cwd) => put(cwd, "src/queue/q.js", "c"),
+  }, { usd: [0.7, 0.1, 0.5, 0.3] });
+  const r = await runStage(cold, { stage: "build", _query: b.query, onEvent: (e) => events.push(e) });
+  check("the loop runs build as a writer stage with no judge: round 1 blocks on the arithmetic and regenerates under the cap; round 2 passes — approved at round 2, four builder calls in all",
+    r.status === "approved" && r.round === 2 && r.verdict.verdict === "pass" && b.calls.length === 4 && events.includes("build block · round 1 of 2 — regenerating"), `${r.status} r${r.round} · ${events.join(" | ")}`);
+  check("R1: the stage's cost is the builders' — four rows on the ledger for delivery/build/builder, $1.60 — and the verdict itself cost nothing: no model on it",
+    r.cost.calls === 4 && Math.abs(r.cost.usd - 1.6) < 1e-9 && rows(ledger).slice(spentBefore).map((x) => `${x.stage}/${x.role}/${x.kind}`).join() === Array(4).fill("build/builder/builder").join() && r.verdict.cost.model === "none" && r.verdict.cost.usd === 0, JSON.stringify(r.cost));
+  const doc = loadBuild(cold);
+  check("round 2 kept STORY-1 for $0 — reused, the round-1 commit, no call with its item in the prompt — and built the other two",
+    doc.items.map((i) => `${i.work_item}:${i.status}:${i.reused ? 1 : 0}`).join() === "STORY-1:built:1,STORY-2:built:0,REQ-4:built:0" && b.calls.slice(2).every((c) => !/### STORY-1 — story/.test(c.prompt)) && events.some((e) => /STORY-1 reused — binding unchanged/.test(e)) && gitIn(cold, ["log", "--format=%s", BRANCH]).split("\n").length === 4, events.join(" | "));
+  check("R8: both rounds' verdicts are kept with the build record they judged", rounds(cold, "build").map((k) => `${k.round}:${k.verdict.verdict}`).join() === "1:block,2:pass" && rounds(cold, "build")[0].kept.some((k) => k.path === "forge/delivery/build.json"), JSON.stringify(rounds(cold, "build").map((k) => [k.round, k.verdict.verdict, k.kept.map((x) => x.path)])));
+  const e = estimateRun(cold, { handoff, intake });
+  check("the estimate now prices a build: the builder's mean over its four calls, times one per item — a number from history",
+    Math.abs(e.stages[2].roles[0].per_call - 0.4) < 1e-9 && e.stages[2].roles[0].n === 4 && e.stages[2].calls === 3 && Math.abs(e.stages[2].usd - 1.2) < 1e-9, JSON.stringify(e.stages[2]));
+});
 
 done();

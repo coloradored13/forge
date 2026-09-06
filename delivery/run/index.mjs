@@ -14,6 +14,7 @@ import { rows, estimate, standing, modelFor, tally } from "../../shared/agent-ca
 import { STAGES, LEDGER, readRun, transition, heartbeat, liveness } from "../state/index.mjs";
 import { intake, takePinned, compile, slice, INTAKE_FILE } from "../intake/index.mjs";
 import { round as sddRound, rejudge as sddRejudge } from "../sdd/index.mjs";
+import { round as buildRound, rejudge as buildRejudge } from "../build/index.mjs";
 
 export { Refused };
 /** How often the wrapper writes the heartbeat while a stage's code runs. */
@@ -40,6 +41,13 @@ export const AUTHORED = {
     rejudge: async (root, ctx) => (await sddRejudge(root, ctx)).file,
     // one binding for the set, one judge per work item — the items intake sliced, or the ones it will
     calls: ({ handoff, intake }) => ({ writer: 1, judge: (intake?.work_items ?? slice(handoff, compile(handoff).scenarios)).length }),
+  },
+  build: {
+    writer: true,
+    round: async (root, ctx) => (await buildRound(root, ctx)).file,
+    rejudge: async (root, ctx) => (await buildRejudge(root, ctx)).file,
+    // one builder per binding item and no judge — the verdict is arithmetic; a reused item is no call, so this is the ceiling
+    calls: ({ handoff, intake }) => ({ builder: (intake?.work_items ?? slice(handoff, compile(handoff).scenarios)).length }),
   },
 };
 
@@ -111,6 +119,9 @@ export async function escalate(root, { stage, by, reason, onEvent, _query, _slee
 /**
  * Stages in order until one does not approve or the loop cannot run it. Returns what
  * each stage came to and where it halted: `{ stages: [result…], halted: { stage, why } | null }`.
+ * A stage's refusal (the door's, or a round's — `no-repo`, `containment`) halts the loop
+ * with its code; the stage is already stopped on the record with the reason by the
+ * episode. Anything else is a fault and propagates.
  */
 export async function advance(root, opts = {}) {
   const out = { stages: [], halted: null };
@@ -118,7 +129,9 @@ export async function advance(root, opts = {}) {
     const run = needRun(root);
     if (run.stages[stage].status === "approved") continue;
     if (!AUTHORED[stage]) { out.halted = { stage, why: "stage-unauthored" }; break; }
-    const r = await runStage(root, { ...opts, stage });
+    let r;
+    try { r = await runStage(root, { ...opts, stage }); }
+    catch (e) { if (e instanceof Refused) { out.halted = { stage, why: e.code, message: e.message }; break; } throw e; }
     out.stages.push(r);
     if (r.status !== "approved") { out.halted = { stage, why: r.status }; break; }
   }
