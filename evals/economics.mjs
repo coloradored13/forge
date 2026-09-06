@@ -10,11 +10,12 @@
 // stage stopped with the error as its reason. No model is ever called here — the SDK is
 // replaced by a scripted query.
 
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { suite, withRoot, scripted } from "./_harness.mjs";
 import { call, BudgetError, rows, quote, modelFor, TOOLS } from "../shared/agent-call/index.mjs";
 import { runJudge, runPerItemJudge, rank, deriveVerdict, weight, renderFindingsForAgent } from "../shared/judge/index.mjs";
-import { apply, DEFAULTS, readRun, transition, LEDGER } from "../delivery/state/index.mjs";
+import { apply, DEFAULTS, readRun, transition, rounds, LEDGER } from "../delivery/state/index.mjs";
 import { runStage, escalate, advance, estimateRun, AUTHORED, PULSE_MS } from "../delivery/run/index.mjs";
 import { SDD_FILE, VERDICT_FILE as SDD_VERDICT, loadSdd } from "../delivery/sdd/index.mjs";
 import { seedDelivery, coldRoot, BINDING } from "./_fixture.mjs";
@@ -329,6 +330,19 @@ await withRoot({ "prompts/j.md": IDENTITY }, async (root) => {
     check("the binding on disk is the approved one, traced to the handoff it was bound from", loadSdd(cold).items.length === 3 && loadSdd(cold).traces.handoff.version === 1 && readDoc(cold, SDD_VERDICT).verdict === "pass");
     const rest = await advance(cold, opts);
     check("advance over an approved run: nothing to do until build, which is unauthored — halted there, no call made", rest.stages.length === 0 && rest.halted?.why === "stage-unauthored" && rest.halted.stage === "build" && script.calls.length === 9);
+
+    // Every filed verdict is kept with what it judged (R8): the next round overwrites both on their fixed
+    // paths, and a judge miss — a finding a later verdict contradicts — is only attributable while the
+    // earlier round can still be read. Numbered across episodes, since a new episode counts from zero.
+    const kept = rounds(cold, "sdd");
+    check("R8: three sdd verdicts were filed — arithmetic block, judge block, escalated pass — and all three are on the record as they were filed, numbered across episodes",
+      kept.map((k) => `${k.seq}:${k.round}:${k.event}:${k.verdict.verdict}`).join() === "1:1:finish:block,2:2:finish:block,3:3:finish:pass", JSON.stringify(kept.map((k) => [k.seq, k.round, k.event, k.verdict?.verdict])));
+    const first = readDoc(cold, join(kept[0].dir, "sdd.json"));
+    check("the round-1 binding is kept beside its verdict, exactly what was judged: its hash is the verdict's pin, and it is not the binding on disk now",
+      first?.meta.content_hash === kept[0].verdict.judged.find((j) => j.path === SDD_FILE).content_hash && first.meta.content_hash !== loadSdd(cold).meta.content_hash, JSON.stringify(kept[0]));
+    check("what is kept is what the verdict pinned under the record — the intake record and the binding, none stale; the handoff is not copied, being versioned outside the record",
+      kept[0].kept.map((k) => k.path).join() === `forge/delivery/intake.json,${SDD_FILE}` && kept[0].stale.length === 0 && !existsSync(join(cold, kept[0].dir, "handoff-v1.json")) && existsSync(join(cold, kept[0].dir, "intake.json")), JSON.stringify(kept[0].kept));
+    check("intake's one round keeps its verdict alone — intake pins the handoff, not the record it compiles", rounds(cold, "intake").length === 1 && rounds(cold, "intake")[0].kept.length === 0 && rounds(cold, "intake")[0].verdict.verdict === "advise" && rounds(cold, "build").length === 0);
   });
 
   // A stage whose code throws is stopped on the record, by the wrapper, with the error as the reason; it starts again from stopped.
