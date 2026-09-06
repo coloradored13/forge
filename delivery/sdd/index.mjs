@@ -65,6 +65,7 @@ async function write(root, { run, handoff, intake, review, onEvent, _query, _sle
   const findings = review ? renderFindingsForAgent(review) : null;
   const prompt = [
     `## Work items\n\n${intake.work_items.map((w) => renderWorkItem(w, intake)).join("\n\n")}`,
+    `## ${VOCABULARY}\n\n${renderVocabulary(contract)}`,
     `## The signed design\n\n${renderDesign(handoff.design)}`,
     contract.constraints?.length ? `## Constraints\n\n${contract.constraints.map((c) => `- ${c}`).join("\n")}` : "",
     intake.questions.length ? `## Questions the snapshot still carries — not yours to decide\n\n${intake.questions.map((q) => `- ${q.id} (${q.subject ?? q.source}${q.blocking ? ", blocking" : ""}): ${q.question}`).join("\n")}` : "",
@@ -112,6 +113,7 @@ async function judgeAll(root, { run, handoff, intake, doc, onEvent, _query, _sle
       id: it.work_item,
       sections: [
         ["The work item", renderWorkItem(w, intake)],
+        [VOCABULARY, renderVocabulary(contract)],
         ["The signed design — the screens this item runs on", refs.size ? renderDesign({ ...handoff.design, screens: handoff.design.screens.filter((s) => refs.has(s.screen_ref)) }) : "(this item runs on no screen)"],
         ["The binding", renderItem(it)],
         ["Interfaces the other items name", others.join("\n") || "(none)"],
@@ -148,6 +150,12 @@ function rulingsOf(contract) {
 }
 
 // ── how the record reads to an agent ──
+
+/** The contract's defined terms, as every Discovery writer and reviewer sees them — a word the PRD defines is not a question. */
+const VOCABULARY = "Vocabulary — the contract's words";
+function renderVocabulary(contract) {
+  return (contract.shape?.vocabulary ?? []).map((t) => `- **${t.term}**: ${t.definition}`).join("\n") || "(none defined)";
+}
 
 export function renderWorkItem(w, intake) {
   const scenarios = new Map((intake.scenarios ?? []).map((s) => [s.id, s]));
