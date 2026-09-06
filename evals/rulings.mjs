@@ -16,6 +16,7 @@ import { runJudge, splitReraised } from "../shared/judge/index.mjs";
 import { rows, funnelPath } from "../shared/funnel.mjs";
 import { loadPrd } from "../discovery/workshop/index.mjs";
 import { ledgerPath } from "../discovery/setup/index.mjs";
+import { rows as calls } from "../shared/agent-call/ledger.mjs";
 import { Refused, rulingsOf, staleness, PRD_FILE } from "../discovery/record/index.mjs";
 import { answer } from "../discovery/doors/index.mjs";
 
@@ -104,7 +105,7 @@ await withRoot({}, async (parent) => {
   const clean = scripted({ structured: { findings: [f("REQ-1/AC-3")], deferred: [], checked: 1, skipped: 0 } });
   const v2 = await runJudge({ gate: "story-reviewer", half: "discovery", stage: "stories", identity, sections: [], artifacts: [], rulings: [], funnel: funnelPath(root), cwd: root, ledger: ledgerPath(root), _query: clean.query });
   check("with no rulings a judge run records nothing and removes nothing", v2.reraised === 0 && v2.findings.length === 1 && rows(funnelPath(root)).length === 3);
-  check("no model was reached: every call went through the script, and the ledger holds them", q.calls.length === 1 && clean.calls.length === 1 && existsSync(ledgerPath(root)) && readFileSync(ledgerPath(root), "utf8").trim().split("\n").length === 2);
+  check("no model was reached: every call went through the script, and the ledger holds them", q.calls.length === 1 && clean.calls.length === 1 && existsSync(ledgerPath(root)) && calls(ledgerPath(root)).length === 2);
 });
 
 done();

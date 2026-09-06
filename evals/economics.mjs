@@ -10,10 +10,11 @@
 // stage stopped with the error as its reason. No model is ever called here — the SDK is
 // replaced by a scripted query.
 
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { suite, withRoot, scripted } from "./_harness.mjs";
-import { call, BudgetError, rows, quote, modelFor, TOOLS } from "../shared/agent-call/index.mjs";
+import { call, BudgetError, rows, quote, modelFor, TOOLS, totals, estimate, tally } from "../shared/agent-call/index.mjs";
+import { append as appendLedger } from "../shared/agent-call/ledger.mjs";
 import { runJudge, runPerItemJudge, rank, deriveVerdict, weight, renderFindingsForAgent } from "../shared/judge/index.mjs";
 import { apply, DEFAULTS, readRun, transition, rounds, LEDGER } from "../delivery/state/index.mjs";
 import { runStage, escalate, advance, estimateRun, AUTHORED, PULSE_MS } from "../delivery/run/index.mjs";
@@ -51,6 +52,29 @@ await withRoot({}, async (root) => {
   try { await call({ half: "delivery", stage: "sdd", role: "writer", kind: "writer", system: "s", prompt: "p", cwd: root, ledger, _query: bad.query }); } catch (e) { threw = e; }
   const failed = rows(ledger)[1];
   check("a failed call still records its row — it billed", threw && failed?.ok === false && failed.usd === 0.03 && failed.error.includes("fell over"), JSON.stringify(failed));
+
+  // A call is on the record before the model runs: a started row first, the outcome
+  // after, the two joined by a call id — a process killed mid-call leaves the start.
+  const seen = [];
+  const watch = scripted({ usd: 0.07 });
+  const watched = ({ prompt, options }) => { seen.push(readFileSync(ledger, "utf8").trim().split("\n").length); return watch.query({ prompt, options }); };
+  await call({ half: "discovery", stage: "stories", role: "writer", kind: "writer", system: "s", prompt: "p", cwd: root, ledger, _query: watched });
+  const raw = readFileSync(ledger, "utf8").trim().split("\n").map((l) => JSON.parse(l));
+  const start = raw.at(-2), end = raw.at(-1);
+  check("a started row is durable before the SDK is invoked — the query saw it on disk — naming half, stage, role, kind and model with the outcome still open, and no cost",
+    seen[0] === 5 && start.ok === null && typeof start.call === "string" && start.call.length >= 8 && start.half === "discovery" && start.stage === "stories" && start.role === "writer" && start.kind === "writer" && start.model === "claude-opus-5" && !("usd" in start) && !("tools" in start), JSON.stringify({ seen, start }));
+  check("the outcome row carries the same call id, so the two are one call on the record",
+    end.call === start.call && end.ok === true && end.usd === 0.07 && end.at === start.at, JSON.stringify(end));
+  check("rows() reads a call as one row — the outcome over the start, in the order calls began",
+    rows(ledger).length === 3 && rows(ledger).at(-1).call === start.call && rows(ledger).at(-1).ok === true && rows(ledger).at(-1).usd === 0.07 && rows(ledger)[0].usd === 0.12 && rows(ledger)[1].ok === false, JSON.stringify(rows(ledger).map((r) => [r.call ?? "-", r.ok, r.usd])));
+  // A row from before call ids (the ledgers Bakehouse already has) passes through as it is; a kill leaves the started row alone.
+  // Both seeded through the ledger's own append — the eval cannot kill itself.
+  appendLedger(ledger, { at: "2026-09-06T09:00:00.000Z", half: "discovery", stage: "stories", role: "writer", kind: "writer", model: "claude-opus-5", ok: true, usd: 0.01, ms: 5, turns: 1, tokens: { input: 1, output: 1, cache_read: 0, cache_create: 0 }, tools: [] });
+  appendLedger(ledger, { call: "killed-1", at: "2026-09-06T10:00:00.000Z", half: "discovery", stage: "stories", role: "writer", kind: "writer", model: "claude-opus-5", ok: null });
+  const after = rows(ledger);
+  const t = tally(after);
+  check("a killed call is on the record as a call whose outcome is unknown: counted, not priced, not history; the row without an id is read as it always was",
+    after.length === 5 && after[3].usd === 0.01 && after.at(-1).ok === null && after.at(-1).call === "killed-1" && t.calls === 5 && Math.abs(t.usd - 0.23) < 1e-9 && t.unfinished === 1 && estimate(ledger, { half: "discovery", role: "writer" }).n === 3 && totals(ledger, ["half"]).discovery.unfinished === 1 && totals(ledger, ["half"]).discovery.calls === 4 && totals(ledger, ["half"]).delivery.unfinished === 0, JSON.stringify({ t, n: estimate(ledger, { half: "discovery", role: "writer" }).n, totals: totals(ledger, ["half"]) }));
 
   check("a call without a ledger is refused", await call({ half: "discovery", stage: "x", role: "writer", system: "s", prompt: "p", _query: q.query }).then(() => false, (e) => /ledger/.test(e.message)));
   check("a call from no half is refused", await call({ half: "shared", stage: "x", role: "writer", system: "s", prompt: "p", ledger, _query: q.query }).then(() => false, (e) => /half/.test(e.message)));
@@ -92,7 +116,8 @@ await withRoot({}, async (root) => {
   const q = scripted({ throwWith: ["usage limit reached — resets at 4pm", null], usd: 0.2 });
   const r = await call({ half: "delivery", stage: "qa", role: "judge", system: "s", prompt: "p", cwd: root, ledger, _query: q.query, _sleep: async (ms) => waits.push(ms) });
   check("a usage gap pauses and retries the whole call", r.usd === 0.2 && q.calls.length === 2 && waits.length === 1 && waits[0] === 5 * 60_000, `${q.calls.length} calls · waits ${waits}`);
-  check("both attempts are on the ledger — the failed one is not hidden", rows(ledger).length === 2 && rows(ledger)[0].ok === false && rows(ledger)[1].ok === true);
+  check("both attempts are on the ledger — the failed one is not hidden — each its own call, started and closed",
+    rows(ledger).length === 2 && rows(ledger)[0].ok === false && rows(ledger)[1].ok === true && rows(ledger)[0].call !== rows(ledger)[1].call && readFileSync(ledger, "utf8").trim().split("\n").length === 4, JSON.stringify(rows(ledger).map((r) => [r.call, r.ok])));
 
   const q2 = scripted({ throwWith: ["TypeError: cannot read properties of undefined"] });
   const err = await call({ half: "delivery", stage: "qa", role: "judge", system: "s", prompt: "p", cwd: root, ledger, _query: q2.query, _sleep: async () => {} }).then(() => null, (e) => e);

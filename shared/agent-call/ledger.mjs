@@ -1,14 +1,33 @@
 // owns: R1 · shared — the record of what every model call cost, by half, stage and
-// role. Append-only JSONL; one row per call, written by the call that spent it. What
-// the console shows before a trigger ("this refine ≈ $X; you're at $Y of $Z") and what
-// the budget check reads are both computed from here — nowhere else keeps a total.
+// role. Append-only JSONL, written by the call that spent it: a started row before the
+// model runs, an outcome row after, joined by a call id — so a process killed mid-call
+// leaves a call whose outcome is unknown, not nothing. Readers see one row per call.
+// What the console shows before a trigger ("this refine ≈ $X; you're at $Y of $Z") and
+// what the budget check reads are both computed from here — nowhere else keeps a total.
 
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname } from "node:path";
 
+/**
+ * One row per call, in the order calls began: the outcome row replaces its started row
+ * where that row stood. A started row with no outcome is a call that never closed. Rows
+ * without a call id — ledgers written before there was one — are read as they are.
+ */
 export function rows(path) {
   if (!existsSync(path)) return [];
-  return readFileSync(path, "utf8").split("\n").filter((l) => l.trim()).map((l) => JSON.parse(l));
+  const out = [], at = new Map();
+  for (const line of readFileSync(path, "utf8").split("\n")) {
+    if (!line.trim()) continue;
+    const row = JSON.parse(line);
+    if (row.call && at.has(row.call)) out[at.get(row.call)] = row;
+    else { if (row.call) at.set(row.call, out.length); out.push(row); }
+  }
+  return out;
+}
+
+/** Calls, spend and the count still open, over any set of rows — the one arithmetic every cost strip shows. */
+export function tally(list) {
+  return { calls: list.length, usd: list.reduce((n, r) => n + (r.usd ?? 0), 0), unfinished: list.filter((r) => r.ok === null).length };
 }
 
 export function append(path, row) {
@@ -27,8 +46,9 @@ export function totals(path, by = ["half", "stage", "role"]) {
   const out = {};
   for (const r of rows(path)) {
     const key = by.map((k) => r[k] ?? "?").join(" · ");
-    const t = (out[key] ??= { calls: 0, usd: 0, ms: 0, tokens: { input: 0, output: 0, cache_read: 0, cache_create: 0 } });
+    const t = (out[key] ??= { calls: 0, unfinished: 0, usd: 0, ms: 0, tokens: { input: 0, output: 0, cache_read: 0, cache_create: 0 } });
     t.calls++;
+    if (r.ok === null) t.unfinished++;
     t.usd += r.usd ?? 0;
     t.ms += r.ms ?? 0;
     for (const k of Object.keys(t.tokens)) t.tokens[k] += r.tokens?.[k] ?? 0;

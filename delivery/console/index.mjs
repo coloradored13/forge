@@ -30,6 +30,8 @@ function estimateHtml(e) {
 }
 
 const rolesTable = (rs) => table(["role", "model", ""], rs.map((r) => [`<code>${esc(r.key)}</code>`, `<code>${esc(r.model)}</code>`, r.overridden ? badge(`override · default ${r.default}`, "warn") : badge("default", "muted")]));
+/** The ledger's arithmetic in one line; a call the process died inside of is counted and named, never priced. */
+const costLine = (c) => `${c.calls} calls · ${usd(c.usd)}${c.unfinished ? ` · ${badge(`${c.unfinished} unfinished`, "warn")}` : ""}`;
 const handoffRow = (h) => [`v${h.version} <code>${esc(short(h.hash))}</code>`, esc(h.exit), esc(h.by), when(h.exported_at), h.signed ? badge("signed", "ok") : badge("unsigned", "muted"), h.cost ? `${usd(h.cost.usd)} · ${h.cost.calls ?? 0} calls` : "—", h.refusal ? `${badge(h.refusal.code, "bad")}<br><span class="muted">${esc(h.refusal.message)}</span>` : badge("takeable", "ok")];
 
 // ── setup ──
@@ -76,7 +78,7 @@ function doorHtml(stage, door, st, run) {
 function stageRow(s, run) {
   const state = `${badge(s.shown, STATE[s.shown] ?? "muted")}${s.silent_ms != null ? `<br><span class="muted">silent ${Math.round(s.silent_ms / 1000)} s of ${Math.round(run.liveness_ms / 1000)}</span>` : ""}${s.authored ? "" : `<br><span class="muted">lands at M3</span>`}`;
   const times = [["started", when(s.started_at)], ["heartbeat", when(s.heartbeat_at)], ["finished", when(s.finished_at)]].filter(([, t]) => t !== "—").map(([k, t]) => `${k} ${t}`).join("<br>") || `<span class="muted">—</span>`;
-  return [esc(s.stage), state, `${s.round} of ${run.cap}`, verdictLine(s.verdict), `${s.cost.calls} calls · ${usd(s.cost.usd)}`, times, s.doors.map((d) => doorHtml(s.stage, d, s, run)).join("") || `<span class="muted">—</span>`];
+  return [esc(s.stage), state, `${s.round} of ${run.cap}`, verdictLine(s.verdict), costLine(s.cost), times, s.doors.map((d) => doorHtml(s.stage, d, s, run)).join("") || `<span class="muted">—</span>`];
 }
 
 function runPage(v) {
@@ -89,7 +91,7 @@ function runPage(v) {
     : table(["signal", "rule", "count"], Object.entries(fun.by_signal).map(([k, n]) => [esc(k), esc(fun.rules[k] ?? "—"), n])) + (Object.keys(fun.by_gate).length ? table(["gate", "count"], Object.entries(fun.by_gate).map(([k, n]) => [esc(k), n])) : "");
   const adopt = v.adoptable.length ? form({ action: "/run/adopt", submit: "Adopt", fields: [by, { name: "version", label: "handoff", type: "select", required: true, value: v.adoptable.at(-1), options: v.adoptable.map((n) => [n, `v${n}`]) }], note: "The pin moves; every approved stage goes stale and is re-judged, not regenerated (R5)." }) : `<p class="muted">the run is on the latest takeable handoff</p>`;
   return { title: "Delivery run", body: `<h1>${esc(r.id)} <span class="muted">handoff v${esc(r.handoff.version)} · <code>${esc(short(r.handoff.content_hash))}</code></span></h1>`
-    + dl([["set up", `${esc(r.by)} · ${when(r.created_at)}`], ["rounds", `cap ${r.cap} · ceiling ${r.ceiling}`], ["liveness window", `${Math.round(r.liveness_ms / 1000)} s`], ["spent", `${usd(v.cost.usd)} · ${v.cost.calls} calls`]])
+    + dl([["set up", `${esc(r.by)} · ${when(r.created_at)}`], ["rounds", `cap ${r.cap} · ceiling ${r.ceiling}`], ["liveness window", `${Math.round(r.liveness_ms / 1000)} s`], ["spent", costLine(v.cost)]])
     + pin
     + `<h2>Stages</h2>${table(["stage", "state", "round", "verdict", "cost", "when", "doors"], v.stages.map((s) => stageRow(s, r)))}${advanceForm}`
     + `<h2>Next round</h2>${estimateHtml(v.estimate)}`

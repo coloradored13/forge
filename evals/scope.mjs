@@ -19,6 +19,7 @@ import { mechanics, namedFields } from "../shared/prompt/index.mjs";
 import { verify, stamp } from "../shared/hash.mjs";
 import { lineDrawn, scopeOf, checkScope } from "../shared/scope.mjs";
 import { setupProject, ledgerPath } from "../discovery/setup/index.mjs";
+import { rows as calls } from "../shared/agent-call/ledger.mjs";
 import { SECTIONS, LINE_SECTION, indexOf, section } from "../discovery/workshop/sections.mjs";
 import { openPrd, loadPrd, savePrd, mayOpen, systemFor, turn, extract, readTranscript, parseReply, captured, progress, WorkshopRefused } from "../discovery/workshop/index.mjs";
 import { repoBrief } from "../discovery/workshop/brief.mjs";
@@ -384,7 +385,7 @@ await withRoot({}, async (parent) => {
   const moved = staleness(root).design;
   check("a ruling after sign-off: the design wears the badge naming RUL-2 and stays signed — the signature is on this content; whether it needs redoing is the PM's call",
     moved.stale && moved.prd_moved && !moved.stories_moved && moved.since.join() === "RUL-2" && moved.signed === true, JSON.stringify(moved));
-  check("every call went through the script and the ledger holds them all", readFileSync(ledgerPath(root), "utf8").trim().split("\n").length === 1 + 3 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1);
+  check("every call went through the script and the ledger holds them all", calls(ledgerPath(root)).length === 1 + 3 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1);
 });
 
 // ── R2 in Delivery: the binding is held to the signed design and the sliced work items ──

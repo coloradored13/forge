@@ -1,14 +1,17 @@
 // owns: R1, R14 · shared — the only place a model is invoked. Every call names its half,
 // stage and role; the model comes from one config; the budget is checked before the
-// call and refused at the cap (never degraded); a usage gap pauses; and one ledger row
+// call and refused at the cap (never degraded); a usage gap pauses; and the ledger
 // records model, tokens, cost, duration and every tool use whether the call succeeded
-// or not. The seam is drawn here too (R14): a Delivery agent runs sandboxed with
-// discovery/ under its cwd denied to it, and a tool use that touched it anyway is a
-// refusal with the row as proof — like a judge's write. That is read containment of the
-// record, and it is what this file enforces; containing what a builder may change in
-// the product is delivery/build's, against the sdd's surface. Every agent's environment
-// is an allowlist (PASSED), so the pipeline's own credentials never reach one.
+// or not — a started row before the model runs, so a call the process died inside of
+// is on the record as unfinished. The seam is drawn here too (R14): a Delivery agent
+// runs sandboxed with discovery/ under its cwd denied to it, and a tool use that
+// touched it anyway is a refusal with the row as proof — like a judge's write. That is
+// read containment of the record, and it is what this file enforces; containing what a
+// builder may change in the product is delivery/build's, against the sdd's surface.
+// Every agent's environment is an allowlist (PASSED), so the pipeline's own credentials
+// never reach one.
 
+import { randomUUID } from "node:crypto";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import { Refused } from "../refused.mjs";
 import { modelFor } from "./models.mjs";
@@ -16,7 +19,7 @@ import { append, spent } from "./ledger.mjs";
 import { isUsageGap, withUsagePause } from "./usage-pause.mjs";
 
 export { modelFor, roles, defaults } from "./models.mjs";
-export { rows, spent, totals, estimate, standing, quote } from "./ledger.mjs";
+export { rows, spent, totals, estimate, standing, quote, tally } from "./ledger.mjs";
 export { withUsagePause, isUsageGap, waitMsFor } from "./usage-pause.mjs";
 
 export const HALVES = ["discovery", "delivery"];
@@ -140,6 +143,11 @@ async function once({ half, stage, role, kind, model, system, prompt, cwd, outpu
     ...(outputSchema ? { outputFormat: { type: "json_schema", schema: outputSchema } } : {}),
   };
 
+  // On the record before the model runs: a process killed inside the call leaves this
+  // row, and the ledger reads it as a call whose outcome is unknown — never as nothing.
+  const id = randomUUID();
+  append(ledger, { call: id, at: new Date(started).toISOString(), half, stage, role, kind, model, ok: null });
+
   try {
     for await (const msg of query({ prompt, options })) {
       if (msg.session_id) sessionId = msg.session_id;
@@ -205,6 +213,7 @@ async function once({ half, stage, role, kind, model, system, prompt, cwd, outpu
           cache_create: result?.usage?.cache_creation_input_tokens ?? 0,
         };
     return append(ledger, {
+      call: id,
       at: new Date(started).toISOString(),
       half, stage, role, kind, model,
       ok, ...(error ? { error } : {}),
