@@ -88,10 +88,10 @@ export const STORIES = [
 ];
 
 /** The backlog as the runner would write it: one epic per functional requirement inside the line, every criterion proved once. */
-export function seedStories(root, { epics = EPICS, stories = STORIES } = {}) {
+export function seedStories(root, { epics = EPICS, stories = STORIES, open_questions = [] } = {}) {
   const prd = loadPrd(root);
   const proto = readDoc(root, PROTOTYPE_FILE);
-  const doc = { ...skeleton("story"), id: `stories-${prd.meta.slug}`, traces: traceOf(prd, proto), epics, stories, notes: "", open_questions: [] };
+  const doc = { ...skeleton("story"), id: `stories-${prd.meta.slug}`, traces: traceOf(prd, proto), epics, stories, notes: "", open_questions };
   return saveDoc(root, STORIES_FILE, "story", doc);
 }
 

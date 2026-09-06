@@ -5,7 +5,9 @@
 // verdict rides into the next rewrite — R13), and the meter every signal lands in
 // (R8). Both directions: every arithmetic rule fires on its seeded defect and nothing
 // fires on the clean record; the runners refuse what is not theirs to accept; a verdict
-// rides in while its pins hold and is nothing once they do not. No model is reached.
+// rides in while its pins hold and is nothing once they do not. R13's other end is here
+// too: intake's question budget, counted per story from the snapshot and never trimmed —
+// a story over it is a Discovery gate-miss the meter records. No model is reached.
 
 import { join } from "node:path";
 import { existsSync, readFileSync, rmSync } from "node:fs";
@@ -20,6 +22,7 @@ import { Refused, readDoc, readVerdict, freshVerdict, staleness, PROTOTYPE_FILE,
 import { answer } from "../discovery/doors/index.mjs";
 import { generate, checkPrototype, GATE as PROTO_GATE, ARITHMETIC as PROTO_RULES } from "../discovery/prototype/index.mjs";
 import { write, review, checkStories, gherkinShape, GATE as STORY_GATE, REVIEW_GATE, ARITHMETIC as STORY_RULES } from "../discovery/stories/index.mjs";
+import { ask, slice, QUESTION_BUDGET } from "../delivery/intake/index.mjs";
 
 const { check, done } = suite("funnel · R8 the meter, R13 stories at the PM's bar");
 
@@ -231,12 +234,37 @@ await withRoot({}, async (parent) => {
   check("every call went through the script and the ledger holds them all", readFileSync(ledgerPath(root), "utf8").trim().split("\n").length === 1 + 3 + 1 + 1 + 1 + 1 + 1);
 });
 
+// ── R13 · the seam's question budget: syntax crosses for free; precision is what intake counts, per story, never trimmed ──
+{
+  const handoff = {
+    contract: { requirements: [{ id: "REQ-1", type: "functional", statement: "r", acceptance_criteria: [{ id: "AC-1", statement: "a" }] }], open_questions: [{ id: "OQ-1", question: "contract asks", status: "open" }, { id: "OQ-2", question: "answered", status: "answered" }] },
+    stories: { epics: [{ id: "EPIC-1", req_ref: "REQ-1", title: "t" }], stories: [
+      { id: "STORY-1", epic: "EPIC-1", statement: "s1", req_refs: ["REQ-1"], screen_refs: ["SCREEN-1"], scenarios: [] },
+      { id: "STORY-2", epic: "EPIC-1", statement: "s2", req_refs: ["REQ-1"], screen_refs: [], scenarios: [] },
+    ], open_questions: [
+      { subject: "STORY-1", question: "one", blocking: false }, { subject: "STORY-1", question: "two", blocking: false },
+      { subject: "REQ-1/AC-1", question: "on the criterion — lands on both stories", blocking: true },
+      { question: "no subject", blocking: false },
+    ] },
+    design: { screens: [{ screen_ref: "SCREEN-1", name: "n", controls: [], states: [] }], open_questions: [{ subject: "SCREEN-1", question: "design asks about the screen", blocking: false }, { subject: "SURF-9", question: "no story takes a surface", blocking: false }] },
+  };
+  const items = slice(handoff, []);
+  const { questions, budget } = ask(handoff, items);
+  const on = (story) => questions.filter((q) => q.story === story).map((q) => q.question);
+  check("attribution: STORY-n direct; REQ-n/AC-m through every story carrying the requirement; SCREEN-n through the story on the screen; the rest ride with no story",
+    eq(on("STORY-1"), ["one", "two", "on the criterion — lands on both stories", "design asks about the screen"]) && eq(on("STORY-2"), ["on the criterion — lands on both stories"]) && eq(on(null), ["contract asks", "no subject", "no story takes a surface"]), JSON.stringify(questions.map((q) => [q.story, q.question])));
+  check("the budget is 2 per story: STORY-1 at 4 is over, STORY-2 at 1 is not; the closed contract question is not carried; nothing is trimmed",
+    budget.per_story === QUESTION_BUDGET && QUESTION_BUDGET === 2 && eq(budget.over, [{ story: "STORY-1", count: 4 }]) && questions.length === 8 && !questions.some((q) => q.question === "answered"), JSON.stringify(budget));
+  check("blocking rides across as the source said it — a blocking question on the criterion is blocking on each story it lands on", questions.filter((q) => q.blocking).length === 2 && questions.filter((q) => q.blocking).every((q) => q.source === "stories"));
+  check("the signal intake records for a story over budget measures R13", SIGNALS["intake-questions"] === "R13");
+}
+
 // ── the meter refuses noise ──
 await withRoot({}, (root) => {
   const path = funnelPath(root);
   let threw = null;
   try { record(path, { signal: "vibes", gate: "x" }); } catch (e) { threw = e; }
-  check("an unnamed signal is refused — every row measures a rule", threw instanceof Error && /unknown signal vibes/.test(threw.message) && !existsSync(path) && eq(Object.values(SIGNALS), ["R3", "R8"]));
+  check("an unnamed signal is refused — every row measures a rule", threw instanceof Error && /unknown signal vibes/.test(threw.message) && !existsSync(path) && eq(Object.values(SIGNALS), ["R3", "R8", "R13"]));
   record(path, { signal: "delivery-amendment", id: "AMD-1", material: true }, () => new Date("2026-09-04T12:00:00Z"));
   check("a row is dated and read back as written", eq(rows(path), [{ at: "2026-09-04T12:00:00.000Z", signal: "delivery-amendment", id: "AMD-1", material: true }]) && eq(meter(rows(path)), { total: 1, by_signal: { "delivery-amendment": 1 }, by_gate: {} }));
 });

@@ -31,7 +31,7 @@ Check an item only when its eval is green in this repo. The v1 path is the sourc
 | item | rule | milestone | done |
 |---|---|---|---|
 | The story judge → a reviewer at the PM's bar | R13 | M1 | [x] |
-| Intake: diff, compile, slice, ask — new | R13, R14 | M2 | [ ] |
+| Intake: diff, compile, slice, ask — new | R13, R14 | M2 | [x] |
 | The state machine and liveness | R9 | M2 | [x] |
 | Amend with blast radius | R4 | M1 | [x] |
 | Answers that write criteria | R3 | M1 | [x] |
@@ -39,7 +39,7 @@ Check an item only when its eval is green in this repo. The v1 path is the sourc
 | Ranked judges | R7 | M1 | [x] |
 | Setup with estimate, both halves | R1 | M1, M2 | [ ] |
 | Project repo at Discovery setup (create or attach; refusals) — new | R11, R14 | M1 | [x] |
-| Delivery read containment: no `discovery/` reads, tool uses recorded — new | R14 | M2 | [ ] |
+| Delivery read containment: no `discovery/` reads, tool uses recorded — new | R14 | M2 | [x] |
 | Workshop reads the repo and manifest before its first question (brownfield) — new | R11 | M1 | [x] |
 | Tracker export (GitHub Issues, Jira) — new | — | M1 | [x] |
 
