@@ -4,15 +4,16 @@
 // records model, tokens, cost, duration and every tool use whether the call succeeded
 // or not — a started row before the model runs, so a call the process died inside of
 // is on the record as unfinished. The seam is drawn here too (R14): a Delivery agent
-// runs sandboxed with discovery/ under its cwd denied to it, and a tool use that
-// touched it anyway is a refusal with the row as proof — like a judge's write. That is
-// read containment of the record, and it is what this file enforces; containing what a
-// builder may change in the product is delivery/build's, against the sdd's surface.
-// Every agent's environment is an allowlist (PASSED), so the pipeline's own credentials
-// never reach one.
+// runs sandboxed with the record fenced — discovery/ denied to it outright, forge/
+// denied to its writes — at its cwd and at the project root when the cwd is a worktree
+// of it; a tool use that reached in anyway is a refusal with the row as proof, like a
+// judge's write. That is containment of the record, and it is what this file enforces;
+// containing what a builder may change in the product is delivery/build's, against the
+// sdd's surface. Every agent's environment is an allowlist (PASSED), so the pipeline's
+// own credentials never reach one.
 
 import { randomUUID } from "node:crypto";
-import { isAbsolute, relative, resolve, sep } from "node:path";
+import { isAbsolute, resolve, sep } from "node:path";
 import { Refused } from "../refused.mjs";
 import { modelFor } from "./models.mjs";
 import { append, spent } from "./ledger.mjs";
@@ -69,8 +70,16 @@ export const PASSED = ["HOME", "PATH", "TMPDIR", "USER", "LOGNAME", "SHELL", "LA
  */
 export const HELD_BACK = ["JIRA_EMAIL", "JIRA_API_TOKEN", "GH_TOKEN", "GITHUB_TOKEN"];
 const environment = () => Object.fromEntries(PASSED.filter((k) => k in process.env).map((k) => [k, process.env[k]]));
-/** What a Delivery agent may not touch, relative to its cwd: the seam is a snapshot it was handed, not a directory it reads. */
+/** What no Delivery agent reads: the seam is a snapshot it was handed, not a directory it opens. */
 const CONTAINED = "discovery";
+/** What no Delivery agent writes: the pipeline's record, which the runner writes from what an agent returns. */
+const RECORD = "forge";
+/**
+ * Where a builder's shell may reach: the package registry and the browser binaries a
+ * product's tests install, and its own ports. What the sandbox does with a domain off
+ * this list is the sandbox's default, not a strictness this file claims.
+ */
+const BUILDER_NETWORK = { allowedDomains: ["registry.npmjs.org", "registry.yarnpkg.com", "playwright.azureedge.net", "cdn.playwright.dev"], allowLocalBinding: true };
 
 /**
  * @param half         discovery | delivery
@@ -80,6 +89,8 @@ const CONTAINED = "discovery";
  * @param system       the assembled system prompt (shared/prompt)
  * @param prompt       the input
  * @param cwd          what Read/Glob/Grep (and any writes) see
+ * @param root         the project root when cwd is a worktree of it (default cwd) — the
+ *                     record is fenced at both, since a worktree's git dir points home
  * @param outputSchema structured-output schema, or omit for text
  * @param resume       a session id from a prior call — real multi-turn state, not a
  *                     transcript flattened into a prompt (a model shown a document about
@@ -92,7 +103,7 @@ const CONTAINED = "discovery";
  */
 export async function call({
   half, stage, role, kind = "judge",
-  system, prompt, cwd, outputSchema, maxTurns, resume,
+  system, prompt, cwd, root = cwd, outputSchema, maxTurns, resume,
   ledger, budget = null, models = {},
   onEvent, _query, _sleep,
 }) {
@@ -109,18 +120,18 @@ export async function call({
   }
 
   const label = `${half}/${stage}/${role}`;
-  return withUsagePause(() => once({ half, stage, role, kind, model, system, prompt, cwd, outputSchema, maxTurns, resume, ledger, onEvent, _query }),
+  return withUsagePause(() => once({ half, stage, role, kind, model, system, prompt, cwd, root, outputSchema, maxTurns, resume, ledger, onEvent, _query }),
     { label, onEvent, _sleep });
 }
 
-async function once({ half, stage, role, kind, model, system, prompt, cwd, outputSchema, maxTurns, resume, ledger, onEvent, _query }) {
+async function once({ half, stage, role, kind, model, system, prompt, cwd, root, outputSchema, maxTurns, resume, ledger, onEvent, _query }) {
   const query = _query ?? (await import("@anthropic-ai/claude-agent-sdk")).query;
   const started = Date.now();
   const toolUses = [];
   let text = "", structured, result, errorKind, sessionId;
 
   const policy = TOOLS[kind];
-  const fence = half === "delivery" ? resolve(cwd, CONTAINED) : null;
+  const fence = half === "delivery" ? fences(cwd, root) : null;
   const options = {
     model,
     systemPrompt: system,
@@ -137,7 +148,7 @@ async function once({ half, stage, role, kind, model, system, prompt, cwd, outpu
     // The environment an agent gets is the allowlist and nothing else. Passed explicitly:
     // omitted, the SDK inherits process.env whole; passed, it is the whole environment.
     env: environment(),
-    ...(fence ? containment(fence) : {}),
+    ...(fence ? containment(fence, kind) : {}),
     ...(maxTurns ? { maxTurns } : {}),
     ...(resume ? { resume } : {}),
     ...(outputSchema ? { outputFormat: { type: "json_schema", schema: outputSchema } } : {}),
@@ -179,15 +190,15 @@ async function once({ half, stage, role, kind, model, system, prompt, cwd, outpu
     throw e;
   }
 
-  // Containment, after the fact: the sandbox refused the read before it happened; this is
-  // the chokepoint saying so on the record and refusing the call — a Delivery agent that
-  // reached for discovery/ did not do the work it was given.
-  const breach = fence ? toolUses.find((t) => touches(t, cwd)) : null;
+  // Containment, after the fact: the sandbox refused the access before it happened; this
+  // is the chokepoint saying so on the record and refusing the call — a Delivery agent
+  // that reached for the record did not do the work it was given.
+  const breach = fence ? toolUses.find((t) => touches(t, cwd, fence)) : null;
   if (breach) errorKind = `containment: ${breach.name} ${targetOf(breach.input)}`;
 
   const row = record({ ok: !errorKind, error: errorKind ? String(errorKind).split("\n")[0] : undefined });
   if (breach) {
-    throw new Refused("containment", `${half}/${stage}/${role}: ${breach.name} touched ${targetOf(breach.input)} — Delivery reads the handoff through its prompt, never ${CONTAINED}/ (R14)`, { tools: row.tools });
+    throw new Refused("containment", `${half}/${stage}/${role}: ${breach.name} touched ${targetOf(breach.input)} — Delivery reads the handoff through its prompt, never ${CONTAINED}/, and the runner writes ${RECORD}/ (R14)`, { tools: row.tools });
   }
   if (errorKind) {
     const message = `${half}/${stage}/${role} failed: ${errorKind}`;
@@ -227,15 +238,33 @@ async function once({ half, stage, role, kind, model, system, prompt, cwd, outpu
 }
 
 /**
- * The SDK's side of the seam, set before the model runs: the sandbox denies the fenced
- * directory to every command and refuses to start if it cannot be had (a run that
- * degrades to unsandboxed is the v1 fusion by accident); the Read, Edit and Write tools
- * are denied the same path by permission rule, which is what governs them.
+ * The record's directories as absolute paths at the cwd and at the root — the same
+ * directory once when they coincide. `read` is what no Delivery agent opens; `write` is
+ * what none changes, which includes everything in `read`.
  */
-function containment(dir) {
+function fences(cwd, root) {
+  const at = (name) => [...new Set([resolve(cwd, name), resolve(root, name)])];
+  const read = at(CONTAINED);
+  return { read, write: [...read, ...at(RECORD)] };
+}
+
+/**
+ * The SDK's side of the seam, set before the model runs: the sandbox denies the fenced
+ * directories to every command — reads of discovery/, writes of both — and refuses to
+ * start if it cannot be had (a run that degrades to unsandboxed is the v1 fusion by
+ * accident); the Read, Edit and Write tools are denied the same paths by permission
+ * rule, which is what governs them. A builder's shell also gets the network it needs to
+ * install; every other kind gets the sandbox's default.
+ */
+function containment({ read, write }, kind) {
+  const rule = (tool, dir) => `${tool}(/${dir}/**)`;
   return {
-    sandbox: { enabled: true, failIfUnavailable: true, filesystem: { denyRead: [dir], denyWrite: [dir] } },
-    settings: { permissions: { deny: ["Read", "Edit", "Write"].map((tool) => `${tool}(/${dir}/**)`) } },
+    sandbox: {
+      enabled: true, failIfUnavailable: true,
+      filesystem: { denyRead: read, denyWrite: write },
+      ...(kind === "builder" ? { network: BUILDER_NETWORK } : {}),
+    },
+    settings: { permissions: { deny: [...read.map((d) => rule("Read", d)), ...write.flatMap((d) => [rule("Edit", d), rule("Write", d)])] } },
   };
 }
 
@@ -245,13 +274,18 @@ function targetOf(input = {}) {
   return v ? v.slice(0, 160) : "";
 }
 
+const WRITERS = new Set(["Write", "Edit", "NotebookEdit"]);
+
 /**
- * Did this tool use reach into the fenced directory? File paths are resolved against
- * the cwd; a shell line is split into tokens and any token that is a path — it carries a
- * separator — is resolved the same way. A bare word is not a path: `--grep discovery` is
- * not a read, and `ls discovery` is the sandbox's to refuse.
+ * Did this tool use reach into a fence? File paths are resolved against the cwd; a shell
+ * line is split into tokens and any token that is a path — it carries a separator — is
+ * resolved the same way. Every tool is held to the read fence. The write fence is held
+ * on the tools that write by path — a shell line that names forge/ may be reading it,
+ * and a redirect into it is the sandbox's to refuse, not this line's to guess. A bare
+ * word is not a path: `--grep discovery` is not a read, and `ls discovery` is the
+ * sandbox's to refuse.
  */
-function touches({ input = {} }, cwd) {
+function touches({ name, input = {} }, cwd, { read, write }) {
   const paths = [input.file_path, input.notebook_path, input.path].filter((p) => typeof p === "string" && p.trim());
   if (typeof input.command === "string") {
     for (const tok of input.command.split(/\s+/)) {
@@ -259,8 +293,9 @@ function touches({ input = {} }, cwd) {
       if (bare.includes("/")) paths.push(bare);
     }
   }
+  const fenced = WRITERS.has(name) ? write : read;
   return paths.some((p) => {
-    const rel = relative(cwd, isAbsolute(p) ? p : resolve(cwd, p));
-    return rel === CONTAINED || rel.startsWith(`${CONTAINED}${sep}`);
+    const abs = isAbsolute(p) ? p : resolve(cwd, p);
+    return fenced.some((dir) => abs === dir || abs.startsWith(`${dir}${sep}`));
   });
 }

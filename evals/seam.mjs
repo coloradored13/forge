@@ -12,7 +12,8 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { suite, withRoot, scripted, ROOT } from "./_harness.mjs";
-import { seedProject, seedPrototype, seedStories, seedDesign, STORIES } from "./_fixture.mjs";
+import { seedProject, seedPrototype, seedStories, seedDesign, STORIES, seedBuild, builder, roundCtx, put, gitIn, BUILT } from "./_fixture.mjs";
+import { round as buildRound, worktree, WORKTREE, BRANCH, RECORD } from "../delivery/build/index.mjs";
 import { violations } from "../tools/import-rule.mjs";
 import { load, inlineRefs, outputContract, fields, validate } from "../shared/schema/index.mjs";
 import { stamp, verify } from "../shared/hash.mjs";
@@ -539,8 +540,8 @@ await withRoot({}, async (tmp) => {
   check("the ledger row records every tool use with its target, ok false and the error naming containment",
     row.ok === false && /^containment: Bash/.test(row.error) && row.tools.map((t) => `${t.name} ${t.target}`).join(" | ") === "Read src/app.mjs | Bash cat discovery/prd.json", JSON.stringify(row));
   const opts = peek.calls[0].options;
-  check("the SDK is told the same before the model runs: sandbox on, refuse if unavailable, discovery/ denied to reads and writes, the Read, Edit and Write tools denied the path",
-    opts.sandbox?.enabled === true && opts.sandbox.failIfUnavailable === true && opts.sandbox.filesystem.denyRead.join() === join(cold, "discovery") && opts.sandbox.filesystem.denyWrite.join() === join(cold, "discovery") && opts.settings?.permissions?.deny.join() === ["Read", "Edit", "Write"].map((t) => `${t}(/${join(cold, "discovery")}/**)`).join(), JSON.stringify({ sandbox: opts.sandbox, settings: opts.settings }));
+  check("the SDK is told the same before the model runs: sandbox on, refuse if unavailable, discovery/ denied to reads and writes, forge/ denied to writes — the record is the runner's — the Read, Edit and Write tools denied the same paths; a builder's network is the package registries",
+    opts.sandbox?.enabled === true && opts.sandbox.failIfUnavailable === true && opts.sandbox.filesystem.denyRead.join() === join(cold, "discovery") && opts.sandbox.filesystem.denyWrite.join() === [join(cold, "discovery"), join(cold, "forge")].join() && opts.settings?.permissions?.deny.join() === [`Read(/${join(cold, "discovery")}/**)`, `Edit(/${join(cold, "discovery")}/**)`, `Write(/${join(cold, "discovery")}/**)`, `Edit(/${join(cold, "forge")}/**)`, `Write(/${join(cold, "forge")}/**)`].join() && opts.sandbox.network.allowedDomains.includes("registry.npmjs.org") && opts.sandbox.network.allowLocalBinding === true, JSON.stringify({ sandbox: opts.sandbox, settings: opts.settings }));
   check("an agent's environment is the allowlist and nothing else: the pipeline's credentials are absent, so is everything the shell happens to hold — an ssh agent socket, a token on no list — while HOME and PATH arrive as they are",
     Object.keys(opts.env).every((k) => PASSED.includes(k)) && HELD_BACK.every((k) => !(k in opts.env)) && !("SSH_AUTH_SOCK" in opts.env) && !("X_TOKEN" in opts.env) && opts.env.PATH === process.env.PATH && opts.env.HOME === process.env.HOME,
     Object.keys(opts.env).filter((k) => !PASSED.includes(k)).join() || "(all on the list)");
@@ -567,6 +568,56 @@ await withRoot({}, async (tmp) => {
   check("a sandbox the SDK cannot provide is a failed call named on its row — never a call run unsandboxed",
     /Sandbox unavailable/.test(failed?.message) && ledgerRows(ledger).at(-1).ok === false && /Sandbox unavailable/.test(ledgerRows(ledger).at(-1).error), failed?.message);
   delete process.env.JIRA_API_TOKEN; delete process.env.JIRA_EMAIL; delete process.env.GH_TOKEN; delete process.env.SSH_AUTH_SOCK; delete process.env.X_TOKEN;
+});
+
+// ── R14 · the build's checkout: a worktree with nothing of the record in it, fenced at both roots, and a record-write discarded ──
+await withRoot({}, async (tmp) => {
+  const { cold } = await seedBuild(tmp, { slug: "ferry", files: { "README.md": "# Ferry\n", "src/index.js": "export {};\n", "package.json": "{\"name\":\"ferry\"}\n" } });
+  const wt = join(cold, WORKTREE);
+  const ledger = join(cold, LEDGER);
+  check("the seed is a repository whose main holds the product, the handoffs and the run record — the record is in git, as a project's would be", gitIn(cold, ["ls-files"]).split("\n").join() === "README.md,discovery/handoffs/handoff-v1.json,discovery/handoffs/handoff-v1.md,forge/run.json,package.json,src/index.js");
+  const got = worktree(cold);
+  check("the worktree is `.worktrees/build` on `forge/build`, cut from the project's head: the product is there, the record's directories are not — sparse, not deleted — and the project's own status does not see the worktree",
+    got === wt && gitIn(wt, ["rev-parse", "--abbrev-ref", "HEAD"]) === BRANCH && gitIn(wt, ["rev-parse", "HEAD"]) === gitIn(cold, ["rev-parse", "main"]) && readdirSync(wt).sort().join() === ".git,README.md,package.json,src" && RECORD.every((d) => !existsSync(join(wt, d))) && gitIn(wt, ["ls-files"]).split("\n").includes("forge/run.json") && readFileSync(join(cold, ".git", "info", "exclude"), "utf8").split("\n").includes(".worktrees/build/") && !gitIn(cold, ["status", "--short"]).includes(".worktrees"), `${readdirSync(wt).join()} · ${gitIn(cold, ["status", "--short"])}`);
+  check("asking again is the same worktree, not a second one", worktree(cold) === wt && gitIn(cold, ["worktree", "list"]).split("\n").length === 2);
+
+  // The builder runs in the worktree, told both roots: the worktree's and the project's record directories are denied.
+  const b = builder([BUILT()], { 0: (cwd) => put(cwd, "src/exceptions/store.js", "export {};\n") });
+  const r1 = await buildRound(cold, { ...roundCtx(cold), _query: b.query });
+  const o = b.calls[0].options;
+  check("the builder's cwd is the worktree; the SDK is told the fence at both roots — discovery/ under each denied to reads, discovery/ and forge/ under each denied to writes, the tools denied the same — and the network is the registries, local binding allowed",
+    o.cwd === wt && o.sandbox.filesystem.denyRead.join() === [join(wt, "discovery"), join(cold, "discovery")].join() && o.sandbox.filesystem.denyWrite.join() === [join(wt, "discovery"), join(cold, "discovery"), join(wt, "forge"), join(cold, "forge")].join() && o.settings.permissions.deny.length === 2 + 2 * 4 && o.settings.permissions.deny.includes(`Write(/${join(cold, "forge")}/**)`) && o.settings.permissions.deny.includes(`Read(/${join(wt, "discovery")}/**)`) && o.sandbox.network.allowedDomains.includes("registry.npmjs.org") && o.sandbox.network.allowLocalBinding === true && o.sandbox.failIfUnavailable === true, JSON.stringify({ cwd: o.cwd, sandbox: o.sandbox, deny: o.settings.permissions.deny }));
+  check("the builder's environment is the allowlist, its ledger row is delivery/build/builder as a builder, and the item it built is committed on the branch",
+    Object.keys(o.env).every((k) => PASSED.includes(k)) && ledgerRows(ledger).at(-1).half === "delivery" && ledgerRows(ledger).at(-1).stage === "build" && ledgerRows(ledger).at(-1).role === "builder" && ledgerRows(ledger).at(-1).kind === "builder" && ledgerRows(ledger).at(-1).ok === true && r1.doc.items[0].status === "built", JSON.stringify(ledgerRows(ledger).at(-1)));
+
+  // A builder that writes under forge/ in its worktree: the path is outside the sparse cone, so git's bookkeeping would not show it — the runner walks the record's directories and finds it.
+  const sneaky = builder([BUILT()], { 0: (cwd) => { put(cwd, "src/deliveries/store.js", "export {};\n"); put(cwd, "forge/delivery/build.json", "{\"items\":[]}"); } });
+  const r2 = await buildRound(cold, { ...roundCtx(cold, { review: r1.verdict }), _query: sneaky.query });
+  const s2 = r2.doc.items[1];
+  check("a file put under forge/ in the worktree is in the change set and is a record-write: the item is violated, its work discarded, nothing of it on the branch, the worktree's forge/ gone again, the project's own record untouched",
+    s2.status === "violated" && s2.changed.join() === "forge/delivery/build.json,src/deliveries/store.js" && s2.violations.map((v) => `${v.rule}:${v.path}`).join() === "record-write:forge/delivery/build.json" && r2.verdict.findings[0].rule === "record-write" && /under the pipeline's record/.test(r2.verdict.findings[0].summary) && !existsSync(join(wt, "forge")) && !existsSync(join(wt, "src", "deliveries")) && gitIn(cold, ["log", "--format=%s", BRANCH]).split("\n").length === 2 && JSON.parse(readFileSync(join(cold, "forge", "delivery", "build.json"), "utf8")).items.length === 3, JSON.stringify(s2));
+  check("STORY-1 was reused across that round — its binding unchanged, its commit standing — for no call", r2.doc.items[0].reused === true && sneaky.calls.length === 1);
+
+  // The chokepoint's after-the-fact fence, from the worktree: a write aimed at the project's record, and a read reaching up into its discovery/, are both refused and both on the ledger.
+  const across = { half: "delivery", stage: "build", role: "builder", kind: "builder", system: "s", prompt: "p", cwd: wt, root: cold, ledger };
+  const reach = scripted({ toolUses: [{ name: "Write", input: { file_path: join(cold, "forge", "delivery", "build.json"), content: "{}" } }] });
+  const reached = await refusal(() => call({ ...across, _query: reach.query }));
+  const climb = scripted({ toolUses: [{ name: "Read", input: { file_path: "../../discovery/handoffs/handoff-v1.json" } }] });
+  const climbed = await refusal(() => call({ ...across, _query: climb.query }));
+  check("a Write at the project's forge/ from the worktree is containment; so is a Read that climbs to the project's discovery/; each on its row",
+    reached?.code === "containment" && /Write/.test(reached.message) && /forge\/delivery\/build\.json/.test(reached.message) && climbed?.code === "containment" && /Read/.test(climbed.message) && ledgerRows(ledger).slice(-2).every((r) => r.ok === false && /^containment/.test(r.error)), `${reached?.message} · ${climbed?.message}`);
+  const readsForge = scripted({ toolUses: [{ name: "Read", input: { file_path: join(cold, "forge", "run.json") } }, { name: "Bash", input: { command: "ls ../../forge" } }] });
+  const read = await call({ ...across, _query: readsForge.query });
+  check("reading the project's forge/ is not a breach — the fence on forge/ is on writes; the record is not secret, only not the builder's to write", read.text === "ok" && ledgerRows(ledger).at(-1).ok === true);
+
+  // No repository: the round refuses before any call, by name.
+  const bare = join(tmp, "bare"); mkdirSync(join(bare, ".git"), { recursive: true });
+  const { cold: other } = await seedBuild(tmp, { slug: "quay", files: { "README.md": "# Quay\n" } });
+  const norepo = await refusal(() => worktree(join(tmp, "bare")));
+  const nested = join(other, "nested"); mkdirSync(nested, { recursive: true });
+  const inside = await refusal(() => worktree(nested));
+  check("a root with a `.git` directory that is not a repository is no-repo; so is a directory inside someone else's repository — the build is in the project's own, at its top",
+    norepo?.code === "no-repo" && inside?.code === "no-repo", `${norepo?.code} · ${inside?.code}`);
 });
 
 done();

@@ -4,7 +4,8 @@
     "discovery.writer": "claude-opus-5",
     "discovery.reviewer": "claude-opus-5",
     "delivery.writer": "claude-opus-5",
-    "delivery.judge": "claude-opus-5"
+    "delivery.judge": "claude-opus-5",
+    "delivery.builder": "claude-opus-5"
   },
   "note": "v1 defaults per SPEC §10.4, until M1 and M3 calibrate. A run's setup overrides per role; an unknown role is refused, never defaulted."
 }
