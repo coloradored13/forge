@@ -7,7 +7,7 @@
 
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { roles, defaults, modelFor, rows } from "../../shared/agent-call/index.mjs";
+import { roles, defaults, modelFor, rows, tally } from "../../shared/agent-call/index.mjs";
 import { verdictFreshness } from "../../shared/judge/index.mjs";
 import { readHandoffs } from "../../shared/handoff.mjs";
 import { readDoc } from "../../shared/store.mjs";
@@ -71,7 +71,7 @@ export function runView(root, { now = new Date() } = {}) {
   try { pinned = takePinned(root, run); } catch (e) { if (!(e instanceof Refused)) throw e; pin_refusal = { code: e.code, message: e.message }; }
   const intake = readDoc(root, INTAKE_FILE);
   const spent = rows(join(root, LEDGER)).filter((r) => r.half === "delivery");
-  const cost = (stage) => { const mine = spent.filter((r) => r.stage === stage); return { calls: mine.length, usd: mine.reduce((n, r) => n + (r.usd ?? 0), 0) }; };
+  const cost = (stage) => tally(spent.filter((r) => r.stage === stage));
   // The episode doors (run, rejudge) stand only on the first stage not yet approved, and only where the loop has a writer and a judge for it — the order the runner keeps.
   let before = false;
   const stages = v.stages.map((st) => {
@@ -87,7 +87,7 @@ export function runView(root, { now = new Date() } = {}) {
     roles: roleRows(run.models ?? {}),
     stages, gates: stages.map((s) => s.verdict).filter((g) => g.verdict !== null),
     flags: run.flags,
-    cost: { calls: spent.length, usd: spent.reduce((n, r) => n + (r.usd ?? 0), 0) },
+    cost: tally(spent),
     estimate: pinned ? estimateRun(root, { handoff: pinned, intake, models: run.models ?? {}, budget: run.budget ?? null }) : null,
     funnel: { ...meter(funnelRows(funnelPath(root))), rules: SIGNALS },
     handoffs, adoptable: takeable.filter((h) => h.version > run.handoff.version).map((h) => h.version),

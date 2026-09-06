@@ -18,6 +18,7 @@ import { verify } from "../shared/hash.mjs";
 import { record, rows, meter, funnelPath, SIGNALS } from "../shared/funnel.mjs";
 import { loadPrd, savePrd } from "../discovery/workshop/index.mjs";
 import { ledgerPath } from "../discovery/setup/index.mjs";
+import { rows as calls } from "../shared/agent-call/ledger.mjs";
 import { Refused, readDoc, readVerdict, freshVerdict, staleness, PROTOTYPE_FILE, STORIES_FILE, HTML_FILE, REVIEWS } from "../discovery/record/index.mjs";
 import { answer } from "../discovery/doors/index.mjs";
 import { generate, checkPrototype, GATE as PROTO_GATE, ARITHMETIC as PROTO_RULES } from "../discovery/prototype/index.mjs";
@@ -121,7 +122,7 @@ await withRoot({}, async (parent) => {
   const v = readVerdict(root, PROTO_GATE);
   check("the arithmetic verdict is filed under its gate, pins the PRD and the prototype it checked, and is fresh",
     existsSync(join(root, REVIEWS, `${PROTO_GATE}.json`)) && v.verdict === "pass" && v.judged.length === 2 && v.judged[0].content_hash === prd.meta.content_hash && v.judged[1].content_hash === doc.meta.content_hash && freshVerdict(root, PROTO_GATE) !== null && eq(out.arithmetic, v), JSON.stringify(v.judged));
-  check("one call, one ledger row", readFileSync(ledgerPath(root), "utf8").trim().split("\n").length === 1);
+  check("one call, one ledger row", calls(ledgerPath(root)).length === 1);
 
   // A rebuild: existing ids and the PM's notes ride in; a new screen may be minted; a dropped id is refused.
   const q2 = scripted({ structured: { ...structured, screens: [...SCREENS, { id: "SCREEN-3", name: "Confirming an exception", surface_ref: "SURF-1", req_refs: ["REQ-1"] }] }, toolUses: [{ name: "Write", input: { file_path: join(root, HTML_FILE) } }] });
@@ -231,7 +232,7 @@ await withRoot({}, async (parent) => {
   const q4 = scripted({ structured: backlog });
   await write({ root, _query: q4.query });
   check("a verdict whose PRD pin no longer matches does not ride in — the pin is checked, never the file", !/## The reviewer's findings/.test(q4.calls[0].prompt) && /RUL-2/.test(q4.calls[0].options.systemPrompt) && !staleness(root).stories.prd_moved);
-  check("every call went through the script and the ledger holds them all", readFileSync(ledgerPath(root), "utf8").trim().split("\n").length === 1 + 3 + 1 + 1 + 1 + 1 + 1);
+  check("every call went through the script and the ledger holds them all", calls(ledgerPath(root)).length === 1 + 3 + 1 + 1 + 1 + 1 + 1);
 });
 
 // ── R13 · the seam's question budget: syntax crosses for free; precision is what intake counts, per story, never trimmed ──

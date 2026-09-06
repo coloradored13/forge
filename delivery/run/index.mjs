@@ -10,7 +10,7 @@
 import { join } from "node:path";
 import { Refused } from "../../shared/refused.mjs";
 import { readDoc } from "../../shared/store.mjs";
-import { rows, estimate, standing, modelFor } from "../../shared/agent-call/index.mjs";
+import { rows, estimate, standing, modelFor, tally } from "../../shared/agent-call/index.mjs";
 import { STAGES, LEDGER, readRun, transition, heartbeat, liveness } from "../state/index.mjs";
 import { intake, takePinned, compile, slice, INTAKE_FILE } from "../intake/index.mjs";
 import { round as sddRound, rejudge as sddRejudge } from "../sdd/index.mjs";
@@ -200,7 +200,7 @@ function result(root, stage) {
   return {
     stage, status: st.status, round: st.round, run,
     verdict: readDoc(root, st.verdict),
-    cost: { usd: spent.reduce((n, r) => n + (r.usd ?? 0), 0), calls: spent.length },
+    cost: tally(spent),
   };
 }
 
