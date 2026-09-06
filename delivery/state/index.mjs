@@ -75,6 +75,8 @@ export const TRANSITIONS = [
   { from: "blocked",   event: "escalate",   to: "running",   guards: ["reason", "under-ceiling"] },
   { from: "blocked",   event: "approve",    to: "approved",  guards: ["fresh", "non-block"] },
   { from: "approved",  event: "moved",      to: "stale",     guards: [], opens: true },
+  { from: "review",    event: "moved",      to: "stale",     guards: [], opens: true },
+  { from: "blocked",   event: "moved",      to: "stale",     guards: [], opens: true },
   { from: "stale",     event: "rejudge",    to: "rejudging", guards: [] },
   { from: "rejudging", event: "clear",      to: "approved",  guards: ["verdict", "non-block"], noWord: true },
   { from: "rejudging", event: "reblock",    to: "review",    guards: ["verdict", "block"] },
@@ -303,12 +305,16 @@ export function heartbeat(root, stage, now) {
 }
 
 /**
- * A new handoff onto a standing run (R5): the pin moves; every approved stage goes
- * stale — to be re-judged, not regenerated (SPEC §5: approved → stale). Stages mid-flight
- * are left alone: a verdict pins what it judged, so a judge that pinned the handoff among
- * its inputs goes stale with it at the door; one that did not, does not. That pin is the
- * stage loop's to write.
+ * A new handoff onto a standing run (R5): the pin moves; every judged stage goes stale —
+ * to be re-judged, not regenerated (SPEC §5: approved → stale). A stage in review or
+ * blocked holds a verdict too, judged against the contract that just moved: it goes stale
+ * the same way, and `opens` returns its round to zero, so the re-judge's reblock has the
+ * whole cap ahead of it instead of one escalate at the ceiling — the human's answer in
+ * Discovery is the door, not a word on the record. Stages mid-flight are left alone: a
+ * verdict pins what it judged, so a judge that pinned the handoff among its inputs goes
+ * stale with it at the door; one that did not, does not. That pin is the stage loop's to write.
  */
+const JUDGED = new Set(TRANSITIONS.filter((r) => r.event === "moved").map((r) => r.from));
 export function adoptHandoff(root, { version, by, now } = {}) {
   let run = needRun(root);
   const { pin } = takeHandoff(root, version);
@@ -317,7 +323,7 @@ export function adoptHandoff(root, { version, by, now } = {}) {
   const moved = [];
   run = { ...run, handoff: pin };
   for (const stage of STAGES) {
-    if (run.stages[stage].status !== "approved") continue;
+    if (!JUDGED.has(run.stages[stage].status)) continue;
     run = apply(run, { stage, event: "moved", by: by ?? "runner", reason: `handoff v${was} → v${pin.version}`, now }).run;
     moved.push(stage);
   }

@@ -494,24 +494,24 @@ await withRoot({}, async (tmp) => {
   check("a question longer than a summary may be still crosses: the finding fits the schema, the summary is clipped, the question rides whole in the evidence and in the record",
     LONG_QUESTION.length > SUMMARY_MAX && longQ !== undefined && longQ.summary.length <= SUMMARY_MAX && longQ.summary.endsWith("…") && rec.questions.some((x) => x.question === LONG_QUESTION), longQ?.summary.length);
 
-  // The machine takes it: finish on the verdict; approve is refused on the block; the PM's edit is adopted; intake runs again on v2.
+  // The machine takes it: finish on the verdict; approve is refused on the block; the PM's edit is adopted and the verdict in review goes stale with the contract it judged — intake re-judges on v2 (a recompile: intake has no writer), no round spent.
   transition(cold, { stage: "intake", event: "start", by: "runner", now: T0 });
   const fin = transition(cold, { stage: "intake", event: "finish", by: "runner", verdict: first.verdict, now: T0 });
   const held = await refusal(() => transition(cold, { stage: "intake", event: "approve", by: "Brad", now: T0 }));
   check("finish takes the filed verdict into review; approve is refused as judge-blocked — the blocking question is the door",
     fin.run.stages.intake.status === "review" && fin.run.stages.intake.verdict === VERDICT_FILE && held?.code === "judge-blocked", held?.message);
-  adoptHandoff(cold, { version: 2, by: "Brad", now: T0 });
-  check("adopting v2 moves the pin; intake in review is untouched — it regenerates", readRun(cold).handoff.version === 2 && readRun(cold).stages.intake.status === "review");
-  transition(cold, { stage: "intake", event: "regenerate", by: "runner", now: T0 });
+  const adopted = adoptHandoff(cold, { version: 2, by: "Brad", now: T0 });
+  check("adopting v2 moves the pin and sends intake — in review on a block judged against v1 — stale at round 0: the answer in Discovery is the door, not a regeneration",
+    readRun(cold).handoff.version === 2 && adopted.moved.join() === "intake" && readRun(cold).stages.intake.status === "stale" && readRun(cold).stages.intake.round === 0 && readRun(cold).flags.at(-1).event === "moved" && /v1 → v2/.test(readRun(cold).flags.at(-1).reason), JSON.stringify(readRun(cold).stages.intake));
+  transition(cold, { stage: "intake", event: "rejudge", by: "wrapper", now: T0 });
   const second = intake(cold, { now: T0 });
   const rec2 = second.record;
   check("intake on v2: no drift — the pin is the latest; the ruling rides in the contract; four scenarios; OQ-1 answered leaves four questions, the budget still exceeded",
     rec2.handoff.version === 2 && rec2.drift.against === null && rec2.drift.changed.length === 0 && rec2.scenarios.length === 4 && rec2.questions.length === 4 && !rec2.questions.some((x) => x.blocking) && rec2.budget.over.length === 1, JSON.stringify(rec2.drift));
   check("the record's hash moved with the compile — a judge that pinned intake.json goes stale with it", rec2.meta.content_hash !== rec.meta.content_hash);
-  const fin2 = transition(cold, { stage: "intake", event: "finish", by: "runner", verdict: second.verdict, now: T0 });
-  const approved = transition(cold, { stage: "intake", event: "approve", by: "Brad", now: T0 });
-  check("the second round advises — questions and the budget signal — and the approve door opens; round 2 of the cap",
-    fin2.run.stages.intake.round === 2 && JSON.parse(readFileSync(join(cold, VERDICT_FILE), "utf8")).verdict === "advise" && approved.run.stages.intake.status === "approved");
+  const cleared = transition(cold, { stage: "intake", event: "clear", by: "wrapper", verdict: second.verdict, now: T0 });
+  check("the re-judge advises — questions and the budget signal — and clears to approved at round 0: answering a snapshot's question costs no round (R5)",
+    cleared.run.stages.intake.round === 0 && JSON.parse(readFileSync(join(cold, VERDICT_FILE), "utf8")).verdict === "advise" && cleared.run.stages.intake.status === "approved" && cleared.run.stages.intake.verdict === second.verdict);
   check("the funnel holds one budget row per intake — the meter, not a tally of rounds", funnelRows(funnelPath(cold)).filter((r) => r.signal === "intake-questions").length === 2);
 
   // Tampering with the pinned file is caught at the door: by item when the edit left the stamp, by the pin when it re-stamped itself.
