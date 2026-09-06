@@ -7,17 +7,20 @@
 // here, not code elsewhere. Seed: v1's `doorRefusals` / `applyOverride` — override is a
 // door, not a key.
 
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { basename, dirname, join, posix } from "node:path";
 import { load, validate } from "../../shared/schema/index.mjs";
 import { Refused } from "../../shared/refused.mjs";
 import { verdictFreshness } from "../../shared/judge/index.mjs";
+import { sha256 } from "../../shared/hash.mjs";
 import { roles } from "../../shared/agent-call/index.mjs";
 import { HANDOFFS, handoffFile, readHandoffs, verifyHandoff } from "../../shared/handoff.mjs";
 
 export { Refused };
 export const RUN_FILE = join("forge", "run.json");
 export const LEDGER = join("forge", "delivery", "calls.jsonl");
+/** Every verdict ever filed on the run, with what it judged — `<stage>/<seq>/` under here. */
+export const ROUNDS = join("forge", "delivery", "rounds");
 
 // The vocabulary is the schema's (R10): stages in pipeline order, the state enum as declared.
 const SCHEMA = load("run");
@@ -87,8 +90,9 @@ const iso = (d) => (d instanceof Date ? d : new Date(d ?? Date.now())).toISOStri
 // ── the pure table ──
 
 /**
- * Apply one event to one stage of a run in hand. Returns `{ run, flags }` — the new run
- * (the given one is not touched) and the flags this transition added. Refuses with
+ * Apply one event to one stage of a run in hand. Returns `{ run, flags, filed }` — the new
+ * run (the given one is not touched), the flags this transition added, and whether the
+ * event filed a verdict (the store keeps every one it does). Refuses with
  * `no-stage`, `no-event`, `no-transition`, or a guard's code. Context: `by`, `reason`,
  * `override`, `verdict` ({ verdict, path } — what was filed), `fresh` (true | false |
  * null — the pins checked), `now`.
@@ -118,9 +122,10 @@ export function apply(run, ctx) {
   if (row.opens) next.round = 0;
   if (row.counts) next.round = st.round + 1;
   if (LIVE.has(row.to)) { next.started_at = now; next.heartbeat_at = now; next.finished_at = null; }
-  if (ctx.verdict?.path && row.guards.includes("verdict")) { next.verdict = ctx.verdict.path; next.finished_at = now; }
+  const filed = Boolean(ctx.verdict?.path && row.guards.includes("verdict"));
+  if (filed) { next.verdict = ctx.verdict.path; next.finished_at = now; }
   const out = { ...run, stages: { ...run.stages, [stage]: next }, flags: [...run.flags, ...flags] };
-  return { run: out, flags };
+  return { run: out, flags, filed };
 }
 
 /** Alive, dead, or idle (not running) — read from the heartbeat's age, never stored. */
@@ -216,10 +221,61 @@ export function transition(root, { stage, event, by, reason, override, verdict, 
   const st = run.stages[stage];
   const path = verdict ?? st?.verdict ?? null;
   const doc = verdictAt(root, path);
-  const ctx = { stage, event, by, reason, override, now, verdict: doc ? { verdict: doc.verdict, path } : null, fresh: doc ? verdictFreshness(doc, { root }).fresh : null };
+  const freshness = doc ? verdictFreshness(doc, { root }) : null;
+  const ctx = { stage, event, by, reason, override, now, verdict: doc ? { verdict: doc.verdict, path } : null, fresh: freshness?.fresh ?? null };
   const out = apply(run, ctx);
+  if (out.filed) retain(root, { stage, event, round: out.run.stages[stage].round, path, doc, stale: freshness.stale, now });
   writeRun(root, out.run);
   return out;
+}
+
+// ── every verdict, kept ──
+
+/**
+ * A verdict is filed on a fixed path — `sdd.json` beside `reviews/sdd.json` — and the next
+ * round overwrites both. R8's judge miss (a finding a later verdict contradicts) is only
+ * attributable while the earlier round can still be read, so every filing keeps the
+ * verdict with what it judged, at `rounds/<stage>/<seq>/`: the verdict as `verdict.json`,
+ * each pinned artifact under the delivery record by its own name, and `round.json` saying
+ * which event filed it at which round. The handoff is pinned too but not copied — it is
+ * versioned outside the record and never edited. A pin gone stale between judging and
+ * filing is named, not copied: a copy of what is on disk now would misrepresent what was
+ * judged. `seq` counts filings per stage across episodes; `round` restarts, `seq` does not.
+ * Nothing here gates: the table admitted the event before this runs.
+ */
+const KEPT_UNDER = `${posix.join("forge", "delivery")}/`;
+const VERDICT_COPY = "verdict.json";
+
+function retain(root, { stage, event, round, path, doc, stale, now }) {
+  const seq = rounds(root, stage).reduce((n, r) => Math.max(n, r.seq), 0) + 1;
+  const dir = posix.join(ROUNDS, stage, String(seq));
+  mkdirSync(join(root, dir), { recursive: true });
+  copyFileSync(join(root, path), join(root, dir, VERDICT_COPY));
+  const gone = new Set(stale.map((s) => s.id));
+  const kept = [];
+  for (const p of doc.judged ?? []) {
+    if (!p.path.startsWith(KEPT_UNDER) || gone.has(p.id) || p.path === path) continue;
+    copyFileSync(join(root, p.path), join(root, dir, basename(p.path)));
+    kept.push({ id: p.id, path: p.path, content_hash: p.content_hash, as: basename(p.path) });
+  }
+  const record = { seq, stage, event, round, at: iso(now), filed: { path, sha256: sha256(doc) }, kept, stale };
+  writeFileSync(join(root, dir, "round.json.tmp"), JSON.stringify(record, null, 2) + "\n");
+  renameSync(join(root, dir, "round.json.tmp"), join(root, dir, "round.json"));
+  return record;
+}
+
+/** Every filing for a stage, in order: `round.json` with `dir` (root-relative) and the kept `verdict` read back. */
+export function rounds(root, stage) {
+  const base = join(root, ROUNDS, stage);
+  if (!existsSync(base)) return [];
+  return readdirSync(base)
+    .filter((d) => /^\d+$/.test(d) && existsSync(join(base, d, "round.json")))
+    .map((d) => {
+      const dir = posix.join(ROUNDS, stage, d);
+      const record = JSON.parse(readFileSync(join(root, dir, "round.json"), "utf8"));
+      return { ...record, dir, verdict: JSON.parse(readFileSync(join(root, dir, VERDICT_COPY), "utf8")) };
+    })
+    .sort((a, b) => a.seq - b.seq);
 }
 
 /** The wrapper's pulse. Only a running or rejudging stage has one. */

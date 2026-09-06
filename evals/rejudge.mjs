@@ -13,7 +13,7 @@ import { join } from "node:path";
 import { suite, withRoot, scripted } from "./_harness.mjs";
 import { pin, verdictFreshness } from "../shared/judge/index.mjs";
 import { stamp } from "../shared/hash.mjs";
-import { apply, DEFAULTS, readRun, adoptHandoff, LEDGER } from "../delivery/state/index.mjs";
+import { apply, DEFAULTS, readRun, adoptHandoff, rounds, LEDGER } from "../delivery/state/index.mjs";
 import { rows } from "../shared/agent-call/index.mjs";
 import { advance } from "../delivery/run/index.mjs";
 import { loadSdd, VERDICT_FILE as SDD_VERDICT } from "../delivery/sdd/index.mjs";
@@ -111,6 +111,11 @@ await withRoot({}, async (tmp) => {
     loadSdd(cold).traces.handoff.version === 1 && loadSdd(cold).meta.content_hash === sdd1.judged[2].content_hash && sdd2.judged[0].id === "handoff-v2" && sdd2.judged[1].content_hash !== sdd1.judged[1].content_hash && sdd2.judged[2].content_hash === sdd1.judged[2].content_hash, JSON.stringify(sdd2.judged));
   check("the re-judge's judge saw the reworded story", /plan the dock before the first truck/.test(re.calls[1].prompt), re.calls[1].prompt.slice(0, 200));
   check("the wrapper said what happened: cleared, twice", events.filter((e) => /re-judged: clear/.test(e)).join() === "intake re-judged: clear,sdd re-judged: clear", events.join(" | "));
+  // A re-judge files a verdict too, and overwrites the last one on the same path — so it is kept the same way,
+  // at round 0 (R5: not a round), beside the binding it judged again (R8).
+  const kept = rounds(cold, "sdd");
+  check("R8: the first round's verdict and the re-judge's are both on the record — finish at round 1, clear at round 0 — each pinning the same binding, judged against v1 and then v2",
+    kept.map((k) => `${k.seq}:${k.round}:${k.event}:${k.verdict.verdict}`).join() === "1:1:finish:pass,2:0:clear:pass" && kept[0].verdict.judged[0].id === "handoff-v1" && kept[1].verdict.judged[0].id === "handoff-v2" && kept[1].kept.some((k) => k.path === "forge/delivery/sdd.json" && k.content_hash === sdd1.judged[2].content_hash), JSON.stringify(kept.map((k) => [k.seq, k.round, k.event, k.verdict?.verdict])));
 
   // The PM rules on OQ-2: REQ-2 gains a criterion, STORY-2 a scenario proving it. v3 is adopted; the standing binding tests nothing for the new criterion — the re-judge blocks on the arithmetic without a model, and the block is now the loop's: under the cap it regenerates in the same episode.
   answer({ root: disc, req: "REQ-2", oq: "OQ-2", answer: "The receiving lead names the vendor from the manifest.", criterion: "A delivery with no paperwork shows the vendor named from the manifest.", by: "Brad" });
