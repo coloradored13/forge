@@ -157,9 +157,10 @@ function strip(node) {
 }
 
 /**
- * The model-facing fields as a flat list — `{ path, required, description, enum }` —
- * read by the mechanics generator so a prompt names exactly the fields the contract
- * holds. Walks into array items and nested objects; the path is JSON-pointer-like.
+ * The model-facing fields as a flat list — `{ path, required, description, enum, maxLength }`
+ * — read by the mechanics generator so a prompt names exactly the fields the contract
+ * holds, ceilings included: a bound the contract validates but the prompt withholds is
+ * learned by rejection. Walks into array items and nested objects; the path is JSON-pointer-like.
  */
 export function fields(name) {
   return fieldsOf(outputContract(name));
@@ -170,7 +171,7 @@ export function fieldsOf(contract) {
   const walk = (node, path) => {
     for (const [k, p] of Object.entries(node.properties ?? {})) {
       const here = `${path}/${k}`;
-      out.push({ path: here, required: (node.required ?? []).includes(k), description: p.description ?? null, enum: p.enum ?? null });
+      out.push({ path: here, required: (node.required ?? []).includes(k), description: p.description ?? null, enum: p.enum ?? null, maxLength: p.maxLength ?? null });
       const inner = p.type === "array" ? p.items : p;
       if (inner?.properties) walk(inner, p.type === "array" ? `${here}[]` : here);
     }

@@ -206,7 +206,10 @@ await withRoot({ "prompts/reviewer.md": IDENTITY }, async (root) => {
   check("the verdict carries its cost", v.cost.usd === 0.31 && v.cost.model === "claude-opus-5" && rows(ledger).length === 1 && rows(ledger)[0].role === "reviewer");
   const sys = q.calls[0].options.systemPrompt;
   check("the system prompt is identity then mechanics, and the output contract is on the wire",
-    sys.startsWith("# Story reviewer") && /\n---\n\n# Mechanics/.test(sys) && /every in-scope finding/.test(sys) && !/at most \d+/.test(sys) && q.calls[0].options.outputFormat.schema.required.includes("deferred"));
+    sys.startsWith("# Story reviewer") && /\n---\n\n# Mechanics/.test(sys) && /every in-scope finding/.test(sys) && q.calls[0].options.outputFormat.schema.required.includes("deferred"));
+  // R7 forbids a cap on how many findings come back, not a ceiling on how long a field may be —
+  // the contract's `maxLength` is stated with its field (coherence checks it), never as "at most N findings".
+  check("no count cap on findings anywhere in the prompt (R7: rank means order, not trim)", !/at most \d+ (in-scope )?findings/.test(sys) && !/keep the \d+ that matter/.test(sys));
   check("a judge has no write surface", q.calls[0].options.allowedTools.join() === "Read,Glob,Grep");
 
   const wrote = scripted({ structured, toolUses: ["Write"] });

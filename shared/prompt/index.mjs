@@ -56,9 +56,11 @@ export function mechanics({ kind, schema, only, scope, rulings = [], arithmetic 
     : `# Mechanics\n\nGenerated from the schema and the run's configuration. The contract below is validated after you answer; an answer that does not fit it is discarded, not repaired.`);
 
   const held = only ? fieldsOf(partialContract(schema, only)) : fields(schema);
-  out.push(`## ${conversing ? "This section captures" : "Output contract"} — \`${schema}\`\n\n` + held.map(({ path, required, description, enum: e }) => {
+  out.push(`## ${conversing ? "This section captures" : "Output contract"} — \`${schema}\`\n\n` + held.map(({ path, required, description, enum: e, maxLength }) => {
     const bits = [`- \`${path}\``, required ? "(required)" : "(optional)"];
     if (e) bits.push(`one of ${e.map((x) => `\`${x}\``).join(", ")}`);
+    // the ceiling is stated with the field: a bound learned only by rejection is written to, then overrun
+    if (maxLength != null) bits.push(`at most ${maxLength} characters`);
     if (description) bits.push(`— ${description}`);
     return bits.join(" ");
   }).join("\n"));
