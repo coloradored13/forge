@@ -168,7 +168,7 @@ Forge proper. Starts from a snapshot, ends with a product that carries its proof
 
 **The loop, per stage.** Writer → judge → door. Doors: **approve** (fresh, non-block verdict) · **ask** (across the seam) · **defer** · **escalate** (buy a round, reason required) · **reopen** · **stop**. No *amend* — Delivery cannot change the PRD (R5, R6).
 
-**Stage state — one machine.** `pending → running → review → approved`; `review → blocked` when a block meets the cap; `approved → stale → rejudging → {approved | review}` when the handoff moves; any → `stopped`. The wrapper heartbeats; a running stage silent past the liveness window is `dead`, and the console says so in that word. One table; every door reads it; the eval is exhaustive.
+**Stage state — one machine.** `pending → running → review → approved`; `review → blocked` when a block meets the cap; `{approved | review | blocked} → stale → rejudging → {approved | review}` when the handoff moves; any → `stopped`. The wrapper heartbeats; a running stage silent past the liveness window is `dead`, and the console says so. One table; every door reads it; the eval is exhaustive.
 
 ## §6 Shared
 

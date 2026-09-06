@@ -199,6 +199,22 @@ check("clear on a block is refused judge-blocked; reblock takes it to review, ro
 check("reblock on a pass is refused not-blocked", refusal(() => apply(rj.run, { stage: "sdd", event: "reblock", by: "wrapper", verdict: V("pass") }))?.code === "not-blocked");
 check("clear over a block does not take a human's word — the word is spent at approve, on the record",
   refusal(() => apply(rj.run, { stage: "sdd", event: "clear", by: "Brad", reason: "fine", override: true, verdict: V("block") }))?.code === "judge-blocked");
+// A handoff that moves under a judged-but-not-approved stage: the verdict it holds was judged
+// against the old contract, so it goes stale the same way — and `opens` returns the round to
+// zero, so the re-judge's reblock regenerates with the full cap ahead of it instead of the one
+// `escalate` at the ceiling that a blocked stage would otherwise have as its only door.
+for (const from of ["review", "blocked"]) {
+  const judged = inState(from, { round: from === "blocked" ? 3 : 1, verdict: "forge/delivery/reviews/sdd-3.json" });
+  const mv = apply(judged, { stage: "sdd", event: "moved", by: "runner", reason: "handoff v4 → v5" });
+  check(`moved lands a ${from} stage in stale at round 0 with its verdict kept — the block was against a contract that moved, so it is re-judged, not escalated`,
+    mv.run.stages.sdd.status === "stale" && mv.run.stages.sdd.round === 0 && mv.run.stages.sdd.verdict === "forge/delivery/reviews/sdd-3.json" && mv.flags.length === 1 && mv.flags[0].event === "moved" && /v4 → v5/.test(mv.flags[0].reason), `${mv.run.stages.sdd.status} r${mv.run.stages.sdd.round}`);
+  const rb = apply(apply(mv.run, { stage: "sdd", event: "rejudge", by: "wrapper", now: at(0) }).run, { stage: "sdd", event: "reblock", by: "wrapper", verdict: V("block") });
+  check(`from ${from}: rejudge → reblock lands in review at round 0, and regenerate is open again — the cap counts from the moved contract`,
+    rb.run.stages.sdd.status === "review" && rb.run.stages.sdd.round === 0 && apply(rb.run, { stage: "sdd", event: "regenerate", by: "runner", verdict: V("block") }).run.stages.sdd.status === "running");
+}
+check("moved from running, rejudging, pending or stopped is refused no-transition — nothing judged there is stale",
+  ["running", "rejudging", "pending", "stopped"].every((from) => refusal(() => apply(inState(from), { stage: "sdd", event: "moved", by: "runner", reason: "handoff v4 → v5" }))?.code === "no-transition"));
+
 check("reopen takes a reason and opens a new episode in review", (() => { const r = apply(appr, { stage: "sdd", event: "reopen", by: "Brad", reason: "the dock lead found the run sheet reads oldest-first" }); return r.run.stages.sdd.status === "review" && r.run.stages.sdd.round === 0 && r.flags[0].event === "reopen"; })());
 check("reopen without a reason is refused", refusal(() => apply(appr, { stage: "sdd", event: "reopen", by: "Brad" }))?.code === "reason-required");
 
