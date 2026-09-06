@@ -5,13 +5,20 @@
 // judges' findings are ranked, never cut, with the verdict derived, never read; and rounds
 // are capped by the transition table — the cap lands a block in `blocked`, where the human's
 // moves are escalate with a reason (to the ceiling), approve on the record, or stop (R6).
-// No model is ever called here — the SDK is replaced by a scripted query.
+// The Delivery loop is run on a cold root: writer → arithmetic → judge → door, each round a
+// transition, every call on the ledger, the wrapper's heartbeat under the work, a thrown
+// stage stopped with the error as its reason. No model is ever called here — the SDK is
+// replaced by a scripted query.
 
 import { join } from "node:path";
 import { suite, withRoot, scripted } from "./_harness.mjs";
 import { call, BudgetError, rows, quote, modelFor, TOOLS } from "../shared/agent-call/index.mjs";
 import { runJudge, runPerItemJudge, rank, deriveVerdict, weight, renderFindingsForAgent } from "../shared/judge/index.mjs";
-import { apply, DEFAULTS } from "../delivery/state/index.mjs";
+import { apply, DEFAULTS, readRun, transition, LEDGER } from "../delivery/state/index.mjs";
+import { runStage, escalate, advance, AUTHORED, PULSE_MS } from "../delivery/run/index.mjs";
+import { SDD_FILE, VERDICT_FILE as SDD_VERDICT, loadSdd } from "../delivery/sdd/index.mjs";
+import { seedDelivery, BINDING } from "./_fixture.mjs";
+import { readDoc } from "../shared/store.mjs";
 import { stamp } from "../shared/hash.mjs";
 import { setupProject } from "../discovery/setup/index.mjs";
 import { openPrd, quoteTurn, turn } from "../discovery/workshop/index.mjs";
@@ -229,6 +236,105 @@ await withRoot({ "prompts/j.md": IDENTITY }, async (root) => {
     go("escalate", { by: "Brad", reason: "the judge read the fixture, not the change" }).status === "running" && go("finish").round === 3 && go("cap", { by: "runner" }).status === "blocked" && refusal(() => go("escalate", { by: "Brad", reason: "again" }))?.code === "at-ceiling");
   check("at the ceiling the block is the human's call: approve on the record leaves a flag naming the guard; stop takes a reason",
     go("approve", { by: "Brad", reason: "the residual is documented in the manifest", override: true }).status === "approved" && run.flags.filter((f) => f.override).length === 1 && run.flags.at(-1).guard === "judge-blocked" && run.flags.map((f) => f.event).join() === "escalate,approve");
+}
+
+// ── R6 · the loop on a cold root: writer → arithmetic → judge → door; the cap; the human's doors ──
+{
+  const refusal = (fn) => Promise.resolve().then(fn).then(() => null, (e) => e);
+  const clone = () => structuredClone(BINDING);
+  const BAD = clone(); BAD.items[0].controls.push({ screen_ref: "SCREEN-1", control: "submit" });
+  const CLEAN = (item) => ({ findings: [], deferred: [{ subject: item, summary: `${item}: the second recording against the same delivery in the same second.`, beyond: "untested" }], checked: 1, skipped: 0 });
+  const PROVES_NOTHING = { ...CLEAN("STORY-1"), findings: [{ severity: "high", confidence: "certain", rule: "test-proves-nothing", subject: "T-2", summary: "T-2 asserts that no exported function changes the row without naming a function that is called or what is read afterwards.", evidence: "asserts: \"no exported function changes the row\" · REQ-1/AC-2: A submitted exception cannot be edited.", remedy: "Name the calls attempted and the read that follows each." }] };
+  // a scripted SDK that yields slowly, so the wrapper's pulse has something to beat under
+  const slow = (q, ms = 6) => (a) => { const it = q(a); return (async function* () { for await (const m of it) { await new Promise((r) => setTimeout(r, ms)); yield m; } })(); };
+  let t = Date.parse("2026-09-06T09:00:00Z");
+  const clock = () => new Date((t += 1000));
+
+  await withRoot({}, async (tmp) => {
+    const { cold } = await seedDelivery(tmp);
+    const events = [];
+    const script = scripted({ structuredSeq: [BAD, BINDING, PROVES_NOTHING, CLEAN("STORY-2"), CLEAN("REQ-4"), BINDING, CLEAN("STORY-1"), CLEAN("STORY-2"), CLEAN("REQ-4")] });
+    const opts = { _query: slow(script.query), _now: clock, _pulse_ms: 1, onEvent: (e) => events.push(e) };
+
+    check("the loop knows which stages it can run — intake and sdd — and says so in one table", Object.keys(AUTHORED).join() === "intake,sdd" && AUTHORED.intake.writer === false && AUTHORED.sdd.writer === true && PULSE_MS === 15_000);
+    const order = await refusal(() => runStage(cold, { stage: "sdd", ...opts }));
+    const unauthored = await refusal(() => runStage(cold, { stage: "build", ...opts }));
+    const nostage = await refusal(() => runStage(cold, { stage: "ship", ...opts }));
+    check("a stage runs from an approved one: sdd before intake is stage-order; build is stage-unauthored (M3); a name that is not a stage is no-stage — nothing was called",
+      order?.code === "stage-order" && /intake is pending/.test(order.message) && unauthored?.code === "stage-unauthored" && nostage?.code === "no-stage" && script.calls.length === 0, `${order?.code} ${unauthored?.code} ${nostage?.code}`);
+
+    const r0 = await runStage(cold, { stage: "intake", ...opts });
+    check("intake: no writer, the compile is the round — the snapshot's open questions advise, a non-block approves in one episode, round 1, zero model calls",
+      r0.status === "approved" && r0.round === 1 && r0.verdict.verdict === "advise" && r0.verdict.findings.every((f) => f.rule === "question") && r0.cost.calls === 0 && r0.cost.usd === 0 && script.calls.length === 0, JSON.stringify(r0.verdict?.findings));
+    check("an approved stage is done — run again is stage-done", (await refusal(() => runStage(cold, { stage: "intake", ...opts })))?.code === "stage-done");
+
+    const r1 = await runStage(cold, { stage: "sdd", ...opts });
+    const v1 = r1.verdict;
+    check("R6: sdd round 1 blocks on the arithmetic (no judge called — R1), regenerates; round 2 blocks on the judge; round 2 is the cap — blocked, the human's doors",
+      r1.status === "blocked" && r1.round === 2 && v1.verdict === "block" && v1.findings[0].rule === "test-proves-nothing" && script.calls.length === 5, `${r1.status} r${r1.round} calls ${script.calls.length}`);
+    check("the round-1 verdict was filed with no judge cost; the round-2 verdict merges the judges' — three items, cost the judges', pinned to the handoff, the intake record and the binding",
+      Math.abs(v1.cost.usd - 0.15) < 1e-9 && v1.checked === 6 + 3 && v1.judged.map((j) => j.id).join() === "handoff-v1,intake-dock,sdd-dock" && v1.judged.map((j) => j.path).join() === `discovery/handoffs/handoff-v1.json,forge/delivery/intake.json,${SDD_FILE}`, JSON.stringify(v1.judged));
+    check("the falsification deferral: one per item, keyed `untested`, riding beside the findings and never among them",
+      v1.deferred.length === 3 && v1.deferred.every((d) => d.beyond === "untested") && v1.deferred.map((d) => d.subject).join() === "STORY-1,STORY-2,REQ-4");
+    check("R1: five calls on the ledger for delivery/sdd — two writers, three judges — each with model, cost and tokens; the result's cost is their sum",
+      r1.cost.calls === 5 && Math.abs(r1.cost.usd - 0.25) < 1e-9 && rows(join(cold, LEDGER)).filter((r) => r.half === "delivery" && r.stage === "sdd").map((r) => r.role).join() === "writer,writer,judge,judge,judge" && rows(join(cold, LEDGER)).every((r) => r.model && r.tokens && r.ok), rows(join(cold, LEDGER)).map((r) => `${r.stage}/${r.role}`).join());
+    const p0 = script.calls[0].prompt, p1 = script.calls[1].prompt, pj = script.calls[2].prompt;
+    check("the first writer prompt carries the work items, the signed design and no previous binding; the second carries the previous binding and the arithmetic's finding, quoted",
+      /^## Work items/.test(p0) && /## The signed design/.test(p0) && !/previous binding/.test(p0) && /## The previous binding/.test(p1) && /## The judge's findings on the previous binding/.test(p1) && /control-not-in-design/.test(p1) && /`submit`/.test(p1), p1.slice(-400));
+    check("a judge sees one item: the work item, the screens it runs on, its binding, the interfaces the others name",
+      /^## The work item/.test(pj) && /## The signed design — the screens this item runs on/.test(pj) && /## The binding/.test(pj) && /## Interfaces the other items name/.test(pj) && /STORY-2 · `deliveries.forShift`/.test(pj) && !/STORY-2 · `exceptions.record`/.test(pj), pj.slice(0, 300));
+    check("the judge's system prompt names the arithmetic as checked elsewhere (R10); the writer's output contract is the sdd schema without the runner's fields — items and questions, nothing about traces or the stamp",
+      /## Checked elsewhere[^#]*`item-unbound`[^#]*`interface-disagrees`/.test(script.calls[2].options.systemPrompt) && script.calls[0].options.outputFormat.schema.required.join() === "items,questions" && !("traces" in script.calls[0].options.outputFormat.schema.properties), JSON.stringify(script.calls[0].options.outputFormat.schema.required));
+    check("the wrapper narrates the doors: regenerating at round 1 of 2, blocked at the cap at round 2 of 2",
+      events.includes("sdd block · round 1 of 2 — regenerating") && events.includes("sdd block · round 2 of 2 — blocked at the cap"), events.join(" | "));
+    const stuck = await refusal(() => runStage(cold, { stage: "sdd", ...opts }));
+    check("blocked has no automatic exit: run again is stage-blocked, and the message names the doors", stuck?.code === "stage-blocked" && /escalate with a reason, approve on the record, or stop/.test(stuck.message));
+    const wordless = await refusal(() => escalate(cold, { stage: "sdd", by: "Brad", ...opts }));
+    check("an escalation without a reason is refused before anything runs", wordless?.code === "reason-required" && script.calls.length === 5);
+
+    const before = readRun(cold).stages.sdd;
+    const r2 = await escalate(cold, { stage: "sdd", by: "Brad", reason: "the assertion is checkable as written — one more round", ...opts });
+    check("escalate with a reason buys one round: the writer answers the recorded block, the judges clear it, approved at round 3 — and the flag names who and why",
+      r2.status === "approved" && r2.round === 3 && r2.verdict.verdict === "pass" && r2.run.flags.length === 1 && r2.run.flags[0].event === "escalate" && r2.run.flags[0].by === "Brad" && /one more round/.test(r2.run.flags[0].reason), JSON.stringify(r2.run.flags));
+    check("the escalated round's writer saw the judge's finding it was bought to answer", /## The judge's findings on the previous binding/.test(script.calls[5].prompt) && /test-proves-nothing/.test(script.calls[5].prompt));
+    check("R1: nine calls, $0.45, all on one ledger; the result's cost is the stage's whole spend across episodes",
+      r2.cost.calls === 9 && Math.abs(r2.cost.usd - 0.45) < 1e-9 && script.calls.length === 9);
+    const after = readRun(cold).stages.sdd;
+    check("the wrapper's pulse wrote the heartbeat while the stage's code ran — the last beat is after the start, and the finish was stamped by the clock",
+      Date.parse(after.heartbeat_at) > Date.parse(after.started_at) && Date.parse(after.finished_at) >= Date.parse(after.heartbeat_at) && Date.parse(after.started_at) > Date.parse(before.finished_at), JSON.stringify({ before, after }));
+    check("the binding on disk is the approved one, traced to the handoff it was bound from", loadSdd(cold).items.length === 3 && loadSdd(cold).traces.handoff.version === 1 && readDoc(cold, SDD_VERDICT).verdict === "pass");
+    const rest = await advance(cold, opts);
+    check("advance over an approved run: nothing to do until build, which is unauthored — halted there, no call made", rest.stages.length === 0 && rest.halted?.why === "stage-unauthored" && rest.halted.stage === "build" && script.calls.length === 9);
+  });
+
+  // A stage whose code throws is stopped on the record, by the wrapper, with the error as the reason; it starts again from stopped.
+  await withRoot({}, async (tmp) => {
+    const { cold } = await seedDelivery(tmp, { slug: "silo" });
+    const broken = scripted({ throwWith: "the socket closed" });
+    const events = [];
+    const failed = await refusal(() => advance(cold, { _query: broken.query, _now: clock, onEvent: (e) => events.push(e) }));
+    const st = readRun(cold).stages;
+    check("advance ran intake to approved, then sdd's writer threw: the error surfaces, the stage is stopped by the wrapper with the error as its reason, the ledger holds the failed call",
+      failed?.message === "the socket closed" && st.intake.status === "approved" && st.sdd.status === "stopped" && readRun(cold).flags.at(-1).event === "stop" && readRun(cold).flags.at(-1).by === "wrapper" && readRun(cold).flags.at(-1).reason === "Error: the socket closed" && rows(join(cold, LEDGER)).filter((r) => r.stage === "sdd").every((r) => r.ok === false), JSON.stringify(readRun(cold).flags));
+    check("the wrapper said so", events.at(-1) === "sdd stopped — Error: the socket closed", events.join(" | "));
+    const good = scripted({ structuredSeq: [BINDING, CLEAN("STORY-1"), CLEAN("STORY-2"), CLEAN("REQ-4")] });
+    const again = await advance(cold, { _query: good.query, _now: clock });
+    check("from stopped, start opens a new episode: the round is counted from zero, sdd approves at round 1, and advance halts at build",
+      again.stages.length === 1 && again.stages[0].stage === "sdd" && again.stages[0].status === "approved" && again.stages[0].round === 1 && again.halted?.why === "stage-unauthored" && good.calls.length === 4, JSON.stringify(again.halted));
+
+    // A live stage is left alone; a dead one is restarted with a flag; a dead re-judge has no door but stop.
+    transition(cold, { stage: "sdd", event: "stop", by: "Brad", reason: "the binding names a store the product does not have", now: clock() });
+    transition(cold, { stage: "sdd", event: "start", by: "runner", now: clock() });
+    const alive = await refusal(() => runStage(cold, { stage: "sdd", _query: good.query, _now: () => new Date(t) }));
+    check("a running stage with a fresh heartbeat is stage-running — the loop does not run over live work", alive?.code === "stage-running" && /alive/.test(alive.message));
+    const recovered = await runStage(cold, { stage: "sdd", _query: scripted({ structuredSeq: [BINDING, CLEAN("STORY-1"), CLEAN("STORY-2"), CLEAN("REQ-4")] }).query, _now: () => new Date(t + DEFAULTS.liveness_ms + 1) });
+    check("a running stage silent past the window is dead: start recovers it with a flag on the record and the episode runs to approved",
+      recovered.status === "approved" && recovered.run.flags.some((f) => f.reason === "restarted over a dead stage" && f.event === "start" && /silent 300001 ms, window 300000 ms/.test(f.note)), JSON.stringify(recovered.run.flags.at(-1)));
+    transition(cold, { stage: "sdd", event: "moved", by: "runner", reason: "handoff v1 → v2 (simulated)", now: clock() });
+    transition(cold, { stage: "sdd", event: "rejudge", by: "runner", now: clock() });
+    const dead = await refusal(() => runStage(cold, { stage: "sdd", _query: good.query, _now: () => new Date(t + DEFAULTS.liveness_ms + 1) }));
+    check("a dead re-judge is not restarted by the loop — stage-dead: stop it with a reason, then start", dead?.code === "stage-dead" && /stop it with a reason/.test(dead.message));
+  });
 }
 
 done();

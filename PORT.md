@@ -17,7 +17,7 @@ Check an item only when its eval is green in this repo. The v1 path is the sourc
 | `tests/browser` | `delivery/qa/` | M3 | [ ] |
 | prompt `prototype` (identity half only) | `discovery/prototype/` | M1 | [x] |
 | prompts `uxd-writer`, `uxd-judge` (identity halves; the declared-standard pattern, §10.6) | `discovery/design/` | M1 | [x] |
-| prompts `sdd-writer`, `sdd-judge` (identity halves) | `delivery/sdd/` | M3 | [ ] |
+| prompts `sdd-writer`, `sdd-judge` (identity halves) | `delivery/sdd/` | M2 | [x] |
 | prompt `dev` (identity half — the largest upgrade; containment lines drop, they are mechanical) | `delivery/build/` | M3 | [ ] |
 | prompt `acceptance-oracle` (identity half) | `delivery/qa/` | M3 | [ ] |
 | `lib/workshop.ts` + `app/api/{chat,extract}/route.ts` — grows shape and the MVP line; the `Capture:` enumerations become generated mechanics | `discovery/workshop/` | M1 | [x] |
@@ -35,7 +35,7 @@ Check an item only when its eval is green in this repo. The v1 path is the sourc
 | The state machine and liveness | R9 | M2 | [x] |
 | Amend with blast radius | R4 | M1 | [x] |
 | Answers that write criteria | R3 | M1 | [x] |
-| Staleness as re-judge | R5 | M2 | [ ] |
+| Staleness as re-judge | R5 | M2 | [x] |
 | Ranked judges | R7 | M1 | [x] |
 | Setup with estimate, both halves | R1 | M1, M2 | [ ] |
 | Project repo at Discovery setup (create or attach; refusals) — new | R11, R14 | M1 | [x] |

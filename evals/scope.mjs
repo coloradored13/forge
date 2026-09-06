@@ -13,7 +13,7 @@
 import { join } from "node:path";
 import { existsSync, readFileSync } from "node:fs";
 import { suite, withRoot, scripted } from "./_harness.mjs";
-import { seedProject, seedPrototype, seedStories, seedDesign, DESIGN } from "./_fixture.mjs";
+import { seedProject, seedPrototype, seedStories, seedDesign, DESIGN, seedDelivery, BINDING } from "./_fixture.mjs";
 import { skeleton, validate, outputContract, fieldsOf, partialContract } from "../shared/schema/index.mjs";
 import { mechanics, namedFields } from "../shared/prompt/index.mjs";
 import { verify, stamp } from "../shared/hash.mjs";
@@ -25,6 +25,10 @@ import { repoBrief } from "../discovery/workshop/brief.mjs";
 import { Refused, readDoc, readVerdict, freshVerdict, staleness, DESIGN_FILE, HTML_FILE } from "../discovery/record/index.mjs";
 import { answer } from "../discovery/doors/index.mjs";
 import { write, review, signoff, checkDesign, GATE as DESIGN_GATE, REVIEW_GATE as DESIGN_REVIEW, ARITHMETIC as DESIGN_RULES } from "../discovery/design/index.mjs";
+import { intake } from "../delivery/intake/index.mjs";
+import { checkBinding, ARITHMETIC as SDD_RULES, UNTESTED, GATE as SDD_GATE } from "../delivery/sdd/index.mjs";
+import { identity } from "../shared/prompt/index.mjs";
+import { ROOT } from "./_harness.mjs";
 
 const { check, done } = suite("scope · R2 the line is a gate input, R12 shape before scope");
 
@@ -381,6 +385,77 @@ await withRoot({}, async (parent) => {
   check("a ruling after sign-off: the design wears the badge naming RUL-2 and stays signed — the signature is on this content; whether it needs redoing is the PM's call",
     moved.stale && moved.prd_moved && !moved.stories_moved && moved.since.join() === "RUL-2" && moved.signed === true, JSON.stringify(moved));
   check("every call went through the script and the ledger holds them all", readFileSync(ledgerPath(root), "utf8").trim().split("\n").length === 1 + 3 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1);
+});
+
+// ── R2 in Delivery: the binding is held to the signed design and the sliced work items ──
+// The arithmetic runs before any judge: every item bound once, every control the design's,
+// every criterion tested by its own item, the shared interfaces written once. A binding
+// that does not add up blocks with the line quoted and no model is asked (R1).
+await withRoot({}, async (tmp) => {
+  const { cold, handoff } = await seedDelivery(tmp);
+  const { record } = intake(cold, { now: new Date("2026-09-06T09:05:00Z") });
+  const design = handoff.design;
+  const clone = () => JSON.parse(JSON.stringify(BINDING));
+  const rules = (v) => [...new Set(v.findings.map((f) => f.rule))].sort().join();
+  const emitted = new Set();
+  const held = (doc) => { const v = checkBinding(record, design, doc); v.findings.forEach((f) => emitted.add(f.rule)); return v; };
+
+  const clean = held(clone());
+  check("a binding that adds up passes with nothing to say — three items and three work items checked, the gate named, the shape a verdict's",
+    clean.verdict === "pass" && clean.findings.length === 0 && clean.checked === 6 && clean.gate === SDD_GATE && validate("finding", clean).ok, JSON.stringify(clean.findings));
+
+  let doc = clone(); doc.items[0].controls.push({ screen_ref: "SCREEN-1", control: "submit" });
+  let v = held(doc);
+  check("a control the signed design does not carry blocks, naming the screen's controls so the writer can see the vocabulary",
+    v.verdict === "block" && rules(v) === "control-not-in-design" && /`reason-chip`, `record-exception`; `submit` is not among them/.test(v.findings[0].evidence), JSON.stringify(v.findings));
+  doc = clone(); doc.items[1].controls[0].screen_ref = "SCREEN-9";
+  check("a control on a screen the design does not have blocks the same way", rules(held(doc)) === "control-not-in-design");
+
+  doc = clone(); doc.items[0].tests.pop();
+  v = held(doc);
+  check("a criterion the item carries and no test proves blocks, quoting the criterion's statement",
+    v.verdict === "block" && rules(v) === "criterion-untested" && v.findings[0].subject === "REQ-1/AC-2" && /REQ-1\/AC-2: /.test(v.findings[0].evidence), JSON.stringify(v.findings));
+  doc = clone(); doc.items[1].tests[0].proves = ["REQ-1/AC-1"];
+  v = held(doc);
+  check("a test proving another item's criterion is a finding on the test and leaves its own criterion untested — two rules, both blocking",
+    v.verdict === "block" && rules(v) === "criterion-not-on-item,criterion-untested" && v.findings.find((f) => f.rule === "criterion-not-on-item").subject === "T-3", JSON.stringify(v.findings.map((f) => [f.rule, f.subject])));
+
+  doc = clone(); doc.items.pop();
+  v = held(doc);
+  check("a work item with no binding blocks — REQ-4, the requirement item with no screen, is still an item to bind",
+    v.verdict === "block" && rules(v) === "item-unbound" && v.findings[0].subject === "REQ-4");
+  doc = clone(); doc.items.push({ ...clone().items[1], work_item: "STORY-9", tests: [] });
+  check("an item the intake does not carry is unknown, and nothing under it is counted as bound", rules(held(doc)) === "item-unknown");
+  doc = clone(); doc.items.push(clone().items[1]);
+  v = held(doc);
+  check("the same work item bound twice is a finding, and its repeated test id is another", rules(v) === "item-bound-twice,test-id-duplicate" && v.findings.find((f) => f.rule === "test-id-duplicate").summary === "T-3 appears twice on STORY-2.");
+  doc = clone(); doc.items[1].tests[0].id = "T-1";
+  check("test ids are one namespace across the set", rules(held(doc)) === "test-id-duplicate" && /used by STORY-1 and STORY-2/.test(held(doc).findings[0].summary));
+  doc = clone(); doc.items[0].tests[0].scenario = "STORY-1/7";
+  check("a test naming a scenario the item does not run blocks; null is allowed (REQ-4's test carries none and passes)", rules(held(doc)) === "scenario-unknown" && clean.findings.length === 0);
+
+  doc = clone(); doc.items[1].interfaces[0].signature = "forShift(shift: Shift): Promise<Delivery[]>";
+  v = held(doc);
+  check("a shared interface written two ways blocks with both signatures quoted — the arithmetic compares them character for character",
+    v.verdict === "block" && rules(v) === "interface-disagrees" && /STORY-1: `forShift\(shift_id: string\): Delivery\[\]` · STORY-2: `forShift\(shift: Shift\)/.test(v.findings[0].evidence), v.findings[0]?.evidence);
+  doc = clone(); doc.items[0].interfaces[1].shared = false;
+  v = held(doc);
+  check("an interface two items name that one marks as its own advises, medium — it does not block, and the judge still runs",
+    v.verdict === "advise" && rules(v) === "interface-unshared" && v.findings[0].severity === "medium" && v.findings[0].subject === "STORY-1", JSON.stringify(v.findings));
+  doc = clone(); doc.items[2].interfaces[0].shared = true;
+  check("an interface marked shared that no other item names advises the other way", rules(held(doc)) === "interface-unshared" && /no other item names it/.test(held(doc).findings[0].summary));
+
+  v = held({ items: [], questions: [] });
+  check("an empty binding is every work item unbound — three findings, the work items still counted", v.findings.length === 3 && rules(v) === "item-unbound" && v.checked === 3);
+  check("every rule the arithmetic can emit is declared to the writer and the judge as arithmetic, and nothing declared is idle",
+    [...emitted].every((r) => SDD_RULES.includes(r)) && SDD_RULES.every((r) => emitted.has(r)), `emitted ${[...emitted].sort().join()} · declared ${[...SDD_RULES].sort().join()}`);
+
+  const judge = identity(join(ROOT, "delivery", "sdd", "prompts", "judge.md"));
+  check("R10: the judge's one falsification deferral is asked in the identity with the word the runner keys on — exactly one, never a finding, `beyond` = untested",
+    judge.includes(`\`beyond\` set to the word \`${UNTESTED}\``) && /Exactly one, in `deferred`/.test(judge) && /never a finding and it never blocks/.test(judge));
+  const writer = identity(join(ROOT, "delivery", "sdd", "prompts", "writer.md"));
+  check("the writer is told the arithmetic compares signatures verbatim and that the design is the whole control vocabulary",
+    /compares the signatures verbatim/.test(writer) && /The design is the whole vocabulary/.test(writer));
 });
 
 done();

@@ -4,15 +4,14 @@
 // it traces — with the rulings and amendments that moved it (R4). Also how the record
 // reads to an agent: one rendering per document, used by every prompt that shows it.
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { validate } from "../../shared/schema/index.mjs";
-import { stamp } from "../../shared/hash.mjs";
+import { join } from "node:path";
 import { verdictFreshness } from "../../shared/judge/index.mjs";
 import { Refused } from "../../shared/refused.mjs";
+import { readDoc, saveDoc, saveVerdict as file } from "../../shared/store.mjs";
+import { renderDesign } from "../../shared/handoff.mjs";
 import { PRD_FILE, loadPrd } from "../workshop/index.mjs";
 
-export { PRD_FILE, Refused };
+export { PRD_FILE, Refused, readDoc, saveDoc, renderDesign };
 export const PROTOTYPE_FILE = join("discovery", "prototype.json");
 export const HTML_FILE = join("discovery", "prototype", "index.html");
 export const STORIES_FILE = join("discovery", "stories.json");
@@ -21,30 +20,9 @@ export const REVIEWS = join("discovery", "reviews");
 
 // ── documents ──
 
-export function readDoc(root, file) {
-  const p = join(root, file);
-  return existsSync(p) ? JSON.parse(readFileSync(p, "utf8")) : null;
-}
-
-/** Stamp, validate, write. An invalid document is never written — the refusal names the fields. */
-export function saveDoc(root, file, schema, doc) {
-  stamp(doc);
-  const v = validate(schema, doc);
-  if (!v.ok) throw new Refused(`${schema}-invalid`, `${file}: the document does not fit its schema — ${v.errors.slice(0, 5).join("; ")}`, v.errors);
-  const p = join(root, file);
-  mkdirSync(dirname(p), { recursive: true });
-  writeFileSync(p, JSON.stringify(doc, null, 2) + "\n");
-  return doc;
-}
-
 /** A gate's verdict, filed under its gate id (or a name under it). Validated: a verdict that does not fit the shape is not a verdict. */
 export function saveVerdict(root, verdict, name = verdict?.gate) {
-  const v = validate("finding", verdict);
-  if (!v.ok) throw new Refused("verdict-invalid", `${verdict?.gate}: the verdict does not validate — ${v.errors.slice(0, 5).join("; ")}`, v.errors);
-  const p = join(root, REVIEWS, `${name}.json`);
-  mkdirSync(dirname(p), { recursive: true });
-  writeFileSync(p, JSON.stringify(verdict, null, 2) + "\n");
-  return p;
+  return join(root, file(root, join(REVIEWS, `${name}.json`), verdict));
 }
 
 export function readVerdict(root, gate) {
@@ -190,16 +168,3 @@ export function renderStandard(std) {
 }
 
 /** The design as a reviewer or a later stage reads it: tokens, the stylesheet, then each screen whole. */
-export function renderDesign(doc) {
-  const tokens = Object.entries(doc.tokens ?? {}).map(([k, v]) => `- ${k}: ${v}`).join("\n") || "(none)";
-  const screens = (doc.screens ?? []).map((s) => [
-    `### ${s.screen_ref} — ${s.name}`,
-    `Read: ${s.moment}`,
-    `Structure:\n${s.structure}`,
-    `States:\n${(s.states ?? []).map((st) => `- **${st.name}**${st.entered_by ? ` (${st.entered_by})` : ""}: ${st.renders}`).join("\n")}`,
-    `Controls:\n${(s.controls ?? []).map((c) => `- \`${c.id}\` ${c.kind} "${c.label}"${c.state ? ` in ${c.state}` : ""}`).join("\n") || "(none)"}`,
-  ].join("\n\n")).join("\n\n");
-  const parts = [`Tokens:\n${tokens}`, `Stylesheet:\n\`\`\`css\n${String(doc.stylesheet ?? "").trim()}\n\`\`\``, screens || "(no screens)"];
-  if (doc.notes?.trim()) parts.push(`Writer's notes: ${doc.notes.trim()}`);
-  return parts.join("\n\n");
-}

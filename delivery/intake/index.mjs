@@ -7,11 +7,12 @@
 // against a budget (R13). Nothing is resolved here. Drift is reported and the door is the
 // PM's: proceed on the pin, or adopt the newer snapshot. No model is called.
 
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { Refused } from "../../shared/refused.mjs";
 import { validate } from "../../shared/schema/index.mjs";
-import { canonicalize, resolve, stamp } from "../../shared/hash.mjs";
+import { canonicalize, resolve } from "../../shared/hash.mjs";
+import { saveDoc, saveVerdict } from "../../shared/store.mjs";
 import { KINDS, itemFields, itemsOf, verifyHandoff, latestHandoff } from "../../shared/handoff.mjs";
 import { deriveVerdict, rank } from "../../shared/judge/verdict.mjs";
 import { record as signal, funnelPath } from "../../shared/funnel.mjs";
@@ -27,15 +28,12 @@ export const QUESTION_BUDGET = 2;
 const iso = (d) => (d instanceof Date ? d : new Date(d ?? Date.now())).toISOString();
 
 /**
- * Take the pinned handoff. Refuses, in order: no run; the pinned file gone; a file that
- * is not a handoff; a handoff that is not the one pinned (an edit that re-hashed itself
- * — the pin is the run's word on what it took); one whose items no longer verify.
- * Then writes the record and files the verdict where the machine's finish door reads it.
- * @returns { record, verdict: path, file: path }
+ * The handoff a run pinned, verified — the one Discovery artifact any Delivery stage reads.
+ * Refuses, in order: the pinned file gone; a file that is not a handoff; a handoff that is
+ * not the one pinned (an edit that re-hashed itself — the pin is the run's word on what it
+ * took); one whose items no longer verify.
  */
-export function intake(root, { now } = {}) {
-  const run = readRun(root);
-  if (!run) throw new Refused("no-run", `${root} has no run — set Delivery up first; intake takes the handoff the run pinned`);
+export function takePinned(root, run) {
   const pin = run.handoff;
   const file = join(root, pin.path);
   if (!existsSync(file)) throw new Refused("no-handoff", `${pin.path} is not here — the run pinned a snapshot the repository does not hold`);
@@ -48,6 +46,19 @@ export function intake(root, { now } = {}) {
   }
   const integrity = verifyHandoff(handoff);
   if (integrity.verdict === "block") throw new Refused("handoff-integrity", `${pin.path} does not verify: ${integrity.findings.map((f) => `${f.subject} ${f.rule}`).join(", ")} — a snapshot is never edited; re-export`, integrity);
+  return handoff;
+}
+
+/**
+ * Take the pinned handoff (refusing as `takePinned` does, after `no-run`), then write the
+ * record and file the verdict where the machine's finish door reads it.
+ * @returns { record, verdict: path, file: path }
+ */
+export function intake(root, { now } = {}) {
+  const run = readRun(root);
+  if (!run) throw new Refused("no-run", `${root} has no run — set Delivery up first; intake takes the handoff the run pinned`);
+  const pin = run.handoff;
+  const handoff = takePinned(root, run);
 
   const latest = latestHandoff(root);
   const moved = drift(handoff, latest);
@@ -75,7 +86,7 @@ export function intake(root, { now } = {}) {
     checked: itemsOf(handoff).length + compiled.scenarios.length, skipped: 0,
     judged: [{ id: `handoff-v${handoff.version}`, path: pin.path, content_hash: handoff.meta.content_hash }],
   };
-  const record = stamp({
+  const record = {
     id: `intake-${run.id}`, meta: {}, handoff: { ...pin }, taken_at: iso(now),
     drift: moved,
     existing: {
@@ -86,18 +97,10 @@ export function intake(root, { now } = {}) {
     },
     scenarios: compiled.scenarios, work_items, questions: asked.questions, budget: asked.budget,
     "x-drift-checked": ["/handoff", "/scenarios", "/work_items", "/questions"],
-  });
-  const fit = validate("intake", record);
-  if (!fit.ok) throw new Refused("intake-invalid", `${INTAKE_FILE}: the record does not fit its schema — ${fit.errors.slice(0, 5).join("; ")}`, fit.errors);
-  write(join(root, VERDICT_FILE), verdict);
-  write(join(root, INTAKE_FILE), record);
+  };
+  saveDoc(root, INTAKE_FILE, "intake", record);
+  saveVerdict(root, VERDICT_FILE, verdict);
   return { record, verdict: VERDICT_FILE, file: INTAKE_FILE };
-}
-
-function write(path, doc) {
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(`${path}.tmp`, JSON.stringify(doc, null, 2) + "\n");
-  renameSync(`${path}.tmp`, path);
 }
 
 const short = (v) => { const s = typeof v === "string" ? v : JSON.stringify(v); return s.length > 60 ? `${s.slice(0, 57)}…` : s; };

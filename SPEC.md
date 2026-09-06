@@ -150,7 +150,7 @@ The original intent. Four artifacts a PM signs, then a door.
 
 **The loop is the PM.** Generate → review (ranked findings and deferrals) → the PM acts: **accept** · **edit** · **answer** (ruling → criterion) · **amend** (edit + blast radius) · **defer** · **refine** (regenerate with the PM's notes — cost shown first). Nothing regenerates without a human trigger. When the PRD moves, downstream artifacts wear a stale badge with the diff; the PM refreshes what matters.
 
-**Trackers.** Every export writes the handoff and a rendering a team reads; a tracker is optional. GitHub Issues (the project's own repository, through the `gh` the PM already has): requirements → issues, stories → issues under them. Jira: crux and objective → a Jira Product Discovery idea with the PRD attached; requirements → epics; stories → stories under their epics. REQ-n / AC-n / SCREEN-n ride as labels, so every issue links to its PRD section. A tracker is a projection of the handoff with the same IDs — never a chain link.
+**Trackers.** Every export writes the handoff and a rendering a team reads; a tracker is optional. GitHub Issues (the project's repository, via the PM's `gh`): requirements → issues, stories → issues under them. Jira: crux and objective → a Jira Product Discovery idea with the PRD attached; requirements → epics; stories → stories under their epics. REQ-n / AC-n / SCREEN-n ride as labels, so every issue links to its PRD section. A tracker is a projection of the handoff with the same IDs — never a chain link.
 
 ## §5 Delivery
 
@@ -161,14 +161,14 @@ Forge proper. Starts from a snapshot, ends with a product that carries its proof
 | Stage | Owns | The judge asks | Arithmetic |
 |---|---|---|---|
 | intake | Validating the handoff (schema, version, hashes); the drift diff; compiling stories to executable scenarios with step skeletons; slicing work items; precision questions back — the one door across the seam. | — | Joins re-run; drift reported per ID; questions per story within budget (R13); prior manifest loads in brownfield |
-| sdd | Binding the signed design and the scenarios to tests and interfaces per work item, before code. sdd never invents an interface. | Does each test prove something? Do the interfaces agree across items? | Controls ⊂ design; tests ↔ criteria; shared interfaces verbatim, each writer verifying a neighbour's (peer ring) |
+| sdd | Binding the signed design and the scenarios to tests and interfaces per work item, before code. sdd never invents an interface. | Does each test prove something? Are the interfaces derived, not invented? What one failure class does nothing here test? | Controls ⊂ design; tests ↔ criteria; shared interfaces verbatim, each writer verifying a neighbour's (peer ring) |
 | build | The code, contained per work item, accounted from base. | No judge — QA is the judge. | Containment; change set from base; manifest currency for $0 reuse |
 | qa | The proof: per-criterion verdicts from executed output; browser evidence against the signed design for surface criteria. | Is each criterion discharged by executed output? | Prior manifest's tests still pass |
 | release | The provenance manifest committed into the project repo with a vendored verifier: criteria → tests → commits → work items → design → stories → requirements → contract → PRD, plus verdicts, advisories, deferrals, drift, cost, argv. | — | `verify` passes in a fresh clone |
 
 **The loop, per stage.** Writer → judge → door. Doors: **approve** (fresh, non-block verdict) · **ask** (across the seam) · **defer** · **escalate** (buy a round, reason required) · **reopen** · **stop**. No *amend* — Delivery cannot change the PRD (R5, R6).
 
-**Stage state — one machine.** `pending → running → review → approved`; `review → blocked` when a block meets the cap; `approved → stale → rejudging → {approved | review}` when the handoff moves; any → `stopped`. The wrapper heartbeats; a running stage silent past the liveness window is `dead`, and the console says so in that word. One table, every door reads it, the eval is exhaustive over it.
+**Stage state — one machine.** `pending → running → review → approved`; `review → blocked` when a block meets the cap; `approved → stale → rejudging → {approved | review}` when the handoff moves; any → `stopped`. The wrapper heartbeats; a running stage silent past the liveness window is `dead`, and the console says so in that word. One table; every door reads it; the eval is exhaustive.
 
 ## §6 Shared
 
@@ -177,7 +177,7 @@ What both halves stand on, and nothing else.
 - **Schema** — the single home for PRD, contract, story, design, handoff, run, finding, manifest (R10).
 - **Agent call** — the only place a model is invoked: model per role from one config, metering, budget check, usage-pause (R1).
 - **Judge runner** — ranked, scoped output; verdict derivation; hash-pinned freshness (R7).
-- **Prompts** — two halves per agent. *Identity* is authored: role, craft floor, declared standard, what is not a finding. *Mechanics* are generated from schema, rule registry, and run config: output contract, severity, rulings, MVP line. One authoring surface; no `_shared.md` (R10). v1 was ~1:1 expertise-to-process; the defect was three surfaces, not the ratio.
+- **Prompts** — two halves per agent. *Identity* is authored: role, craft floor, declared standard, what is not a finding. *Mechanics* are generated from schema, rule registry, and run config: output contract, severity, rulings, MVP line. One authoring surface; no `_shared.md` (R10). v1's defect was three surfaces, not its ~1:1 ratio.
 - **Console** — six views: setup · workshop · discovery board (artifacts, reviews, doors, staleness, cost) · export · delivery run (state, liveness, cost, round n of cap, findings, funnel) · release. Anything else is cut.
 - **Evals, ten** — `transition-table` (R9) · `economics` (R1, R6, R7) · `seam` (R14) · `scope` (R2) · `rulings` (R3) · `amendment-audit` (R4) · `rejudge` (R5) · `funnel` (R8, R13) · `coherence` (R10; absorbs v1's prompts, schema-coverage, module-graph) · `provenance` (R11; the manifest verifier). Temp roots and seeded fixtures only (R15).
 
