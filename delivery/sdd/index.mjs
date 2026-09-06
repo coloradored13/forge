@@ -2,8 +2,8 @@
 // the signed design and returns, per item, how it is built, the interfaces it exposes,
 // the tests that prove each criterion by id and the design controls it wires by id —
 // before any code. The runner holds the set to the arithmetic SPEC §5 names (controls ⊂
-// design; tests ↔ criteria; shared interfaces verbatim) and files that verdict without a
-// model when it blocks; otherwise one judge per item asks what only judgement answers,
+// design; tests ↔ criteria; shared interfaces verbatim; a blocking question blocks) and
+// files that verdict without a model when it blocks; otherwise one judge per item asks what only judgement answers,
 // including the one question that never blocks: what failure class nothing here tests
 // (R2 — it rides in `deferred`, never a finding). sdd never invents an interface, and it
 // never decides a question the snapshot still carries: the question crosses as a question.
@@ -13,7 +13,7 @@ import { fileURLToPath } from "node:url";
 import { outputContract, validateAgainst } from "../../shared/schema/index.mjs";
 import { identity, mechanics, assemble, evidence } from "../../shared/prompt/index.mjs";
 import { call } from "../../shared/agent-call/index.mjs";
-import { runPerItemJudge, deriveVerdict, rank, pin, renderFindingsForAgent } from "../../shared/judge/index.mjs";
+import { runPerItemJudge, deriveVerdict, rank, pin, fit, renderFindingsForAgent } from "../../shared/judge/index.mjs";
 import { scopeOf } from "../../shared/scope.mjs";
 import { renderDesign } from "../../shared/handoff.mjs";
 import { readDoc, saveDoc, saveVerdict } from "../../shared/store.mjs";
@@ -26,7 +26,7 @@ export const GATE = "sdd";
 export const SDD_FILE = join("forge", "delivery", "sdd.json");
 export const VERDICT_FILE = join("forge", "delivery", "reviews", "sdd.json");
 /** Checked mechanically, never the judge's to report (R10). */
-export const ARITHMETIC = ["item-unbound", "item-bound-twice", "item-unknown", "control-not-in-design", "criterion-untested", "criterion-not-on-item", "scenario-unknown", "test-id-duplicate", "interface-disagrees", "interface-unshared"];
+export const ARITHMETIC = ["item-unbound", "item-bound-twice", "item-unknown", "control-not-in-design", "criterion-untested", "criterion-not-on-item", "scenario-unknown", "test-id-duplicate", "interface-disagrees", "interface-unshared", "question"];
 /** The `beyond` a judge writes on the one failure class nothing tests — fixed, so release can list them apart from scope deferrals. */
 export const UNTESTED = "untested";
 const WRITES = new Set(["Write", "Edit", "Bash", "NotebookEdit"]);
@@ -187,11 +187,19 @@ function renderExisting(ex) {
  * the intake does not carry; every control the design's, on its screen; every criterion
  * on the item proved by a test and no test proving a criterion the item does not carry;
  * every scenario named one the item runs; test ids unique across the set; an interface
- * two items name written the same way by both, and marked shared by both.
+ * two items name written the same way by both, and marked shared by both. And the
+ * binding's own questions: one the writer marked blocking blocks the stage — a human
+ * answers it in Discovery or overrides on the record; the writer cannot — and one it did
+ * not advises, so it crosses as a question and never as a decision.
  */
 export function checkBinding(intake, design, doc) {
   const findings = [];
   const f = (severity, rule, subject, summary, evidence, remedy) => findings.push({ severity, confidence: "certain", rule, subject, summary, evidence, remedy });
+  for (const q of doc.questions ?? []) {
+    const subject = q.subject ?? "binding";
+    if (q.blocking) f("high", "question", subject, fit(`A blocking question on the binding: ${q.question}`), `\`/questions\` · subject ${q.subject ?? "—"} · blocking · ${q.question}`, "Answer it in Discovery and adopt the re-export, or override with the reason on record — the writer asked because it could not decide without guessing.");
+    else findings.push({ severity: "low", confidence: "likely", rule: "question", subject, summary: fit(`A question on the binding: ${q.question}`), evidence: `\`/questions\` · subject ${q.subject ?? "—"} · ${q.question}`, remedy: "Carry it, or answer it in Discovery — the build reads it as a question, not a decision." });
+  }
   const work = new Map((intake.work_items ?? []).map((w) => [w.id, w]));
   const screens = new Map((design.screens ?? []).map((s) => [s.screen_ref, new Set((s.controls ?? []).map((c) => c.id))]));
   const bound = new Map();
@@ -242,5 +250,5 @@ export function checkBinding(intake, design, doc) {
       if (uses.length === 1 && u.shared) f("medium", "interface-unshared", u.item, `${u.item} marks \`${name}\` shared; no other item names it.`, `\`/items\` ${u.item} interfaces \`${name}\` shared: true; no other item's interfaces holds \`${name}\`.`, "Shared means another item names it — mark it the item's own, or name it there.");
     }
   }
-  return { gate: GATE, verdict: deriveVerdict(findings), findings, deferred: [], checked: (doc.items ?? []).length + work.size, skipped: 0 };
+  return { gate: GATE, verdict: deriveVerdict(findings), findings, deferred: [], checked: (doc.items ?? []).length + work.size + (doc.questions ?? []).length, skipped: 0 };
 }
