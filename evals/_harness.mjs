@@ -33,7 +33,9 @@ export function suite(name, expected) {
       console.log(`        ${D}${ran < expected ? `${expected - ran} never ran — a dropped await is discarded by process.exit, a throw stops the file` : `${ran - expected} more than declared — update the count deliberately`}${X}`);
       fail++;
     }
-    console.log(`\n  ${fail ? R : G}${pass}/${ran} passed${X}\n`);
+    // Against what the suite declares, never against what it happened to run — a tally
+    // whose denominator is its own numerator is the defect this guard exists to catch.
+    console.log(`\n  ${fail ? R : G}${pass}/${expected} passed${X}\n`);
     process.exit(fail ? 1 : 0);
   };
   return { check, done };
