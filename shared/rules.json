@@ -5,7 +5,7 @@
     { "id": "R2",  "half": "both",      "statement": "Scope is a gate input.",                                             "enforcer": "compiler · judge output deferred[]",          "eval": "scope" },
     { "id": "R3",  "half": "discovery", "statement": "Rulings are spec.",                                                  "enforcer": "the answer door",                            "eval": "rulings" },
     { "id": "R4",  "half": "discovery", "statement": "Amendments are audited at mint.",                                    "enforcer": "the amend door · drift undeclared-vocabulary", "eval": "amendment-audit" },
-    { "id": "R5",  "half": "delivery",  "statement": "Staleness triggers a re-judge, not a regeneration.",                 "enforcer": "stale → rejudging → {approved | review}",    "eval": "rejudge" },
+    { "id": "R5",  "half": "delivery",  "statement": "Staleness triggers a re-judge, not a regeneration.",                 "enforcer": "stale → rejudging → {approved | review} · keyed items", "eval": "rejudge" },
     { "id": "R6",  "half": "delivery",  "statement": "Rounds are capped and the cap is a door.",                           "enforcer": "transition table · escalate",                "eval": "economics" },
     { "id": "R7",  "half": "both",      "statement": "Reviewers and judges rank; the PM disposes.",                        "enforcer": "rank · finding schema",                      "eval": "economics" },
     { "id": "R8",  "half": "both",      "statement": "The funnel narrows, and the seam is where it is measured.",          "enforcer": "run record origin · funnel meter",           "eval": "funnel" },
