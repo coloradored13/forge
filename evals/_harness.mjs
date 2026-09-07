@@ -10,7 +10,15 @@ import { fileURLToPath } from "node:url";
 export const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const G = "\x1b[32m", R = "\x1b[31m", D = "\x1b[90m", X = "\x1b[0m";
 
-export function suite(name) {
+/**
+ * A suite, and the number of checks it must run. `expected` is the denominator: without
+ * one a count says what ran, never what exists, and the two part silently. `done()` calls
+ * `process.exit`, so an async section still pending is discarded with no throw and no
+ * warning — one dropped `await` turned a 70-check suite into a green `50/50`. A suite
+ * that reaches `done()` having run any other number fails, whatever its checks said.
+ */
+export function suite(name, expected) {
+  if (!Number.isInteger(expected) || expected < 1) throw new Error(`suite(${name}): an expected check count is required — a count with no denominator reports what ran, not what exists`);
   let pass = 0, fail = 0;
   console.log(`\n  ${D}${name}${X}\n`);
   const check = (label, ok, detail = "") => {
@@ -19,7 +27,15 @@ export function suite(name) {
     ok ? pass++ : fail++;
   };
   const done = () => {
-    console.log(`\n  ${fail ? R : G}${pass}/${pass + fail} passed${X}\n`);
+    const ran = pass + fail;
+    if (ran !== expected) {
+      console.log(`  ${R}FAIL${X}  the suite ran ${ran} checks, not the ${expected} it declares`);
+      console.log(`        ${D}${ran < expected ? `${expected - ran} never ran — a dropped await is discarded by process.exit, a throw stops the file` : `${ran - expected} more than declared — update the count deliberately`}${X}`);
+      fail++;
+    }
+    // Against what the suite declares, never against what it happened to run — a tally
+    // whose denominator is its own numerator is the defect this guard exists to catch.
+    console.log(`\n  ${fail ? R : G}${pass}/${expected} passed${X}\n`);
     process.exit(fail ? 1 : 0);
   };
   return { check, done };

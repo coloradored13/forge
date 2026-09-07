@@ -24,7 +24,7 @@ import { readDoc } from "../shared/store.mjs";
 import { seedDelivery, seedStories, reexport, BINDING, STORIES, seedBuild, builder, roundCtx, put, gitIn, BUILT, CLEAN } from "./_fixture.mjs";
 import { answer } from "../discovery/doors/index.mjs";
 
-const { check, done } = suite("rejudge · verdict freshness");
+const { check, done } = suite("rejudge · verdict freshness", 41);
 
 const story = (id, statement) => stamp({ id, statement, "x-drift-checked": ["/statement"] });
 

@@ -16,7 +16,7 @@ import { setupProject } from "../discovery/setup/index.mjs";
 import { openPrd, systemFor, turn } from "../discovery/workshop/index.mjs";
 import { evidence } from "../shared/prompt/index.mjs";
 
-const { check, done } = suite("provenance · hash chain, brownfield brief");
+const { check, done } = suite("provenance · hash chain, brownfield brief", 36);
 const eqList = (a, b) => JSON.stringify([...a].sort()) === JSON.stringify([...b].sort());
 
 // ── canonical form ──

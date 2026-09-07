@@ -23,7 +23,7 @@ import {
   createRun, readRun, apply, transition, heartbeat, liveness, view, adoptHandoff,
 } from "../delivery/state/index.mjs";
 
-const { check, done } = suite("transition-table · one state machine, one store, one reader");
+const { check, done } = suite("transition-table · one state machine, one store, one reader", 93);
 
 const T0 = new Date("2026-09-05T12:00:00Z");
 const at = (ms) => new Date(T0.getTime() + ms);
