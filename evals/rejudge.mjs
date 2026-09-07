@@ -13,6 +13,7 @@ import { join as pathJoin } from "node:path";
 import { join } from "node:path";
 import { suite, withRoot, scripted } from "./_harness.mjs";
 import { pin, verdictFreshness } from "../shared/judge/index.mjs";
+import { validate, outputContract } from "../shared/schema/index.mjs";
 import { stamp } from "../shared/hash.mjs";
 import { apply, DEFAULTS, readRun, adoptHandoff, rounds, LEDGER } from "../delivery/state/index.mjs";
 import { rows } from "../shared/agent-call/index.mjs";
@@ -107,12 +108,14 @@ await withRoot({}, async (tmp) => {
   const events = [];
   const rejudged = await advance(cold, { _query: re.query, _now: clock, onEvent: (e) => events.push(e) });
   const sdd2 = readDoc(cold, SDD_VERDICT);
-  check("R5: stale re-judges — intake recompiles, the standing binding is judged again against v2 by three judges and no writer; both clear back to approved at round 0",
-    rejudged.stages.map((r) => `${r.stage}:${r.status}:${r.round}`).join() === "intake:approved:0,sdd:approved:0" && re.calls.length === 3 && rows(join(cold, LEDGER)).filter((r) => r.stage === "sdd").map((r) => r.role).join() === "writer,judge,judge,judge,judge,judge,judge", `${JSON.stringify(rejudged.stages.map((r) => [r.stage, r.status, r.round]))} · calls ${re.calls.length}`);
-  check("the binding was not regenerated — the same document, still traced to v1 — and the new verdict pins v2 and the recompiled intake record",
-    loadSdd(cold).traces.handoff.version === 1 && loadSdd(cold).meta.content_hash === sdd1.judged[2].content_hash && sdd2.judged[0].id === "handoff-v2" && sdd2.judged[1].content_hash !== sdd1.judged[1].content_hash && sdd2.judged[2].content_hash === sdd1.judged[2].content_hash, JSON.stringify(sdd2.judged));
-  check("the re-judge's judge saw the reworded story", /plan the dock before the first truck/.test(re.calls[1].prompt), re.calls[1].prompt.slice(0, 200));
-  check("the wrapper said what happened: cleared, twice", events.filter((e) => /re-judged: clear/.test(e)).join() === "intake re-judged: clear,sdd re-judged: clear", events.join(" | "));
+  check("R5 · #44: stale re-judges — intake recompiles; of the standing binding's three items only STORY-2's input moved, so one judge is called and STORY-1 and REQ-4 stand on their round-1 judgement at $0 — the verdict reports the same coverage as a fresh one — no writer; both stages clear back to approved at round 0",
+    rejudged.stages.map((r) => `${r.stage}:${r.status}:${r.round}`).join() === "intake:approved:0,sdd:approved:0" && re.calls.length === 1 && rows(join(cold, LEDGER)).filter((r) => r.stage === "sdd").map((r) => r.role).join() === "writer,judge,judge,judge,judge" && sdd2.items.map((i) => `${i.id}:${i.stands ? "stands" : "judged"}`).join() === "STORY-1:stands,STORY-2:judged,REQ-4:stands" && sdd2.checked === sdd1.checked && sdd2.cost.usd === 0.05, `${JSON.stringify(rejudged.stages.map((r) => [r.stage, r.status, r.round]))} · calls ${re.calls.length} · ${JSON.stringify(sdd2.items?.map((i) => [i.id, i.stands]))} · ${JSON.stringify(sdd2.cost)}`);
+  check("what stands is on the record: each item's key is the hash of what its judge was given — model, system, input; the standing entries carry the key and verdict the round-1 verdict filed, the re-judged item's key moved, and the verdict still fits the contract",
+    sdd1.items?.length === 3 && sdd1.items.every((i) => /^[0-9a-f]{64}$/.test(i.key) && i.stands === undefined && i.verdict === "pass") && ["STORY-1", "REQ-4"].every((id) => sdd2.items.find((i) => i.id === id).key === sdd1.items.find((i) => i.id === id).key) && sdd2.items.find((i) => i.id === "STORY-2").key !== sdd1.items.find((i) => i.id === "STORY-2").key && validate("finding", sdd2).ok && validate("finding", sdd1).ok, JSON.stringify({ one: sdd1.items?.map((i) => [i.id, i.key?.slice(0, 8), i.stands]), two: sdd2.items?.map((i) => [i.id, i.key?.slice(0, 8), i.stands]), fit: validate("finding", sdd2) }));
+  check("the model's contract does not carry the runner's items — a judge cannot claim its own carry", !("items" in (outputContract("finding").properties ?? {})));
+  check("the re-judge's one judge saw the reworded story", /plan the dock before the first truck/.test(re.calls[0].prompt), re.calls[0].prompt.slice(0, 200));
+  check("the wrapper said what happened: cleared, twice — and which items stood",
+    events.filter((e) => /re-judged: clear/.test(e)).join() === "intake re-judged: clear,sdd re-judged: clear" && events.filter((e) => /stands/.test(e)).join(" | ") === "sdd STORY-1 stands — input unchanged since it was judged, $0 | sdd REQ-4 stands — input unchanged since it was judged, $0", events.join(" | "));
   // A re-judge files a verdict too, and overwrites the last one on the same path — so it is kept the same way,
   // at round 0 (R5: not a round), beside the binding it judged again (R8).
   const kept = rounds(cold, "sdd");
@@ -211,8 +214,8 @@ await withRoot({}, async (tmp) => {
   const redo = scripted({ structuredSeq: [{ items: moved.items, questions: moved.questions }, CLEAN("STORY-1"), CLEAN("STORY-2"), CLEAN("REQ-4")] });
   const reopenedSdd = await reopen(cold, { stage: "sdd", by: "Brad", reason: "the run sheet is keyed by delivery id — the binding must say so before build reads it", _query: redo.query });
   const afterReopen = readRun(cold);
-  check("reopen redoes sdd through the door: the binding on disk is the redo's, approved at round 1 of a new episode; build went stale by the reopen — one moved flag naming it — while qa and release stayed pending",
-    reopenedSdd.status === "approved" && reopenedSdd.round === 1 && redo.calls.length === 4 && /keyed by delivery id/.test(loadSdd(cold).items[1].approach) && afterReopen.stages.build.status === "stale" && afterReopen.stages.build.round === 0 && afterReopen.stages.qa.status === "pending" && afterReopen.stages.release.status === "pending" && afterReopen.flags.filter((f) => f.event === "moved").length === 1 && afterReopen.flags.find((f) => f.event === "moved").stage === "build" && /sdd reopened: the run sheet is keyed by delivery id/.test(afterReopen.flags.find((f) => f.event === "moved").reason) && afterReopen.flags.filter((f) => f.event === "reopen").length === 1, JSON.stringify({ sdd: [reopenedSdd.status, reopenedSdd.round], build: afterReopen.stages.build.status, flags: afterReopen.flags.map((f) => `${f.stage}:${f.event}:${f.reason}`) }));
+  check("reopen redoes sdd through the door: the binding on disk is the redo's, approved at round 1 of a new episode — one writer, one judge for the item the redo moved, the other two standing; build went stale by the reopen — one moved flag naming it — while qa and release stayed pending",
+    reopenedSdd.status === "approved" && reopenedSdd.round === 1 && redo.calls.length === 2 && readDoc(cold, SDD_VERDICT).items.map((i) => `${i.id}:${i.stands ? "stands" : "judged"}`).join() === "STORY-1:stands,STORY-2:judged,REQ-4:stands" && /keyed by delivery id/.test(loadSdd(cold).items[1].approach) && afterReopen.stages.build.status === "stale" && afterReopen.stages.build.round === 0 && afterReopen.stages.qa.status === "pending" && afterReopen.stages.release.status === "pending" && afterReopen.flags.filter((f) => f.event === "moved").length === 1 && afterReopen.flags.find((f) => f.event === "moved").stage === "build" && /sdd reopened: the run sheet is keyed by delivery id/.test(afterReopen.flags.find((f) => f.event === "moved").reason) && afterReopen.flags.filter((f) => f.event === "reopen").length === 1, JSON.stringify({ sdd: [reopenedSdd.status, reopenedSdd.round], build: afterReopen.stages.build.status, flags: afterReopen.flags.map((f) => `${f.stage}:${f.event}:${f.reason}`) }));
   const events = [];
   const again = builder([BUILT("Run sheet rebuilt.")], { 0: (cwd) => put(cwd, "src/deliveries/store.js", "b2") });
   const r2 = await runStage(cold, { stage: "build", _query: again.query, onEvent: (e) => events.push(e) });

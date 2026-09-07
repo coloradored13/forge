@@ -80,8 +80,8 @@ A proposal computes its blast radius — every criterion, story, and screen that
 *evidence* AMD-7 unaudited → AMD-11..13; AMD-17..23 → AMD-24..26. *enforcer* the `amend` door · drift `undeclared-vocabulary` · eval `amendment-audit`
 
 **R5 · Staleness triggers a re-judge, not a regeneration.** `delivery`
-When the handoff moves, each downstream stage is re-judged; the writer runs only if the re-judge blocks. Pin refreshes never count as rounds.
-*evidence* prototype rounds 5–8: four rounds of zero product value. *enforcer* `stale → rejudging → {approved | review}` · eval `rejudge`
+When the handoff moves, each downstream stage is re-judged per item; an item whose judge input is unchanged is not asked again. The writer runs only if the re-judge blocks; pin refreshes never count as rounds.
+*evidence* prototype rounds 5–8: zero product value. *enforcer* `stale → rejudging → {approved | review}` · keyed `items` · eval `rejudge`
 
 **R6 · Rounds are capped and the cap is a door.** `delivery`
 Default 2 judged rounds per stage, ceiling 3. At the cap an advise proceeds with its findings as advisories on the manifest; a block at the cap is the human's call — accept on the record, or buy a round with a reason. Discovery has no automatic rounds to cap.
@@ -226,11 +226,11 @@ The pipeline's disease was a loop with no cost function. The rebuild gets one.
 
 ## §9 Milestones
 
-Done-bars, not phases. Every bar is a claim about the pipeline; Bakehouse only exercises it. Discovery ships first — the original intent.
+Done-bars, not phases. Every bar is a claim about the pipeline; Bakehouse only exercises it. Discovery ships first.
 
 - **M0 · Spec approved; repo seeded.** SPEC.md with the rules as R-numbers; §7 as the port checklist; three directories and the import rule on day one.
-- **M1 · Discovery produces a backlog a team could take today** *(the original intent)*. Workshop → PRD → prototype → stories → design → a handoff snapshot with a tracker projection, with cost shown per artifact and per run and the model chosen per role. Test case: Bakehouse.
-- **M2 · Delivery core on fixtures.** State machine, doors, cap, re-judge, metering; a cold intake from a handoff in a temp root with Discovery absent, drift reported against a seeded edit. Judges stubbed — no model calls.
+- **M1 · Discovery produces a backlog a team could take today.** Workshop → PRD → prototype → stories → design → a handoff snapshot with a tracker projection, with cost shown per artifact and per run and the model chosen per role. Test case: Bakehouse.
+- **M2 · Delivery core on fixtures.** State machine, doors, cap, re-judge, metering; a cold intake from a handoff in a temp root with Discovery absent, drift reported against a seeded edit. Judges stubbed.
 - **M3 · Delivery ships a product that carries its proof** *(the exhibit)*. From the M1 handoff: ≤ 2 rounds per stage on average, ≤ 3 hours of compute, a product matching the signed design, the manifest verified in a fresh clone, cost known, zero Delivery-origin amendments or each a logged gate-miss. Cap, liveness calibrated here. Test case: the Bakehouse MVP.
 - **M4 · The pipeline runs against its own output.** A delta PRD against the M3 manifest; prior criteria pass as regression; the manifest extends. Test case: one deferred Bakehouse surface.
 - **M5 · Forge builds Forge.** One v2 feature through both halves. Optional, if M4 is clean.
