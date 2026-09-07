@@ -500,8 +500,8 @@ await withRoot({}, async (tmp) => {
     v.verdict === "block" && rules(v) === "control-unbound" && v.findings[0].subject === "STORY-1" && /`delivery-row` on SCREEN-2/.test(v.findings[0].summary) && /SCREEN-2 is run on by STORY-2/.test(v.findings[0].evidence) && dependenciesOf(doc, record).unowned.map((u) => `${u.item}:${u.screen_ref}/${u.control}`).join() === "STORY-1:SCREEN-2/delivery-row", JSON.stringify(v.findings));
   doc = clone(); doc.items[0].controls.push({ screen_ref: "SCREEN-2", control: "delivery-row" }); doc.items[1].controls.push({ screen_ref: "SCREEN-1", control: "record-exception" });
   v = held(doc);
-  check("two items each driving the other's screen is a cycle — no order builds them — one blocking finding naming the ring and each way; the order is null",
-    v.verdict === "block" && rules(v) === "dependency-cycle" && v.findings[0].subject === "STORY-1" && /STORY-1 → STORY-2 → STORY-1/.test(v.findings[0].summary) && /SCREEN-2\/`delivery-row`/.test(v.findings[0].evidence) && /SCREEN-1\/`record-exception`/.test(v.findings[0].evidence) && buildOrder(doc, record).order === null && buildOrder(doc, record).cycle.join() === "STORY-1,STORY-2,STORY-1", JSON.stringify(v.findings));
+  check("two items each driving the other's screen is a cycle — no order builds them — one blocking finding whose subject is the whole ring, so every member is in the revision's scope; the order is null",
+    v.verdict === "block" && rules(v) === "dependency-cycle" && v.findings[0].subject === "STORY-1, STORY-2" && /STORY-1 → STORY-2 → STORY-1/.test(v.findings[0].summary) && /SCREEN-2\/`delivery-row`/.test(v.findings[0].evidence) && /SCREEN-1\/`record-exception`/.test(v.findings[0].evidence) && buildOrder(doc, record).order === null && buildOrder(doc, record).cycle.join() === "STORY-1,STORY-2,STORY-1", JSON.stringify(v.findings));
   doc = clone(); doc.items.push({ ...clone().items[1], work_item: "STORY-9", tests: [], controls: [{ screen_ref: "SCREEN-1", control: "reason-chip" }] });
   check("an item the intake does not carry is left out of the dependencies — item-unknown is its finding, and the derivation does not throw on it", rules(held(doc)) === "item-unknown" && ordered(doc) === "STORY-1,STORY-2,REQ-4");
 
@@ -535,6 +535,12 @@ await withRoot({}, async (tmp) => {
   scope = scoped(verdictOf(F("test-proves-nothing", "T-2"), { ...F(CARRIED, "STORY-2"), severity: "low" }));
   check("the carry's own finding does not widen the scope — an item restored last round is not thereby open this round",
     scope.all === null && [...scope.items.keys()].join() === "STORY-1", reasons(scope));
+  scope = scoped(verdictOf(F("test-proves-nothing", "T-2"), { ...F("question", "STORY-2", "A question on the binding: which clock?", "`/questions` · subject STORY-2 · which clock?"), severity: "low", confidence: "likely" }, { ...F("question", "binding", "A question on the binding: newest-first?", "`/questions`"), severity: "low", confidence: "likely" }));
+  check("a question the writer asked and did not mark blocking asks nothing of the writer: it opens no item and widens nothing — only the blocking one, filed high, is in scope",
+    scope.all === null && [...scope.items.keys()].join() === "STORY-1", reasons(scope) || scope.all);
+  const ringed = scoped(verdictOf(F("dependency-cycle", "STORY-1, STORY-2", "STORY-1 → STORY-2 → STORY-1: each depends on the next; no order builds them.")));
+  check("a cycle's finding puts every member of the ring in scope — the ring is the subject, each id resolved from it",
+    ringed.all === null && [...ringed.items.keys()].sort().join() === "STORY-1,STORY-2" && reasons(ringed).includes("STORY-2: STORY-2 (dependency-cycle)"), reasons(ringed));
   const was = JSON.parse(JSON.stringify(record)); was.work_items[1].statement += " Withdrawn deliveries are struck through."; was.meta.content_hash = "0".repeat(64);
   scope = scopeOfRevision({ prior: { ...prior, traces: { intake: { content_hash: was.meta.content_hash } } }, review: verdictOf(F("test-proves-nothing", "T-2")), intake: record, priorIntake: was });
   check("an intake that moved since the previous binding puts the items whose work item changed in scope, beside what the findings name — a changed input touches the item",
@@ -543,6 +549,17 @@ await withRoot({}, async (tmp) => {
   check("an intake that moved, with the one the previous binding was bound against not on record, is every item in scope with the reason said", scope.all !== null && /not on record/.test(scope.all), scope.all);
   scope = scoped(verdictOf());
   check("a verdict with no findings and an unchanged intake is a scope of nothing — every item carries", scope.all === null && scope.items.size === 0);
+  // A reopen is the one declared scope: the human's reason redoes every item — unless the
+  // reopen names the items it is about, and then it is those, the standing verdict's findings
+  // opening nothing (it passed), a moved intake still opening what it changed.
+  const reopenedAll = scopeOfRevision({ prior, review: verdictOf({ ...F("test-weak", "T-3"), severity: "low", confidence: "likely" }), intake: record, priorIntake: record, reopened: { by: "Brad", reason: "the run sheet is keyed by delivery id" } });
+  check("a reopen with no items named is every item in scope, the reason said", reopenedAll.all === "the binding is reopened" && reopenedAll.items.size === 3);
+  const reopenedSome = scopeOfRevision({ prior, review: verdictOf({ ...F("test-weak", "T-3"), severity: "low", confidence: "likely" }), intake: record, priorIntake: record, reopened: { by: "Brad", reason: "the run sheet is keyed by delivery id", items: ["STORY-2"] } });
+  check("a reopen that names its items is those items and no more — the standing verdict's advisory finding on another item opens nothing, it passed",
+    reopenedSome.all === null && reasons(reopenedSome) === "STORY-2: named by the reopen", reasons(reopenedSome) || reopenedSome.all);
+  const reopenedMoved = scopeOfRevision({ prior: { ...prior, traces: { intake: { content_hash: was.meta.content_hash } } }, review: verdictOf(), intake: record, priorIntake: was, reopened: { by: "Brad", reason: "again", items: ["REQ-4"] } });
+  check("a reopen that names its items, over an intake that moved since the binding, opens the named items and the changed work item both — a changed input is never carried",
+    reopenedMoved.all === null && reasons(reopenedMoved) === "REQ-4: named by the reopen · STORY-2: its work item changed", reasons(reopenedMoved) || reopenedMoved.all);
 
   const inScope = (...ids) => ({ all: null, items: new Map(ids.map((id) => [id, ["named"]])) });
   const carriedFindings = (c) => { c.findings.forEach((f) => emitted.add(f.rule)); return c.findings; };

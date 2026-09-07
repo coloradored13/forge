@@ -62,12 +62,19 @@
         "verdict": { "type": ["string", "null"], "description": "Root-relative path of the verdict the last round filed — a finding document pinned to what it judged. Read back by the approve door; presence is never evidence, the pins are." },
         "reopened": {
           "type": "object",
-          "description": "Present only while a reopen is being answered: the human's name and reason, set by the reopen and cleared by the finish that files the redo's verdict. The writer of that round reads it; a restart over a stop or a death still knows why the stage runs.",
+          "description": "Present only while a reopen is being answered: the human's name and reason — and the items it names, when it names any — set by the reopen and cleared by the finish that files the redo's verdict. The writer of that round reads it; a restart over a stop or a death still knows why the stage runs.",
           "required": ["by", "reason", "at"],
           "additionalProperties": false,
-          "properties": { "by": { "type": "string", "minLength": 1 }, "reason": { "type": "string", "minLength": 1 }, "at": { "type": "string" } }
+          "properties": { "by": { "type": "string", "minLength": 1 }, "reason": { "type": "string", "minLength": 1 }, "at": { "type": "string" }, "items": { "$ref": "#/$defs/items" } }
         }
       }
+    },
+    "items": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^(STORY|REQ)-\\d+$" },
+      "description": "The work items a reopen is about — the redo revises these and carries the rest verbatim. Absent when the reopen names none: then every item is its to revise."
     },
     "flag": {
       "type": "object",
@@ -79,6 +86,7 @@
         "event": { "type": "string" },
         "by": { "type": "string" },
         "reason": { "type": "string" },
+        "items": { "$ref": "#/$defs/items", "description": "A reopen's declared scope, kept as history after the stage no longer holds it." },
         "override": { "type": "boolean", "description": "True when a human's word passed a guard that would otherwise have refused." },
         "guard": { "type": "string", "description": "The guard overridden, by its refusal code — judge-blocked, verdict-stale." },
         "note": { "type": "string", "description": "What the runner has to say about it: the finding overridden, the silence that read as dead." }

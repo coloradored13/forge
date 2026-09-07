@@ -121,20 +121,27 @@ export async function escalate(root, { stage, by, reason, onEvent, _query, _slee
 /**
  * The door over an approved stage: redo it on a human's reason. The reopen is a transition
  * with the reason on a flag and on the stage; the writer of the redo sees the standing
- * artifact, its verdict and the reason, and every item is its to revise. What was judged
- * against the artifact being rewritten — every later stage holding a judgement — goes
- * stale by the same reason, to be re-judged (R5), never regenerated; a later stage that is
- * alive refuses the reopen first. Then the episode runs. Refuses the table's own
- * (`no-transition` when the stage is not approved, `reason-required`).
+ * artifact, its verdict and the reason, and every item is its to revise — or, when the
+ * reopen names the items it is about, those and only those, the rest carried verbatim
+ * (`items`: work item ids the intake carries; one it does not is `item-unknown`, refused
+ * before anything runs). What was judged against the artifact being rewritten — every later
+ * stage holding a judgement — goes stale by the same reason, to be re-judged (R5), never
+ * regenerated; a later stage that is alive refuses the reopen first. Then the episode runs.
+ * Refuses the table's own (`no-transition` when the stage is not approved, `reason-required`).
  */
-export async function reopen(root, { stage, by, reason, onEvent, _query, _sleep, _perResponse, _now = () => new Date(), _pulse_ms = PULSE_MS } = {}) {
+export async function reopen(root, { stage, by, reason, items = null, onEvent, _query, _sleep, _perResponse, _now = () => new Date(), _pulse_ms = PULSE_MS } = {}) {
   const run = needRun(root);
   const authored = need(stage, run);
   const now = _now();
   const later = STAGES.slice(STAGES.indexOf(stage) + 1);
   const alive = later.find((s) => liveness(run.stages[s], { now, window: run.liveness_ms }).state === "alive");
   if (alive) throw new Refused("stage-running", `${stage}: ${alive} is running and alive on what ${stage} produced — wait for it, or stop it with a reason`);
-  transition(root, { stage, event: "reopen", by, reason, now });
+  if (items?.length) {
+    const carried = new Set((readDoc(root, INTAKE_FILE)?.work_items ?? []).map((w) => w.id));
+    const unknown = items.filter((id) => !carried.has(id));
+    if (unknown.length) throw new Refused("item-unknown", `${stage}: the reopen names ${unknown.join(", ")}, which the intake does not carry — name work items the record knows, or none to redo every item`);
+  }
+  transition(root, { stage, event: "reopen", by, reason, items: items?.length ? [...new Set(items)] : undefined, now });
   for (const s of later) if (JUDGED.has(run.stages[s].status)) transition(root, { stage: s, event: "moved", by, reason: `${stage} reopened: ${reason}`, now });
   return episode(root, { stage, authored, mode: "start", by, onEvent, _query, _sleep, _perResponse, _now, _pulse_ms });
 }

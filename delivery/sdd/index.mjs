@@ -381,7 +381,8 @@ export function checkBinding(intake, design, doc) {
   const ring = buildOrder(doc, intake).cycle;
   if (ring) {
     const way = (a, b) => deps.get(a).filter((d) => d.item === b).map((d) => d.via).join(", ");
-    f("high", "dependency-cycle", ring[0], `${ring.join(" → ")}: each depends on the next; no order builds them.`, ring.slice(0, -1).map((a, i) => `${a} → ${ring[i + 1]} via ${way(a, ring[i + 1])}`).join(" · "), "Break the ring: move the driven control or the consumed interface onto one item, or split the item that holds both ends.");
+    // the ring is the subject: a revision scoped by the finding revises every member, not the one it happened to start from
+    f("high", "dependency-cycle", ring.slice(0, -1).join(", "), `${ring.join(" → ")}: each depends on the next; no order builds them.`, ring.slice(0, -1).map((a, i) => `${a} → ${ring[i + 1]} via ${way(a, ring[i + 1])}`).join(" · "), "Break the ring: move the driven control or the consumed interface onto one item, or split the item that holds both ends.");
   }
   for (const [name, uses] of named) {
     const signatures = new Set(uses.map((u) => u.signature));

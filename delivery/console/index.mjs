@@ -16,6 +16,9 @@ const blank = (s) => (s?.trim() ? s.trim() : undefined);
 const num = (s, fallback) => (blank(s) === undefined ? fallback : Number(s));
 const by = { name: "by", label: "by", required: true };
 const reason = { name: "reason", label: "reason — on the record", required: true };
+const items = { name: "items", label: "items — the work items it is about, comma-separated; blank redoes every item", value: "" };
+/** The reopen form's items: ids split on commas and spaces, blank for none. The door checks them against the intake. */
+const itemsOf = (text) => String(text ?? "").split(/[\s,]+/).filter(Boolean);
 
 // ── the estimate ──
 
@@ -69,7 +72,7 @@ function doorHtml(stage, door, st, run) {
     case "rejudge": return form({ action, submit: "Re-judge", fields: [by], note: "The standing artifact is judged against the new snapshot — no writer runs unless it blocks." });
     case "escalate": return form({ action, submit: "Escalate", fields: [by, reason], note: `Buys round ${st.round + 1} of a ceiling of ${run.ceiling}. The writer sees the block's findings.` });
     case "approve": return form({ action, submit: "Approve", fields: [by, { name: "override_reason", label: st.status === "blocked" || st.verdict?.verdict === "block" ? "over the block — your reason, on the record" : "if the verdict is stale — your reason, on the record", value: "" }], note: "Needs a fresh, non-block verdict. Over a block or a stale verdict, the reason is the record." });
-    case "reopen": return form({ action, submit: "Reopen", fields: [by, reason], note: "Redoes the stage: the writer sees the standing artifact, its verdict and your reason, and every item is its to revise. Every judged stage after it goes stale, to be re-judged." });
+    case "reopen": return form({ action, submit: "Reopen", fields: [by, reason, items], note: "Redoes the stage: the writer sees the standing artifact, its verdict and your reason. Name the items it is about and the rest carry verbatim; name none and every item is its to revise. Every judged stage after it goes stale, to be re-judged." });
     case "stop": return form({ action, submit: "Stop", fields: [by, reason] });
     default: return "";
   }
@@ -78,7 +81,7 @@ function doorHtml(stage, door, st, run) {
 function stageRow(s, run) {
   const state = `${badge(s.shown, STATE[s.shown] ?? "muted")}${s.silent_ms != null ? `<br><span class="muted">silent ${Math.round(s.silent_ms / 1000)} s of ${Math.round(run.liveness_ms / 1000)}</span>` : ""}${s.authored ? "" : `<br><span class="muted">lands at M3</span>`}`;
   const times = [["started", when(s.started_at)], ["heartbeat", when(s.heartbeat_at)], ["finished", when(s.finished_at)]].filter(([, t]) => t !== "—").map(([k, t]) => `${k} ${t}`).join("<br>") || `<span class="muted">—</span>`;
-  const verdict = `${verdictLine(s.verdict)}${s.reopened ? `<br>${badge("reopened", "warn")} <span class="muted">${esc(s.reopened.by)} · ${esc(s.reopened.reason)}</span>` : ""}`;
+  const verdict = `${verdictLine(s.verdict)}${s.reopened ? `<br>${badge("reopened", "warn")} <span class="muted">${esc(s.reopened.by)} · ${esc(s.reopened.reason)}${s.reopened.items ? ` · ${esc(s.reopened.items.join(", "))}` : ""}</span>` : ""}`;
   return [esc(s.stage), state, `${s.round} of ${run.cap}`, verdict, costLine(s.cost), times, s.doors.map((d) => doorHtml(s.stage, d, s, run)).join("") || `<span class="muted">—</span>`];
 }
 
@@ -86,7 +89,7 @@ function runPage(v) {
   const r = v.run;
   const pin = v.pin_refusal ? `<p class="refusal">${badge(v.pin_refusal.code, "bad")} ${esc(v.pin_refusal.message)}</p>` : "";
   const advanceForm = v.advance ? form({ action: "/run/advance", submit: "Advance", fields: [by], note: "Runs the stages in order until one does not approve, or the loop reaches a stage it cannot run yet." }) : "";
-  const flags = table(["at", "stage", "event", "by", "reason", "override"], v.flags.map((f) => [when(f.at), esc(f.stage), badge(f.event, f.override ? "bad" : "warn"), esc(f.by), esc(f.reason), f.override ? `${badge(f.guard, "bad")}<br><span class="muted">${esc(f.note)}</span>` : f.note ? `<span class="muted">${esc(f.note)}</span>` : ""]));
+  const flags = table(["at", "stage", "event", "by", "reason", "override"], v.flags.map((f) => [when(f.at), esc(f.stage), badge(f.event, f.override ? "bad" : "warn"), esc(f.by), `${esc(f.reason)}${f.items ? `<br><span class="muted">${esc(f.items.join(", "))}</span>` : ""}`, f.override ? `${badge(f.guard, "bad")}<br><span class="muted">${esc(f.note)}</span>` : f.note ? `<span class="muted">${esc(f.note)}</span>` : ""]));
   const fun = v.funnel;
   const funnel = fun.total === 0 ? `<p class="muted">nothing has crossed the seam against the funnel yet</p>`
     : table(["signal", "rule", "count"], Object.entries(fun.by_signal).map(([k, n]) => [esc(k), esc(fun.rules[k] ?? "—"), n])) + (Object.keys(fun.by_gate).length ? table(["gate", "count"], Object.entries(fun.by_gate).map(([k, n]) => [esc(k), n])) : "");
@@ -127,7 +130,7 @@ export function routes({ root, _query, _sleep, _now = () => new Date() } = {}) {
     { method: "POST", path: "/run/:stage/run", handler: ({ params, form: f }) => { const stage = stageOf(params); return work(stage, async (onEvent) => { await runStage(root, { stage, by: f.by, onEvent, ...seams }); return "/run"; }); } },
     { method: "POST", path: "/run/:stage/escalate", handler: ({ params, form: f }) => { const stage = stageOf(params); return work(`${stage} · escalate`, async (onEvent) => { await escalate(root, { stage, by: f.by, reason: f.reason, onEvent, ...seams }); return "/run"; }); } },
     { method: "POST", path: "/run/:stage/approve", handler: ({ params, form: f }) => step(stageOf(params), { by: f.by, reason: f.override_reason }, "approve", { override: Boolean(blank(f.override_reason)) }) },
-    { method: "POST", path: "/run/:stage/reopen", handler: ({ params, form: f }) => { const stage = stageOf(params); return work(`${stage} · reopen`, async (onEvent) => { await reopen(root, { stage, by: f.by, reason: f.reason, onEvent, ...seams }); return "/run"; }); } },
+    { method: "POST", path: "/run/:stage/reopen", handler: ({ params, form: f }) => { const stage = stageOf(params); return work(`${stage} · reopen`, async (onEvent) => { await reopen(root, { stage, by: f.by, reason: f.reason, items: itemsOf(f.items), onEvent, ...seams }); return "/run"; }); } },
     { method: "POST", path: "/run/:stage/stop", handler: ({ params, form: f }) => step(stageOf(params), f, "stop") },
     { method: "POST", path: "/run/adopt", handler: ({ form: f }) => { adoptHandoff(root, { version: num(f.version, undefined), by: f.by, now: _now() }); return { redirect: "/run" }; } },
   ];

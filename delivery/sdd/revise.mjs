@@ -7,7 +7,8 @@
 // the previous item again, verbatim, and the churn is filed low on the round. The one
 // line the set may move on a carried item is a shared interface a revised item names too.
 // A reopen is the one declared scope: a human's reason to redo the binding puts every
-// item in it — prose is never resolved to ids to narrow it.
+// item in it, or exactly the items the reopen names — prose is never resolved to ids to
+// narrow it; the human names them or does not.
 
 import { canonicalize } from "../../shared/hash.mjs";
 import { fit } from "../../shared/judge/index.mjs";
@@ -23,13 +24,15 @@ const ITEM_KEYS = ["approach", "interfaces", "tests", "controls", "surface", "ri
  * and a finding that names nothing anywhere widens the scope to every item: a revision
  * never narrows on a guess. An intake that moved since the previous binding puts the
  * items whose work item changed in scope; the previous intake not on record widens it too.
- * A reopen puts every item in scope. The carry's own finding names an item restored last
- * round and opens nothing.
+ * A reopen puts every item in scope, or the items it names and only those — the standing
+ * verdict it reopens over passed, so its findings open nothing. Two findings ask nothing of
+ * the writer and open nothing: the carry's own, naming an item restored last round, and a
+ * question the writer asked and did not mark blocking — the blocking one, filed high, does.
  * @param prior        the previous binding
  * @param review       the verdict on it, or null
  * @param intake       the intake record this round binds against
  * @param priorIntake  the intake the previous binding was bound against, or null when it is not on record
- * @param reopened     the reopen being answered ({ by, reason }), or null
+ * @param reopened     the reopen being answered ({ by, reason, items? }), or null
  * @returns { all: string | null, items: Map<work_item, string[]> } — `all` is the reason every item is in scope, or null; `items` the reasons per item (every item when `all`)
  */
 export function scopeOfRevision({ prior, review, intake, priorIntake, reopened = null }) {
@@ -37,11 +40,12 @@ export function scopeOfRevision({ prior, review, intake, priorIntake, reopened =
   const items = new Map();
   const open = (id, why) => { const had = items.get(id) ?? []; if (!had.includes(why)) had.push(why); items.set(id, had); };
   const everything = (why) => { for (const w of work) items.set(w.id, [why]); return { all: why, items }; };
-  if (reopened) return everything("the binding is reopened");
+  if (reopened && !reopened.items?.length) return everything("the binding is reopened");
   const known = idsOf(prior, intake);
 
-  for (const f of review?.findings ?? []) {
-    if (f.rule === CARRIED) continue;
+  if (reopened) for (const id of reopened.items) open(id, "named by the reopen");
+  else for (const f of review?.findings ?? []) {
+    if (f.rule === CARRIED || (f.rule === "question" && f.severity !== "high")) continue;
     const bySubject = resolve(f.subject ?? "", known);
     const named = bySubject.length ? bySubject : resolve(`${f.summary ?? ""} ${f.evidence ?? ""}`, known);
     if (!named.length) return everything(`a finding names nothing the record knows: "${f.subject}" (${f.rule})`);

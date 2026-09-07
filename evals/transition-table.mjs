@@ -232,7 +232,12 @@ check("the reopen rides the episode until a binding answers it: a stop keeps it,
     const approved = apply(finished, { stage: "sdd", event: "approve", by: "runner", verdict: V("advise"), fresh: true }).run;
     return stopped.stages.sdd.reopened?.by === "Brad" && restarted.stages.sdd.reopened?.by === "Brad" && recovered.stages.sdd.reopened?.by === "Brad" && finished.stages.sdd.status === "review" && !("reopened" in finished.stages.sdd) && approved.stages.sdd.status === "approved" && !("reopened" in approved.stages.sdd) && validate("run", finished).ok && validate("run", approved).ok;
   })());
-check("the schema is the home of it: an open reopen is by, reason, at on the stage — nothing else, and never required", (() => { const s = load("run").$defs.stage.properties.reopened; return s?.required?.join() === "by,reason,at" && s.additionalProperties === false && !load("run").$defs.stage.required.includes("reopened"); })());
+check("a reopen may name the items it is about: they ride the stage beside the reason, validated as ids; a reopen that names none carries no items key at all",
+  (() => {
+    const named = apply(appr, { stage: "sdd", event: "reopen", by: "Brad", reason: "the route owners carry the router on their surface", items: ["STORY-1", "STORY-2"], now: at(0) }).run;
+    return named.stages.sdd.reopened?.items?.join() === "STORY-1,STORY-2" && validate("run", named).ok && !("items" in reopened.run.stages.sdd.reopened) && validate("run", reopened.run).ok && !validate("run", { ...named, stages: { ...named.stages, sdd: { ...named.stages.sdd, reopened: { ...named.stages.sdd.reopened, items: [] } } } }).ok && !validate("run", { ...named, stages: { ...named.stages, sdd: { ...named.stages.sdd, reopened: { ...named.stages.sdd.reopened, items: ["the router"] } } } }).ok;
+  })());
+check("the schema is the home of it: an open reopen is by, reason, at on the stage — items when named, nothing else, and never required", (() => { const s = load("run").$defs.stage.properties.reopened; return s?.required?.join() === "by,reason,at" && Object.keys(s.properties).join() === "by,reason,at,items" && s.additionalProperties === false && !load("run").$defs.stage.required.includes("reopened"); })());
 
 // Liveness is read, never written.
 check("liveness: a running stage heartbeated inside the window is alive, past it dead, and the silence is measured",
