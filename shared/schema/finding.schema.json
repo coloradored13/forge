@@ -59,9 +59,36 @@
       }
     },
     "cost": {
-      "type": "object",
+      "$ref": "#/$defs/cost",
       "x-runner": true,
-      "description": "What the verdict cost (R1): recorded by the agent-call ledger, copied here so a verdict is self-describing.",
+      "description": "What the verdict cost (R1): recorded by the agent-call ledger, copied here so a verdict is self-describing. When items carry, this is what the round paid — a judgement that stands cost it nothing."
+    },
+    "items": {
+      "type": "array",
+      "x-runner": true,
+      "description": "When the gate judges item by item: each item's judgement, keyed by the hash of what its judge was given — model, system, input. The merged verdict above is derived from these by the rule one call uses. An entry marked `stands` was not judged this round: the same key was judged before and that judgement is copied forward at no cost — nothing changed, so nothing is asked again.",
+      "items": {
+        "type": "object",
+        "required": ["id", "key", "verdict", "findings", "deferred", "checked", "skipped", "reraised", "cost"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string" },
+          "key": { "type": "string", "pattern": "^[0-9a-f]{64}$", "description": "sha256 of the canonical { model, system, input } the judge was given. Same key, same question — the answer stands." },
+          "verdict": { "enum": ["pass", "block", "advise"] },
+          "findings": { "type": "array", "items": { "$ref": "#/$defs/finding" } },
+          "deferred": { "type": "array", "items": { "$ref": "#/$defs/deferral" } },
+          "checked": { "type": "integer", "minimum": 0 },
+          "skipped": { "type": "integer", "minimum": 0 },
+          "reraised": { "type": "integer", "minimum": 0 },
+          "cost": { "$ref": "#/$defs/cost", "description": "What this judgement cost when it was made — not what this round paid for it." },
+          "stands": { "const": true, "description": "Present only on a judgement copied forward: judged before on the same key, not asked again." }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "cost": {
+      "type": "object",
       "required": ["model", "usd", "ms"],
       "additionalProperties": false,
       "properties": {
@@ -69,9 +96,7 @@
         "usd": { "type": "number", "minimum": 0 },
         "ms": { "type": "integer", "minimum": 0 }
       }
-    }
-  },
-  "$defs": {
+    },
     "finding": {
       "type": "object",
       "required": ["severity", "confidence", "rule", "subject", "summary", "evidence"],

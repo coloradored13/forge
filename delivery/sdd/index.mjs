@@ -10,7 +10,9 @@
 // (R2 — it rides in `deferred`, never a finding). sdd never invents an interface, and it
 // never decides a question the snapshot still carries: the question crosses as a question.
 // A second round revises what the findings name and what a changed input touches; the rest
-// is carried verbatim and held to it (revise.mjs).
+// is carried verbatim and held to it (revise.mjs) — and an item whose judge would be handed
+// exactly what it was handed before is not judged again: its judgement stands on the
+// record, for nothing (R1). A round or a re-judge pays only for what moved.
 
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -23,7 +25,7 @@ import { scopeOf } from "../../shared/scope.mjs";
 import { renderDesign } from "../../shared/handoff.mjs";
 import { readDoc, saveDoc, saveVerdict } from "../../shared/store.mjs";
 import { Refused } from "../../shared/refused.mjs";
-import { LEDGER, rounds } from "../state/index.mjs";
+import { LEDGER, rounds, judgements } from "../state/index.mjs";
 import { INTAKE_FILE } from "../intake/index.mjs";
 import { scopeOfRevision, carry, CARRIED } from "./revise.mjs";
 
@@ -175,14 +177,14 @@ async function judgeAll(root, { run, handoff, intake, doc, carried = [], onEvent
     };
   });
   const { verdict: judge } = await runPerItemJudge({
-    gate: GATE, half: "delivery", stage: GATE, identity: join(PROMPTS, "judge.md"), items,
+    gate: GATE, half: "delivery", stage: GATE, identity: join(PROMPTS, "judge.md"), items, standing: judgements(root, GATE),
     scope: scopeOf(contract), rulings: rulingsOf(contract), arithmetic: ARITHMETIC,
     cwd: root, ledger: join(root, LEDGER), budget: run.budget, models: run.models, onEvent, _query, _sleep,
   });
   const findings = rank([...arithmetic.findings, ...carried, ...judge.findings]);
   const verdict = {
     gate: GATE, verdict: deriveVerdict(findings), findings, deferred: judge.deferred,
-    checked: arithmetic.checked + judge.checked, skipped: judge.skipped, reraised: judge.reraised, judged, cost: judge.cost,
+    checked: arithmetic.checked + judge.checked, skipped: judge.skipped, reraised: judge.reraised, judged, cost: judge.cost, items: judge.items,
   };
   saveVerdict(root, VERDICT_FILE, verdict);
   return { doc, verdict, file: VERDICT_FILE };

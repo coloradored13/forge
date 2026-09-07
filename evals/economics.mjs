@@ -269,7 +269,29 @@ await withRoot({ "prompts/j.md": IDENTITY }, async (root) => {
   check("an item whose judge failed is a certain + high finding, so the stage blocks",
     verdict.verdict === "block" && verdict.findings.some((f) => f.rule === "judge-failed" && f.subject === "SCREEN-2") && verdict.skipped === 1 && verdict.checked === 2,
     JSON.stringify(verdict));
-  check("per-item verdicts ride alongside", items.length === 2 && items.map((i) => i.id).join() === "SCREEN-1,SCREEN-3");
+  check("per-item judgements ride alongside and on the verdict, each under the key of what its judge was given; the failed item has none — nothing was judged",
+    items.length === 2 && items.map((i) => i.id).join() === "SCREEN-1,SCREEN-3" && verdict.items === items && items.every((i) => /^[0-9a-f]{64}$/.test(i.key) && i.stands === undefined) && items[0].key === items[1].key, JSON.stringify(items.map((i) => [i.id, i.key?.slice(0, 8)])));
+
+  // R1: the same question is not asked twice. A standing judgement whose key matches is copied
+  // forward at no cost — a block as much as a pass: the same input re-files the same answer, so an
+  // escalation whose writer changed nothing in the blocked item is the judge's block again for $0,
+  // and the door is the human's. Anything in the key moving — the input, the model, the identity —
+  // is a new question.
+  const again = scripted({ structured: { findings: [], deferred: [], checked: 1, skipped: 0 } });
+  const same = [{ id: "SCREEN-1", sections: [["a", "b"]] }, { id: "SCREEN-3", sections: [["a", "b"]] }];
+  const base = { gate: "design-judge", half: "discovery", stage: "design", identity: join(root, "prompts", "j.md"), cwd: root, ledger, _query: again.query };
+  const stood = await runPerItemJudge({ ...base, items: same, standing: items });
+  check("R1: with every key standing, no judge is called — the standing judgements are copied forward marked `stands`, the merged verdict is theirs (a medium advisory, not the scripted clean), and the round paid nothing",
+    again.calls.length === 0 && stood.verdict.verdict === "advise" && stood.verdict.findings.length === 2 && stood.verdict.cost.usd === 0 && stood.verdict.cost.model === "none" && stood.verdict.checked === 2 && stood.items.every((i) => i.stands === true) && stood.items.map((i) => i.key).join() === items.map((i) => i.key).join() && validate("finding", stood.verdict).ok, JSON.stringify(stood.verdict));
+  const moved = await runPerItemJudge({ ...base, items: [same[0], { id: "SCREEN-3", sections: [["a", "c"]] }], standing: stood.items });
+  check("an item whose input moved is asked again — one call — while the other stands; the moved item's judgement carries its new key and no `stands`",
+    again.calls.length === 1 && moved.items.map((i) => `${i.id}:${i.stands ? "stands" : "judged"}`).join() === "SCREEN-1:stands,SCREEN-3:judged" && moved.items[1].key !== stood.items[1].key && moved.verdict.findings.length === 1 && moved.verdict.cost.usd === 0.05, JSON.stringify(moved.items.map((i) => [i.id, i.stands, i.key.slice(0, 8)])));
+  const other = await runPerItemJudge({ ...base, items: same, standing: items, models: { "discovery.reviewer": "claude-sonnet-5" } });
+  check("a different judge model is a different question: nothing stands, both are asked",
+    again.calls.length === 3 && other.items.every((i) => i.stands === undefined) && other.items[0].key !== items[0].key, JSON.stringify(other.items.map((i) => [i.id, i.stands])));
+  const standingId = await runPerItemJudge({ ...base, items: same, standing: [{ ...items[0], id: "SCREEN-9" }, items[1]] });
+  check("a key stands only for its own item — the same input under another id is asked",
+    again.calls.length === 4 && standingId.items.map((i) => `${i.id}:${i.stands ? "stands" : "judged"}`).join() === "SCREEN-1:judged,SCREEN-3:stands");
 });
 
 // ── R6: rounds are capped and the cap is a door — the economics of a stage that keeps blocking ──
@@ -297,8 +319,10 @@ await withRoot({ "prompts/j.md": IDENTITY }, async (root) => {
   const BAD = clone(); BAD.items[0].controls.push({ screen_ref: "SCREEN-1", control: "submit" });
   // the second writer fixes STORY-1 — and rephrases STORY-2's risks, which nothing named
   const CHURNED = clone(); CHURNED.items[1].risks = ["the run sheet's order is the store's — a sort would be a design change"];
+  // the escalated writer answers the recorded block: T-2 names the calls and the read that follows
+  const ANSWERED = clone(); ANSWERED.items[0].tests[1].asserts = "record, update and remove — each exported function called with the row's id — throw or return the row unchanged, and forShift(shift) afterwards returns the original reason";
   // the reopened writer answers the reason: the run sheet keyed by delivery id, said in STORY-2's approach
-  const REBOUND = clone(); REBOUND.items[1].approach += " Rows are keyed by delivery id.";
+  const REBOUND = structuredClone(ANSWERED); REBOUND.items[1].approach += " Rows are keyed by delivery id.";
   // the writer of the reopen that names STORY-2 answers it there — and rephrases STORY-1's risks, which the reopen did not name
   const RESCOPED = structuredClone(REBOUND); RESCOPED.items[1].approach += " Rows carry the delivery's dock door."; RESCOPED.items[0].risks = ["the store's write is the browser's — a refresh mid-submit loses the form"];
   const CLEAN = (item) => ({ findings: [], deferred: [{ subject: item, summary: `${item}: the second recording against the same delivery in the same second.`, beyond: "untested" }], checked: 1, skipped: 0 });
@@ -311,7 +335,8 @@ await withRoot({ "prompts/j.md": IDENTITY }, async (root) => {
   await withRoot({}, async (tmp) => {
     const { cold } = await seedDelivery(tmp);
     const events = [];
-    const script = scripted({ structuredSeq: [BAD, CHURNED, PROVES_NOTHING, CLEAN("STORY-2"), CLEAN("REQ-4"), BINDING, CLEAN("STORY-1"), CLEAN("STORY-2"), CLEAN("REQ-4"), REBOUND, CLEAN("STORY-1"), CLEAN("STORY-2"), CLEAN("REQ-4"), RESCOPED, CLEAN("STORY-1"), CLEAN("STORY-2"), CLEAN("REQ-4")] });
+    // eleven calls in all: after round 2, a judge is called only for an item whose input moved — the rest stand on the record (R1)
+    const script = scripted({ structuredSeq: [BAD, CHURNED, PROVES_NOTHING, CLEAN("STORY-2"), CLEAN("REQ-4"), ANSWERED, CLEAN("STORY-1"), REBOUND, CLEAN("STORY-2"), RESCOPED, CLEAN("STORY-2")] });
     const opts = { _query: slow(script.query), _now: clock, _pulse_ms: 1, onEvent: (e) => events.push(e) };
 
     check("the loop knows which stages it can run — intake, sdd and build — and says so in one table; build has a writer and no judge",
@@ -360,20 +385,22 @@ await withRoot({ "prompts/j.md": IDENTITY }, async (root) => {
 
     const before = readRun(cold).stages.sdd;
     const r2 = await escalate(cold, { stage: "sdd", by: "Brad", reason: "the assertion is checkable as written — one more round", ...opts });
-    check("escalate with a reason buys one round: the writer answers the recorded block, the judges clear it, approved at round 3 — and the flag names who and why",
-      r2.status === "approved" && r2.round === 3 && r2.verdict.verdict === "pass" && r2.run.flags.length === 1 && r2.run.flags[0].event === "escalate" && r2.run.flags[0].by === "Brad" && /one more round/.test(r2.run.flags[0].reason), JSON.stringify(r2.run.flags));
+    check("escalate with a reason buys one round: the writer answers the recorded block, the one judge whose item moved clears it — STORY-2 and REQ-4 stand on round 2's judgement for $0 — approved at round 3, and the flag names who and why",
+      r2.status === "approved" && r2.round === 3 && r2.verdict.verdict === "pass" && r2.run.flags.length === 1 && r2.run.flags[0].event === "escalate" && r2.run.flags[0].by === "Brad" && /one more round/.test(r2.run.flags[0].reason) && r2.verdict.items.map((i) => `${i.id}:${i.stands ? "stands" : "judged"}`).join() === "STORY-1:judged,STORY-2:stands,REQ-4:stands" && events.filter((e) => /stands/.test(e)).join(" | ") === "sdd STORY-2 stands — input unchanged since it was judged, $0 | sdd REQ-4 stands — input unchanged since it was judged, $0", `${JSON.stringify(r2.run.flags)} · ${JSON.stringify(r2.verdict.items?.map((i) => [i.id, i.stands]))} · ${events.filter((e) => /stands/.test(e)).join(" | ")}`);
+    check("what stands is round 2's answer under round 2's key: STORY-2's and REQ-4's entries carry the key and the deferral the round-2 verdict filed; STORY-1's key moved with its test",
+      ["STORY-2", "REQ-4"].every((id) => r2.verdict.items.find((i) => i.id === id).key === v1.items.find((i) => i.id === id).key && r2.verdict.items.find((i) => i.id === id).deferred[0].subject === id) && r2.verdict.items[0].key !== v1.items[0].key && r2.verdict.deferred.length === 3, JSON.stringify(r2.verdict.items.map((i) => [i.id, i.key.slice(0, 8)])));
     check("the escalated round's writer saw the judge's finding it was bought to answer", /## The judge's findings on the previous binding/.test(script.calls[5].prompt) && /test-proves-nothing/.test(script.calls[5].prompt));
     check("the escalated round's writer saw the churn filed against it too, and the carry's finding did not open STORY-2 — STORY-1 to revise for T-2, STORY-2 still to carry",
       /item-carried/.test(script.calls[5].prompt) && /### STORY-1 — revise: T-2 \(test-proves-nothing\)/.test(script.calls[5].prompt) && /### STORY-2 — carry verbatim/.test(script.calls[5].prompt), script.calls[5].prompt.slice(script.calls[5].prompt.indexOf("## The previous binding"), script.calls[5].prompt.indexOf("## The previous binding") + 300));
-    check("R1: nine calls, $0.45, all on one ledger; the result's cost is the stage's whole spend across episodes",
-      r2.cost.calls === 9 && Math.abs(r2.cost.usd - 0.45) < 1e-9 && script.calls.length === 9);
+    check("R1: seven calls, $0.35, all on one ledger — two of the escalated round's three judgements cost nothing; the result's cost is the stage's whole spend across episodes",
+      r2.cost.calls === 7 && Math.abs(r2.cost.usd - 0.35) < 1e-9 && script.calls.length === 7 && Math.abs(r2.verdict.cost.usd - 0.05) < 1e-9, `calls ${r2.cost.calls} usd ${r2.cost.usd} · verdict ${JSON.stringify(r2.verdict.cost)}`);
     const after = readRun(cold).stages.sdd;
     check("the wrapper's pulse wrote the heartbeat while the stage's code ran — the last beat is after the start, and the finish was stamped by the clock",
       Date.parse(after.heartbeat_at) > Date.parse(after.started_at) && Date.parse(after.finished_at) >= Date.parse(after.heartbeat_at) && Date.parse(after.started_at) > Date.parse(before.finished_at), JSON.stringify({ before, after }));
     check("the binding on disk is the approved one, traced to the handoff it was bound from", loadSdd(cold).items.length === 3 && loadSdd(cold).traces.handoff.version === 1 && readDoc(cold, SDD_VERDICT).verdict === "pass");
     const rest = await advance(cold, opts);
     check("advance over an approved run: nothing to do until build, which refuses — this cold root is no repository — halted there with the refusal's code, the stage stopped on the record with the reason, no call made",
-      rest.stages.length === 0 && rest.halted?.why === "no-repo" && rest.halted.stage === "build" && readRun(cold).stages.build.status === "stopped" && /no-repo/.test(readRun(cold).flags.at(-1).reason) && script.calls.length === 9, JSON.stringify([rest.halted, readRun(cold).flags.at(-1)]));
+      rest.stages.length === 0 && rest.halted?.why === "no-repo" && rest.halted.stage === "build" && readRun(cold).stages.build.status === "stopped" && /no-repo/.test(readRun(cold).flags.at(-1).reason) && script.calls.length === 7, JSON.stringify([rest.halted, readRun(cold).flags.at(-1)]));
 
     // Every filed verdict is kept with what it judged (R8): the next round overwrites both on their fixed
     // paths, and a judge miss — a finding a later verdict contradicts — is only attributable while the
@@ -399,11 +426,11 @@ await withRoot({ "prompts/j.md": IDENTITY }, async (root) => {
     const underBuild = await refusal(() => reopen(cold, { stage: "sdd", by: "Brad", reason: "again", ...opts }));
     transition(cold, { stage: "build", event: "stop", by: "Brad", reason: "back to stopped", now: clock() });
     check("reopen is refused before any call: without a reason, on a stage that is not approved, and while the stage after it is running on what it produced — sdd stays approved through all three",
-      noReason?.code === "reason-required" && notDone?.code === "no-transition" && underBuild?.code === "stage-running" && /build is running/.test(underBuild.message) && readRun(cold).stages.sdd.status === "approved" && script.calls.length === 9, `${noReason?.code} ${notDone?.code} ${underBuild?.code}`);
+      noReason?.code === "reason-required" && notDone?.code === "no-transition" && underBuild?.code === "stage-running" && /build is running/.test(underBuild.message) && readRun(cold).stages.sdd.status === "approved" && script.calls.length === 7, `${noReason?.code} ${notDone?.code} ${underBuild?.code}`);
     const r3 = await reopen(cold, { stage: "sdd", by: "Claude, for Brad", reason: "the run sheet is keyed by delivery id — the binding must say so before build reads it", ...opts });
-    const p3 = script.calls[9].prompt;
-    check("reopen redoes the stage: one writer and three judges ran, the redo approved at round 1 of a new episode, the reopen is a flag naming who and why, and the stage no longer holds it",
-      r3.status === "approved" && r3.round === 1 && r3.verdict.verdict === "pass" && script.calls.length === 13 && readRun(cold).flags.at(-1).event === "reopen" && readRun(cold).flags.at(-1).by === "Claude, for Brad" && /keyed by delivery id/.test(readRun(cold).flags.at(-1).reason) && readRun(cold).stages.sdd.reopened === undefined, `${r3.status} r${r3.round} calls ${script.calls.length} ${JSON.stringify(readRun(cold).stages.sdd)}`);
+    const p3 = script.calls[7].prompt;
+    check("reopen redoes the stage: one writer and one judge ran — every item was the writer's to revise, and only STORY-2 came back changed, so only STORY-2 is a new question for the judge — the redo approved at round 1 of a new episode, the reopen a flag naming who and why, the stage no longer holding it",
+      r3.status === "approved" && r3.round === 1 && r3.verdict.verdict === "pass" && script.calls.length === 9 && r3.verdict.items.map((i) => `${i.id}:${i.stands ? "stands" : "judged"}`).join() === "STORY-1:stands,STORY-2:judged,REQ-4:stands" && readRun(cold).flags.at(-1).event === "reopen" && readRun(cold).flags.at(-1).by === "Claude, for Brad" && /keyed by delivery id/.test(readRun(cold).flags.at(-1).reason) && readRun(cold).stages.sdd.reopened === undefined, `${r3.status} r${r3.round} calls ${script.calls.length} ${JSON.stringify(readRun(cold).stages.sdd)}`);
     check("the writer was told why, shown the standing binding with every item to revise, and shown the verdict that approved it — a reopen answers a reason, not a block",
       /## Why the binding is reopened\n\nthe run sheet is keyed by delivery id[^\n]*\n\n— Claude, for Brad/.test(p3) && /Every item is to revise: the binding is reopened\./.test(p3) && /### STORY-1 — revise: the binding is reopened/.test(p3) && /### REQ-4 — revise: the binding is reopened/.test(p3) && !/carry verbatim\n/.test(p3) && /## The judge's findings on the previous binding/.test(p3), p3.slice(p3.indexOf("## Why the binding"), p3.indexOf("## Why the binding") + 400));
     check("the redo is on the record like any round: a fourth sdd verdict kept, numbered across episodes; the binding on disk is the redone one; build, stopped and never judged, was left alone",
@@ -415,15 +442,17 @@ await withRoot({ "prompts/j.md": IDENTITY }, async (root) => {
     // moved hashes. An id the intake does not carry refuses the door before anything runs.
     const unknown = await refusal(() => reopen(cold, { stage: "sdd", by: "Claude, for Brad", reason: "again", items: ["STORY-2", "STORY-9"], ...opts }));
     check("a reopen naming an item the intake does not carry is refused at the door — item-unknown, the id named, no call made, sdd still approved",
-      unknown?.code === "item-unknown" && /STORY-9/.test(unknown.message) && script.calls.length === 13 && readRun(cold).stages.sdd.status === "approved", `${unknown?.code} ${unknown?.message}`);
+      unknown?.code === "item-unknown" && /STORY-9/.test(unknown.message) && script.calls.length === 9 && readRun(cold).stages.sdd.status === "approved", `${unknown?.code} ${unknown?.message}`);
     const r4 = await reopen(cold, { stage: "sdd", by: "Claude, for Brad", reason: "the run sheet's rows carry the delivery's dock door — the design shows it on SCREEN-2", items: ["STORY-2"], ...opts });
-    const p4 = script.calls[13].prompt;
-    check("a reopen that names its items redoes the stage the same way — one writer, three judges, approved at round 1 of a new episode (advise: the churn below is filed low) — and the flag carries the items beside who and why; the stage no longer holds it",
-      r4.status === "approved" && r4.round === 1 && r4.verdict.verdict === "advise" && script.calls.length === 17 && readRun(cold).flags.at(-1).event === "reopen" && readRun(cold).flags.at(-1).items?.join() === "STORY-2" && /dock door/.test(readRun(cold).flags.at(-1).reason) && readRun(cold).stages.sdd.reopened === undefined && validate("run", readRun(cold)).ok, `${r4.status} r${r4.round} ${r4.verdict.verdict} calls ${script.calls.length} ${JSON.stringify(readRun(cold).flags.at(-1))}`);
+    const p4 = script.calls[9].prompt;
+    check("a reopen that names its items redoes the stage the same way — one writer, one judge, approved at round 1 of a new episode (advise: the churn below is filed low) — and the flag carries the items beside who and why; the stage no longer holds it",
+      r4.status === "approved" && r4.round === 1 && r4.verdict.verdict === "advise" && script.calls.length === 11 && readRun(cold).flags.at(-1).event === "reopen" && readRun(cold).flags.at(-1).items?.join() === "STORY-2" && /dock door/.test(readRun(cold).flags.at(-1).reason) && readRun(cold).stages.sdd.reopened === undefined && validate("run", readRun(cold)).ok, `${r4.status} r${r4.round} ${r4.verdict.verdict} calls ${script.calls.length} ${JSON.stringify(readRun(cold).flags.at(-1))}`);
     check("the writer was told why and which: STORY-2 to revise, named by the reopen; STORY-1 and REQ-4 to carry verbatim — not every item, and the reason still above the binding",
       /## Why the binding is reopened\n\nthe run sheet's rows carry the delivery's dock door[^\n]*\n\n— Claude, for Brad/.test(p4) && /### STORY-2 — revise: named by the reopen/.test(p4) && /### STORY-1 — carry verbatim/.test(p4) && /### REQ-4 — carry verbatim/.test(p4) && !/Every item is to revise/.test(p4), p4.slice(p4.indexOf("## Why the binding"), p4.indexOf("## Why the binding") + 500));
     check("the writer rephrased STORY-1 beside the item it was asked for: STORY-1 on disk is the previous item verbatim, the churn filed low on the redo's verdict, STORY-2 as the writer wrote it",
       JSON.stringify(loadSdd(cold).items[0]) === JSON.stringify(REBOUND.items[0]) && /dock door/.test(loadSdd(cold).items[1].approach) && r4.verdict.findings.filter((f) => f.rule === "item-carried").map((f) => f.subject).join() === "STORY-1", JSON.stringify(r4.verdict.findings));
+    check("the carry and the key agree: STORY-1 came back verbatim, so its judge input is unchanged and its judgement stands — the churn cost a finding, not a call",
+      r4.verdict.items.map((i) => `${i.id}:${i.stands ? "stands" : "judged"}`).join() === "STORY-1:stands,STORY-2:judged,REQ-4:stands" && rounds(cold, "sdd").length === 5 && rounds(cold, "sdd").every((k, n) => n === 0 || (k.verdict.items?.length === 3)), JSON.stringify(rounds(cold, "sdd").map((k) => k.verdict.items?.map((i) => [i.id, i.stands]))));
   });
 
   // A stage whose code throws is stopped on the record, by the wrapper, with the error as the reason; it starts again from stopped.

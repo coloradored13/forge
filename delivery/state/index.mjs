@@ -302,6 +302,18 @@ export function rounds(root, stage) {
     .sort((a, b) => a.seq - b.seq);
 }
 
+/**
+ * The newest kept judgement of each item across a stage's filings — what a per-item
+ * judge may copy forward when it is about to ask the same question (same key) again.
+ * Read from the kept rounds, not the standing verdict alone: an arithmetic block files
+ * no judgements, and the round before it still answered.
+ */
+export function judgements(root, stage) {
+  const by = new Map();
+  for (const r of rounds(root, stage).reverse()) for (const it of r.verdict.items ?? []) if (!by.has(it.id)) by.set(it.id, it);
+  return [...by.values()];
+}
+
 /** The wrapper's pulse. Only a running or rejudging stage has one. */
 export function heartbeat(root, stage, now) {
   const run = needRun(root);
