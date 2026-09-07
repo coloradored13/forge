@@ -15,7 +15,7 @@ import { readDoc } from "../../shared/store.mjs";
 import { rows, estimate, standing, modelFor, tally } from "../../shared/agent-call/index.mjs";
 import { STAGES, JUDGED, LEDGER, readRun, transition, heartbeat, liveness } from "../state/index.mjs";
 import { intake, takePinned, compile, slice, INTAKE_FILE } from "../intake/index.mjs";
-import { round as sddRound, rejudge as sddRejudge } from "../sdd/index.mjs";
+import { round as sddRound, rejudge as sddRejudge, PER_RESPONSE } from "../sdd/index.mjs";
 import { round as buildRound, rejudge as buildRejudge } from "../build/index.mjs";
 
 export { Refused };
@@ -41,8 +41,8 @@ export const AUTHORED = {
     writer: true,
     round: async (root, ctx) => (await sddRound(root, ctx)).file,
     rejudge: async (root, ctx) => (await sddRejudge(root, ctx)).file,
-    // one binding for the set, one judge per work item — the items intake sliced, or the ones it will
-    calls: ({ handoff, intake }) => ({ writer: 1, judge: (intake?.work_items ?? slice(handoff, compile(handoff).scenarios)).length }),
+    // one binding for the set, crossing in responses of PER_RESPONSE items; one judge per work item — the items intake sliced, or the ones it will
+    calls: ({ handoff, intake }) => { const n = (intake?.work_items ?? slice(handoff, compile(handoff).scenarios)).length; return { writer: Math.ceil(n / PER_RESPONSE), judge: n }; },
   },
   build: {
     writer: true,
@@ -84,7 +84,7 @@ export function estimateRun(root, { handoff, intake = null, models = {}, budget 
  * (`stage-running` while a live stage is alive). Returns `{ stage, status, round, run,
  * verdict, cost }` — cost from the ledger, for this stage of this half, all episodes.
  */
-export async function runStage(root, { stage, by = "runner", onEvent, _query, _sleep, _now = () => new Date(), _pulse_ms = PULSE_MS } = {}) {
+export async function runStage(root, { stage, by = "runner", onEvent, _query, _sleep, _perResponse, _now = () => new Date(), _pulse_ms = PULSE_MS } = {}) {
   const run = needRun(root);
   const authored = need(stage, run);
   const st = run.stages[stage];
@@ -107,15 +107,15 @@ export async function runStage(root, { stage, by = "runner", onEvent, _query, _s
     default: throw new Refused("no-transition", `${stage}: ${st.status} has no episode`);
   }
   if (mode !== "dispose") transition(root, { stage, event: mode, by, now });
-  return episode(root, { stage, authored, mode, by, onEvent, _query, _sleep, _now, _pulse_ms });
+  return episode(root, { stage, authored, mode, by, onEvent, _query, _sleep, _perResponse, _now, _pulse_ms });
 }
 
 /** The cap door a human opens: a round bought with a reason, on the record (R6), then run. */
-export async function escalate(root, { stage, by, reason, onEvent, _query, _sleep, _now = () => new Date(), _pulse_ms = PULSE_MS } = {}) {
+export async function escalate(root, { stage, by, reason, onEvent, _query, _sleep, _perResponse, _now = () => new Date(), _pulse_ms = PULSE_MS } = {}) {
   const run = needRun(root);
   const authored = need(stage, run);
   transition(root, { stage, event: "escalate", by, reason, now: _now() });
-  return episode(root, { stage, authored, mode: "start", by, onEvent, _query, _sleep, _now, _pulse_ms });
+  return episode(root, { stage, authored, mode: "start", by, onEvent, _query, _sleep, _perResponse, _now, _pulse_ms });
 }
 
 /**
@@ -127,7 +127,7 @@ export async function escalate(root, { stage, by, reason, onEvent, _query, _slee
  * alive refuses the reopen first. Then the episode runs. Refuses the table's own
  * (`no-transition` when the stage is not approved, `reason-required`).
  */
-export async function reopen(root, { stage, by, reason, onEvent, _query, _sleep, _now = () => new Date(), _pulse_ms = PULSE_MS } = {}) {
+export async function reopen(root, { stage, by, reason, onEvent, _query, _sleep, _perResponse, _now = () => new Date(), _pulse_ms = PULSE_MS } = {}) {
   const run = needRun(root);
   const authored = need(stage, run);
   const now = _now();
@@ -136,7 +136,7 @@ export async function reopen(root, { stage, by, reason, onEvent, _query, _sleep,
   if (alive) throw new Refused("stage-running", `${stage}: ${alive} is running and alive on what ${stage} produced — wait for it, or stop it with a reason`);
   transition(root, { stage, event: "reopen", by, reason, now });
   for (const s of later) if (JUDGED.has(run.stages[s].status)) transition(root, { stage: s, event: "moved", by, reason: `${stage} reopened: ${reason}`, now });
-  return episode(root, { stage, authored, mode: "start", by, onEvent, _query, _sleep, _now, _pulse_ms });
+  return episode(root, { stage, authored, mode: "start", by, onEvent, _query, _sleep, _perResponse, _now, _pulse_ms });
 }
 
 /**
@@ -163,7 +163,7 @@ export async function advance(root, opts = {}) {
 
 // ── the episode ──
 
-async function episode(root, { stage, authored, mode, by, onEvent, _query, _sleep, _now, _pulse_ms }) {
+async function episode(root, { stage, authored, mode, by, onEvent, _query, _sleep, _perResponse, _now, _pulse_ms }) {
   let path = needRun(root).stages[stage].verdict;
   if (mode !== "dispose") {
     const rejudging = mode === "rejudge";
@@ -172,7 +172,7 @@ async function episode(root, { stage, authored, mode, by, onEvent, _query, _slee
     // start over a reopen is answering the reason: the writer sees the standing verdict too
     const prior = !rejudging && path ? readDoc(root, path) : null;
     const reopened = Boolean(needRun(root).stages[stage].reopened);
-    path = await work(root, { stage, authored, rejudging, review: prior && (prior.verdict === "block" || reopened) ? prior : null, by, onEvent, _query, _sleep, _now, _pulse_ms });
+    path = await work(root, { stage, authored, rejudging, review: prior && (prior.verdict === "block" || reopened) ? prior : null, by, onEvent, _query, _sleep, _perResponse, _now, _pulse_ms });
     if (rejudging) {
       const doc = readDoc(root, path);
       const event = doc?.verdict === "block" ? "reblock" : "clear";
@@ -204,17 +204,17 @@ async function episode(root, { stage, authored, mode, by, onEvent, _query, _slee
     }
     transition(root, { stage, event: "regenerate", by, now: _now() });
     onEvent?.(`${stage} block · round ${run.stages[stage].round} of ${run.cap} — regenerating`);
-    path = await work(root, { stage, authored, rejudging: false, review: doc, by, onEvent, _query, _sleep, _now, _pulse_ms });
+    path = await work(root, { stage, authored, rejudging: false, review: doc, by, onEvent, _query, _sleep, _perResponse, _now, _pulse_ms });
     transition(root, { stage, event: "finish", by, verdict: path, now: _now() });
   }
 }
 
 /** The stage's own code, under the wrapper's pulse. A throw stops the stage with the error as the reason and is re-thrown. */
-async function work(root, { stage, authored, rejudging, review = null, by, onEvent, _query, _sleep, _now, _pulse_ms }) {
+async function work(root, { stage, authored, rejudging, review = null, by, onEvent, _query, _sleep, _perResponse, _now, _pulse_ms }) {
   const run = needRun(root);
   const pulse = setInterval(() => { try { heartbeat(root, stage, _now()); } catch { /* the stage moved under us; the next transition says how */ } }, _pulse_ms);
   try {
-    const ctx = { run, now: _now(), by, review, reopened: run.stages[stage].reopened ?? null, onEvent: (e) => onEvent?.(`${stage} ${e}`), _query, _sleep };
+    const ctx = { run, now: _now(), by, review, reopened: run.stages[stage].reopened ?? null, onEvent: (e) => onEvent?.(`${stage} ${e}`), _query, _sleep, _perResponse };
     if (authored.writer) {
       ctx.handoff = takePinned(root, run);
       ctx.intake = readDoc(root, INTAKE_FILE);

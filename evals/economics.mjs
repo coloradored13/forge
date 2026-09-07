@@ -18,7 +18,7 @@ import { append as appendLedger } from "../shared/agent-call/ledger.mjs";
 import { runJudge, runPerItemJudge, rank, deriveVerdict, weight, renderFindingsForAgent } from "../shared/judge/index.mjs";
 import { apply, DEFAULTS, readRun, transition, rounds, LEDGER } from "../delivery/state/index.mjs";
 import { runStage, escalate, reopen, advance, estimateRun, AUTHORED, PULSE_MS } from "../delivery/run/index.mjs";
-import { SDD_FILE, VERDICT_FILE as SDD_VERDICT, loadSdd } from "../delivery/sdd/index.mjs";
+import { SDD_FILE, VERDICT_FILE as SDD_VERDICT, loadSdd, PER_RESPONSE } from "../delivery/sdd/index.mjs";
 import { seedDelivery, coldRoot, BINDING, seedBuild, builder, put, gitIn, BUILT, BLOCKED } from "./_fixture.mjs";
 import { loadBuild, BRANCH } from "../delivery/build/index.mjs";
 import { readDoc } from "../shared/store.mjs";
@@ -435,6 +435,37 @@ await withRoot({ "prompts/j.md": IDENTITY }, async (root) => {
     transition(cold, { stage: "sdd", event: "rejudge", by: "runner", now: clock() });
     const dead = await refusal(() => runStage(cold, { stage: "sdd", _query: good.query, _now: () => new Date(t + DEFAULTS.liveness_ms + 1) }));
     check("a dead re-judge is not restarted by the loop — stage-dead: stop it with a reason, then start", dead?.code === "stage-dead" && /stop it with a reason/.test(dead.message));
+  });
+
+  // The writer's wire. A binding crosses in responses of PER_RESPONSE items, one resumed session — the
+  // model's output ceiling (64k tokens; Bakehouse's 28 items overflowed it) is a Forge limit, not the binding's.
+  await withRoot({}, async (tmp) => {
+    const { cold } = await seedDelivery(tmp, { slug: "wire" });
+    await runStage(cold, { stage: "intake", _now: clock });
+    const events = [];
+    const script = scripted({ structuredSeq: [{ items: [BINDING.items[0], BINDING.items[1]], questions: [] }, { items: [BINDING.items[2]], questions: [{ subject: "REQ-4", question: "Is the audit row kept past the shift?", blocking: false }] }, CLEAN("STORY-1"), CLEAN("STORY-2"), CLEAN("REQ-4")] });
+    const r = await runStage(cold, { stage: "sdd", _query: script.query, _perResponse: 2, _now: clock, onEvent: (e) => events.push(e) });
+    const ledger = rows(join(cold, LEDGER)).filter((x) => x.stage === "sdd");
+    check("PER_RESPONSE is 8: under the 64k ceiling with room to think — Bakehouse's eight largest items are ~21k tokens", PER_RESPONSE === 8);
+    check("three items, two per response: the writer answers twice, then three judges; sdd approves at round 1; the binding on disk holds the three in the work items' order, and the second response's question rides with it",
+      r.status === "approved" && r.round === 1 && script.calls.length === 5 && ledger.map((x) => x.role).join() === "writer,writer,judge,judge,judge" && loadSdd(cold).items.map((i) => i.work_item).join() === "STORY-1,STORY-2,REQ-4" && loadSdd(cold).questions.length === 1, `${r.status} r${r.round} calls ${script.calls.length} · ${ledger.map((x) => x.role).join()} · ${loadSdd(cold)?.items.map((i) => i.work_item).join()}`);
+    const [c0, c1] = script.calls;
+    check("the first response is asked for STORY-1 and STORY-2 and nothing else, in a fresh session; the second resumes that session and asks for REQ-4 — the same output contract on both, the work items and design sent once",
+      /## This response\n\n/.test(c0.prompt) && /binds STORY-1, STORY-2 and nothing else/.test(c0.prompt) && /^## Work items/.test(c0.prompt) && c0.options.resume === undefined
+      && c1.options.resume === "sess-1" && /^## Next\n\n/.test(c1.prompt) && /Bind REQ-4 —/.test(c1.prompt) && !/STORY-1/.test(c1.prompt) && !/## Work items/.test(c1.prompt)
+      && c1.options.outputFormat.schema.required.join() === "items,questions" && c0.options.outputFormat.schema.required.join() === c1.options.outputFormat.schema.required.join(), `${c0.prompt.slice(c0.prompt.indexOf("## This response"), c0.prompt.indexOf("## This response") + 300)} ‖ ${c1.prompt.slice(0, 200)} ‖ resume ${c1.options.resume}`);
+    check("one event per response, saying which items it carried", events.filter((e) => /^sdd writer · response \d of 2 — /.test(e)).join(" | ") === "sdd writer · response 1 of 2 — STORY-1, STORY-2 | sdd writer · response 2 of 2 — REQ-4", events.join(" | "));
+    check("the estimate's shape follows the wire: 28 items is four writer calls, three items is one — the judges one per item as before", AUTHORED.sdd.calls({ handoff: null, intake: { work_items: new Array(28).fill({}) } }).writer === 4 && AUTHORED.sdd.calls({ handoff: null, intake: { work_items: [{}, {}, {}] } }).writer === 1 && AUTHORED.sdd.calls({ handoff: null, intake: { work_items: [{}, {}, {}] } }).judge === 3);
+  });
+
+  // A response that binds none of the items it was asked for is a broken wire, not a binding to judge: refused, the stage stopped with the reason.
+  await withRoot({}, async (tmp) => {
+    const { cold } = await seedDelivery(tmp, { slug: "wire-2" });
+    await runStage(cold, { stage: "intake", _now: clock });
+    const script = scripted({ structuredSeq: [{ items: [], questions: [] }] });
+    const e = await refusal(() => runStage(cold, { stage: "sdd", _query: script.query, _perResponse: 2, _now: clock }));
+    check("an empty first response is writer-response: named as the wire's failure, not filed as item-unbound for the judge's round; sdd is stopped by the wrapper with that reason; one call was spent",
+      e?.code === "writer-response" && /STORY-1, STORY-2/.test(e.message) && readRun(cold).stages.sdd.status === "stopped" && /^writer-response:/.test(readRun(cold).flags.at(-1).reason) && script.calls.length === 1, `${e?.code} · ${e?.message} · ${readRun(cold).stages.sdd.status}`);
   });
 }
 
