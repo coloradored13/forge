@@ -25,7 +25,7 @@ import { generate, checkPrototype, GATE as PROTO_GATE, ARITHMETIC as PROTO_RULES
 import { write, review, checkStories, gherkinShape, GATE as STORY_GATE, REVIEW_GATE, ARITHMETIC as STORY_RULES } from "../discovery/stories/index.mjs";
 import { ask, slice, QUESTION_BUDGET } from "../delivery/intake/index.mjs";
 
-const { check, done } = suite("funnel · R8 the meter, R13 stories at the PM's bar");
+const { check, done } = suite("funnel · R8 the meter, R13 stories at the PM's bar", 70);
 
 const refusal = async (fn) => { try { await fn(); return null; } catch (e) { return e; } };
 const clone = (v) => structuredClone(v);

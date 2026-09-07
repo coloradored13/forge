@@ -7,7 +7,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { suite, withRoot, ROOT } from "./_harness.mjs";
 
-const { check, done } = suite("spec-budget · SPEC.md ≤ 3,500 words");
+const { check, done } = suite("spec-budget · SPEC.md ≤ 3,500 words", 4);
 
 export const BUDGET = 3500;
 

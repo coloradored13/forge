@@ -17,7 +17,7 @@ import { loadPrd, savePrd } from "../discovery/workshop/index.mjs";
 import { Refused, readDoc, readVerdict, staleness, REVIEWS } from "../discovery/record/index.mjs";
 import { answer, propose, approve, reject, forbiddenTargets, radiusOf, introducedBy, auditOf, AUDIT_GATE } from "../discovery/doors/index.mjs";
 
-const { check, done } = suite("amendment-audit · R4 the radius is approved, not just the edit");
+const { check, done } = suite("amendment-audit · R4 the radius is approved, not just the edit", 51);
 
 const refusal = (fn) => { try { fn(); return null; } catch (e) { return e; } };
 const same = (a, b) => a.length === b.length && [...a].sort().join(" ") === [...b].sort().join(" ");

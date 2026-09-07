@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { suite, withRoot, ROOT } from "./_harness.mjs";
 import { problems, registry } from "../tools/owns.mjs";
 
-const { check, done } = suite("owns · module headers");
+const { check, done } = suite("owns · module headers", 11);
 
 const RULES = readFileSync(join(ROOT, "shared", "rules.json"), "utf8");
 

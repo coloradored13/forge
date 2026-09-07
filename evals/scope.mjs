@@ -34,7 +34,7 @@ import { INTAKE_FILE } from "../delivery/intake/index.mjs";
 import { identity } from "../shared/prompt/index.mjs";
 import { ROOT } from "./_harness.mjs";
 
-const { check, done } = suite("scope · R2 the line is a gate input, R12 shape before scope");
+const { check, done } = suite("scope · R2 the line is a gate input, R12 shape before scope", 167);
 
 const same = (a, b) => a.length === b.length && [...a].sort().join(" ") === [...b].sort().join(" ");
 const REQ = (n, status = "committed") => ({ id: `REQ-${n}`, statement: `s${n}`, type: "functional", done_definition: "d", acceptance_criteria: [{ id: "AC-1", statement: "a" }], status, context: "", flags: [] });

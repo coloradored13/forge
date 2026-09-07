@@ -24,12 +24,17 @@ for (const f of suites) {
   const ok = r.status === 0;
   if (!ok) failed++;
   const tally = (r.stdout.match(/(\d+)\/(\d+) passed/) ?? [])[0] ?? "";
-  rows.push({ f, ok, ms, tally, out: r.stdout + r.stderr });
+  // A suite that failed without printing a tally never reached `done()`: it threw part way
+  // and every check after the throw is not failing, it is missing. That is a different
+  // thing from a suite whose assertions came out false, and the line says which.
+  rows.push({ f, ok, ms, tally, aborted: !ok && tally === "", out: r.stdout + r.stderr });
 }
 
 console.log(`\n  ${D}forge evals${X}\n`);
 for (const x of rows) {
-  console.log(`  ${x.ok ? G + "PASS" + X : R + "FAIL" + X}  ${x.f.replace(/\.mjs$/, "").padEnd(18)} ${x.tally.padEnd(14)} ${D}${x.ms} ms${X}`);
+  const state = x.aborted ? `${R}ABORT${X}` : x.ok ? `${G}PASS${X}` : `${R}FAIL${X}`;
+  const note = x.aborted ? `${D}threw before done() — the checks after it did not run${X}` : x.tally.padEnd(14);
+  console.log(`  ${state}  ${x.f.replace(/\.mjs$/, "").padEnd(18)} ${note} ${D}${x.ms} ms${X}`);
 }
 for (const x of rows.filter((r) => !r.ok)) {
   console.log(`\n  ${R}── ${x.f} ──${X}\n${x.out}`);

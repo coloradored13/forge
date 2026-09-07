@@ -20,7 +20,7 @@ import { rows as calls } from "../shared/agent-call/ledger.mjs";
 import { Refused, rulingsOf, staleness, PRD_FILE } from "../discovery/record/index.mjs";
 import { answer } from "../discovery/doors/index.mjs";
 
-const { check, done } = suite("rulings · R3 answers are spec");
+const { check, done } = suite("rulings · R3 answers are spec", 27);
 
 const refusal = (fn) => { try { fn(); return null; } catch (e) { return e; } };
 

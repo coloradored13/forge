@@ -31,7 +31,7 @@ import { answer } from "../discovery/doors/index.mjs";
 import { review, signoff } from "../discovery/design/index.mjs";
 import { exportHandoff, readiness, compile, designState, renderHandoff, repoOf, GATE as EXPORT_GATE, EXITS, IDEA, TRACKERS } from "../discovery/export/index.mjs";
 
-const { check, done } = suite("seam · import rule, project repo, handoff");
+const { check, done } = suite("seam · import rule, project repo, handoff", 146);
 
 const RULES = `{"rules":[],"halves":["discovery","delivery","shared"]}`;
 

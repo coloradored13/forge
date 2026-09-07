@@ -27,7 +27,7 @@ import { validate } from "../shared/schema/index.mjs";
 import { setupProject } from "../discovery/setup/index.mjs";
 import { openPrd, quoteTurn, turn } from "../discovery/workshop/index.mjs";
 
-const { check, done } = suite("economics · R1 metering and budget, R7 ranked judges");
+const { check, done } = suite("economics · R1 metering and budget, R7 ranked judges", 126);
 
 const IDENTITY = "# Story reviewer\n\nYou review stories at the PM's bar. A missing edge case is not a finding; an untestable Then is.\n";
 const FINDING = (severity, confidence, n) => ({ severity, confidence, rule: `r${n}`, subject: `STORY-${n}`, summary: `s${n}`, evidence: `e${n}` });
