@@ -1,7 +1,8 @@
 // owns: R2 · delivery — sdd: the binding. One writer reads the intake's work items and
 // the signed design and returns, per item, how it is built, the interfaces it exposes,
 // the tests that prove each criterion by id and the design controls it wires by id —
-// before any code. The runner holds the set to the arithmetic SPEC §5 names (controls ⊂
+// before any code; a large set crosses the wire in responses of PER_RESPONSE items, one
+// session, the runner assembling. The runner holds the set to the arithmetic SPEC §5 names (controls ⊂
 // design; tests ↔ criteria; shared interfaces verbatim; dependencies derived and acyclic;
 // a blocking question blocks) and files that verdict without a model when it blocks;
 // otherwise one judge per item asks what only judgement answers,
@@ -34,6 +35,13 @@ export const VERDICT_FILE = join("forge", "delivery", "reviews", "sdd.json");
 export const ARITHMETIC = ["item-unbound", "item-bound-twice", "item-unknown", "control-not-in-design", "control-unbound", "criterion-untested", "criterion-not-on-item", "scenario-unknown", "test-id-duplicate", "interface-disagrees", "interface-unshared", "interface-from-unknown", "dependency-cycle", "question", CARRIED];
 /** The `beyond` a judge writes on the one failure class nothing tests — fixed, so release can list them apart from scope deferrals. */
 export const UNTESTED = "untested";
+/**
+ * Items per writer response. The model's output ceiling is 64k tokens and a binding item
+ * runs ~2k (Bakehouse: 28 items, 164k bytes; its eight largest ~21k tokens) — one document
+ * for a set that size overflowed it, four retries deep, $9 lost. So the binding crosses
+ * the wire in responses of this many items, one resumed session, the runner assembling.
+ */
+export const PER_RESPONSE = 8;
 const WRITES = new Set(["Write", "Edit", "Bash", "NotebookEdit"]);
 
 export function loadSdd(root) { return readDoc(root, SDD_FILE); }
@@ -68,7 +76,7 @@ export async function rejudge(root, ctx) {
  * item: the writer reads the reason above the previous binding and the verdict that stood
  * on it. @returns { doc, carried } — the binding on disk and the carry's findings.
  */
-async function write(root, { run, handoff, intake, review, reopened = null, onEvent, _query, _sleep }) {
+async function write(root, { run, handoff, intake, review, reopened = null, onEvent, _query, _sleep, _perResponse = PER_RESPONSE }) {
   const contract = handoff.contract;
   const prior = loadSdd(root);
   const system = assemble({
@@ -78,7 +86,10 @@ async function write(root, { run, handoff, intake, review, reopened = null, onEv
   const findings = review ? renderFindingsForAgent(review) : null;
   const scope = prior && (review || reopened) ? scopeOfRevision({ prior, review, intake, priorIntake: priorIntakeOf(root, prior, intake), reopened }) : null;
   const mark = (it) => (scope.items.has(it.work_item) ? `revise: ${scope.items.get(it.work_item).join(", ")}` : "carry verbatim");
-  const prompt = [
+  const ids = intake.work_items.map((w) => w.id);
+  const parts = [];
+  for (let i = 0; i < ids.length; i += _perResponse) parts.push(ids.slice(i, i + _perResponse));
+  const opening = [
     `## Work items\n\n${intake.work_items.map((w) => renderWorkItem(w, intake)).join("\n\n")}`,
     `## ${VOCABULARY}\n\n${renderVocabulary(contract)}`,
     `## The signed design\n\n${renderDesign(handoff.design)}`,
@@ -88,25 +99,36 @@ async function write(root, { run, handoff, intake, review, reopened = null, onEv
     reopened ? `## Why the binding is reopened\n\n${reopened.reason}\n\n— ${reopened.by}` : "",
     scope ? `## The previous binding\n\n${REVISION}${scope.all ? ` Every item is to revise: ${scope.all}.` : ""}\n\n${prior.items.map((it) => renderItem(it, mark(it))).join("\n\n")}` : "",
     findings ? `## The judge's findings on the previous binding\n\n${findings}` : "",
+    parts.length > 1 ? `## This response\n\nThe set is ${ids.length} items; write it ${_perResponse} at a time, in the order given, one response each — you will be asked for the next. This response binds ${parts[0].join(", ")} and nothing else. An interface two items share is named the same way in every response: you are one hand across all of them.` : "",
   ].filter(Boolean).join("\n\n");
 
-  const res = await call({
-    half: "delivery", stage: GATE, role: "writer", kind: "compose",
-    system, prompt, cwd: root, outputSchema: outputContract("sdd"),
-    ledger: join(root, LEDGER), budget: run.budget, models: run.models, onEvent, _query, _sleep,
-  });
-
-  const wrote = res.toolUses.filter((t) => WRITES.has(t.name));
-  if (wrote.length) throw new Refused("wrote", `sdd: the writer used ${wrote.map((t) => t.name).join(", ")} — it composes, the runner writes`, wrote);
-  if (res.structured === undefined) throw new Refused("no-structured-output", "sdd: the writer returned no binding");
-  const v = validateAgainst(outputContract("sdd"), res.structured);
-  if (!v.ok) throw new Refused("sdd-invalid", `sdd: the binding does not fit the contract — ${v.errors.slice(0, 5).join("; ")}`, v.errors);
-  const { items, findings: carried } = scope ? carry(prior, res.structured, scope, intake) : { items: res.structured.items, findings: [] };
+  // the wire: one session, one response per part, the runner assembling — see PER_RESPONSE
+  const contractOut = outputContract("sdd");
+  const shared = { half: "delivery", stage: GATE, role: "writer", kind: "compose", system, cwd: root, outputSchema: contractOut, ledger: join(root, LEDGER), budget: run.budget, models: run.models, onEvent, _query, _sleep };
+  const structured = { items: [], questions: [] };
+  let session = null;
+  for (const [k, part] of parts.entries()) {
+    const where = parts.length > 1 ? ` (response ${k + 1} of ${parts.length})` : "";
+    const prompt = k === 0 ? opening : `## Next\n\nBind ${part.join(", ")} — the same set, the same hand: an interface you have already named is named the same way here, character for character. Return these items and nothing else; questions this part raises ride with it.`;
+    const res = await call({ ...shared, prompt, ...(session ? { resume: session } : {}) });
+    session = res.sessionId ?? session;
+    const wrote = res.toolUses.filter((t) => WRITES.has(t.name));
+    if (wrote.length) throw new Refused("wrote", `sdd: the writer used ${wrote.map((t) => t.name).join(", ")} — it composes, the runner writes`, wrote);
+    if (res.structured === undefined) throw new Refused("no-structured-output", `sdd: the writer returned no binding${where}`);
+    const v = validateAgainst(contractOut, res.structured);
+    if (!v.ok) throw new Refused("sdd-invalid", `sdd: the binding does not fit the contract${where} — ${v.errors.slice(0, 5).join("; ")}`, v.errors);
+    const got = res.structured.items.map((it) => it.work_item);
+    if (!got.some((id) => part.includes(id))) throw new Refused("writer-response", `sdd: the writer was asked for ${part.join(", ")}${where} and bound ${got.length ? got.join(", ") : "nothing"} — the wire failed, not the binding`, { asked: part, got });
+    structured.items.push(...res.structured.items);
+    structured.questions.push(...(res.structured.questions ?? []));
+    onEvent?.(`writer · response ${k + 1} of ${parts.length} — ${got.join(", ")}`);
+  }
+  const { items, findings: carried } = scope ? carry(prior, structured, scope, intake) : { items: structured.items, findings: [] };
 
   const doc = {
     id: `sdd-${run.id}`, meta: {},
     traces: { handoff: { version: handoff.version, content_hash: handoff.meta.content_hash }, intake: { content_hash: intake.meta.content_hash } },
-    ...res.structured, items,
+    ...structured, items,
     "x-drift-checked": ["/items", "/questions"],
   };
   return { doc: saveDoc(root, SDD_FILE, "sdd", doc), carried };
