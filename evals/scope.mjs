@@ -601,56 +601,54 @@ await withRoot({}, async (tmp) => {
   check("a surface that names the record does not license writing there", contain(["forge/x"], ["forge/**", "**"]).map((v) => v.rule).join() === "record-write");
 }
 
+/** Every rule the build rounds below raised — checked against the declared arithmetic at the end. */
+const emitted = new Set();
+
 await withRoot({}, async (tmp) => {
   const { cold, sdd } = await seedBuild(tmp, { files: { "README.md": "# Dock\n", "src/index.js": "export {};\n" } });
   const wt = join(cold, WORKTREE);
   const main = gitIn(cold, ["rev-parse", "main"]);
   const branchLog = () => gitIn(cold, ["log", "--format=%an|%s", BRANCH]).split("\n");
-  const emitted = new Set();
 
-  // Round 1: STORY-1 writes inside its surface and one file outside it.
-  const escape = builder([BUILT()], { 0: (cwd) => { put(cwd, "src/exceptions/store.js", "export const record = () => {};\n"); put(cwd, "src/deliveries/x.js", "oops\n"); } });
+  // Round 1: STORY-1 writes inside its surface and one file outside it; STORY-2 says built and changes nothing; REQ-4 builds.
+  // None depends on another, so each gets its call — a block or a violation is the item's, not the round's.
+  const escape = builder([BUILT(), BUILT("Built the run sheet."), BUILT("Queue built.")], {
+    0: (cwd) => { put(cwd, "src/exceptions/store.js", "export const record = () => {};\n"); put(cwd, "src/deliveries/x.js", "oops\n"); },
+    2: (cwd) => put(cwd, "src/queue/q.js", "y"),
+  });
   const r1 = await buildRound(cold, { ...roundCtx(cold), _query: escape.query });
   r1.verdict.findings.forEach((f) => emitted.add(f.rule));
-  const i1 = r1.doc.items[0];
-  check("a change set that leaves the surface fails the item — violated, both paths accounted, the one outside named with its rule — and the round halts: the items after it are unbuilt with the runner's reason, no builder called for them",
-    r1.verdict.verdict === "block" && i1.status === "violated" && i1.changed.join() === "src/deliveries/x.js,src/exceptions/store.js" && i1.violations.map((v) => `${v.rule}:${v.path}`).join() === "surface-escape:src/deliveries/x.js" && i1.commit === null && i1.base === main && r1.doc.items.slice(1).every((it) => it.status === "unbuilt" && it.base === null && /halted at STORY-1/.test(it.reason)) && escape.calls.length === 1, JSON.stringify(r1.doc.items));
-  check("the verdict is arithmetic — no judge, no model on it — one finding per violation and one per unbuilt item, all certain, pinned to the handoff, the intake record, the binding and the build record",
-    r1.verdict.cost.model === "none" && r1.verdict.cost.usd === 0 && r1.verdict.findings.map((f) => `${f.rule}@${f.subject}`).join() === "surface-escape@STORY-1,unbuilt@STORY-2,unbuilt@REQ-4" && r1.verdict.findings.every((f) => f.confidence === "certain") && r1.verdict.judged.map((j) => j.path).join() === `discovery/handoffs/handoff-v1.json,${INTAKE_FILE},${SDD_FILE},${BUILD_FILE}` && r1.verdict.checked === 3, JSON.stringify(r1.verdict.findings));
-  check("the violated work is discarded, not kept: the branch still stands at the seed, the worktree is clean, and nothing of it is on the record but the accounting",
-    branchLog().join() === "Forge|seed" && !existsSync(join(wt, "src", "deliveries")) && !existsSync(join(wt, "src", "exceptions")) && gitIn(wt, ["status", "--short"]) === "", gitIn(wt, ["status", "--short"]));
+  const [i1, i2, i3] = r1.doc.items;
+  check("a change set that leaves the surface fails the item — violated, both paths accounted, the one outside named with its rule, nothing committed — and the round goes on: STORY-2 and REQ-4, which depend on nothing, each got their call",
+    r1.verdict.verdict === "block" && i1.status === "violated" && i1.changed.join() === "src/deliveries/x.js,src/exceptions/store.js" && i1.violations.map((v) => `${v.rule}:${v.path}`).join() === "surface-escape:src/deliveries/x.js" && i1.commit === null && i1.base === main && i2.status === "blocked" && i3.status === "built" && escape.calls.length === 3, JSON.stringify(r1.doc.items));
+  check("a builder that says built and changed nothing is recorded blocked with the runner's reason — the diff is the control, not the report",
+    i2.status === "blocked" && i2.reason === "the builder reported built and changed nothing" && i2.changed.length === 0 && i2.commit === null && i2.base === main, JSON.stringify(i2));
+  check("the verdict is arithmetic — no judge, no model on it — one finding per violation and one per block, all certain, pinned to the handoff, the intake record, the binding and the build record; the block's finding names the item and the runner's reason",
+    r1.verdict.cost.model === "none" && r1.verdict.cost.usd === 0 && r1.verdict.findings.map((f) => `${f.rule}@${f.subject}`).join() === "surface-escape@STORY-1,builder-blocked@STORY-2" && /changed nothing/.test(r1.verdict.findings[1].summary) && r1.verdict.findings.every((f) => f.confidence === "certain") && r1.verdict.judged.map((j) => j.path).join() === `discovery/handoffs/handoff-v1.json,${INTAKE_FILE},${SDD_FILE},${BUILD_FILE}` && r1.verdict.checked === 3, JSON.stringify(r1.verdict.findings));
+  check("the violated work is discarded, not kept: the branch carries REQ-4 over the seed and nothing of STORY-1, the worktree is clean at that commit, and nothing of the escape is on the record but the accounting",
+    branchLog().join() === "Forge|REQ-4: Queue built.,Forge|seed" && !existsSync(join(wt, "src", "deliveries")) && !existsSync(join(wt, "src", "exceptions")) && existsSync(join(wt, "src", "queue", "q.js")) && gitIn(wt, ["status", "--short"]) === "" && i3.commit === gitIn(cold, ["rev-parse", BRANCH]), `${branchLog().join(" · ")} · ${gitIn(wt, ["status", "--short"])}`);
   check("the build record validates and traces what it was built from", validate("build", r1.doc).ok && r1.doc.traces.sdd.content_hash === sdd.meta.content_hash && r1.doc.traces.handoff.version === 1 && r1.doc.branch === BRANCH && r1.doc.id === `build-${roundCtx(cold).run.id}`, JSON.stringify(validate("build", r1.doc).errors));
 
-  // Round 2, with the findings: STORY-1 clean; STORY-2 says built and changed nothing; REQ-4 not reached.
-  const idle = builder([BUILT(), BUILT("Built the run sheet.")], { 0: (cwd) => put(cwd, "src/exceptions/store.js", "export const record = () => {};\n") });
-  const r2 = await buildRound(cold, { ...roundCtx(cold, { review: r1.verdict }), _query: idle.query });
+  // Round 2, with the findings: STORY-1 clean; STORY-2 blocks with a reason of its own; REQ-4 stands — no call.
+  const again = builder([BUILT(), BLOCKED("the binding's `Delivery` type is in no interface — approach: \"renders one row per delivery\"")], { 0: (cwd) => put(cwd, "src/exceptions/store.js", "export const record = () => {};\n") });
+  const r2 = await buildRound(cold, { ...roundCtx(cold, { review: r1.verdict }), _query: again.query });
   r2.verdict.findings.forEach((f) => emitted.add(f.rule));
   const [s1, s2, q4] = r2.doc.items;
-  check("a clean change set is committed on the build branch by Forge, the message the item id and the report's first line; the item is built with its commit and its base",
-    s1.status === "built" && s1.commit && s1.commit !== main && branchLog()[0] === `Forge|STORY-1: ${BUILT().summary.slice(0, 72)}` && s1.changed.join() === "src/exceptions/store.js" && s1.violations.length === 0 && s1.reason === null && s1.base === main, JSON.stringify([s1, branchLog()]));
-  check("a builder that says built and changed nothing is recorded blocked with the runner's reason — the diff is the control, not the report — and the round halts there",
-    s2.status === "blocked" && s2.reason === "the builder reported built and changed nothing" && s2.changed.length === 0 && s2.commit === null && q4.status === "unbuilt" && idle.calls.length === 2, JSON.stringify(s2));
-  check("the finding names the item and the runner's reason", r2.verdict.findings.map((f) => `${f.rule}@${f.subject}`).join() === "builder-blocked@STORY-2,unbuilt@REQ-4" && /changed nothing/.test(r2.verdict.findings[0].summary), JSON.stringify(r2.verdict.findings[0]));
-  check("the builder's prompt carries the item, its binding exactly, the shared interfaces the other items name, the screens it runs on, the questions the snapshot still carries as not its to decide, and — on a rebuild — the findings on its previous build",
-    /^## Where you are/.test(idle.calls[0].prompt) && /## The binding — build exactly this/.test(idle.calls[0].prompt) && /## Shared interfaces the other items name/.test(idle.calls[0].prompt) && /STORY-2 · `deliveries.forShift`/.test(idle.calls[0].prompt) && /## The signed design — the screens this item runs on/.test(idle.calls[0].prompt) && /## The findings on the previous build of this item/.test(idle.calls[0].prompt) && /surface-escape/.test(idle.calls[0].prompt) && /src\/deliveries\/x\.js/.test(idle.calls[0].prompt) && !/## The findings on the previous build/.test(idle.calls[1].prompt), idle.calls[0].prompt.slice(0, 600));
-  check("the builder's system prompt is the identity plus the writer's mechanics: the scope line, the arithmetic named as checked elsewhere, and the report's contract — status, summary, suggestions, reason, nothing of the runner's",
-    /# Builder/.test(idle.calls[0].options.systemPrompt) && /## Checked elsewhere[^#]*`surface-escape`[^#]*`record-write`/.test(idle.calls[0].options.systemPrompt) && idle.calls[0].options.outputFormat.schema.required.join() === "status,summary,suggestions,reason" && !("binding_hash" in idle.calls[0].options.outputFormat.schema.properties), idle.calls[0].options.systemPrompt.slice(-600));
-
-  // Round 3: STORY-1 stands — no call; STORY-2 blocks with a reason of its own; REQ-4 unbuilt.
-  const stuck = builder([BLOCKED("the binding's `Delivery` type is in no interface — approach: \"renders one row per delivery\"")]);
-  const r3 = await buildRound(cold, { ...roundCtx(cold, { review: r2.verdict }), _query: stuck.query });
-  r3.verdict.findings.forEach((f) => emitted.add(f.rule));
+  check("a clean change set is committed on the build branch by Forge, the message the item id and the report's first line; the item is built with its commit and its base — the branch's head, where REQ-4 already stands",
+    s1.status === "built" && s1.commit && s1.commit !== main && branchLog()[0] === `Forge|STORY-1: ${BUILT().summary.slice(0, 72)}` && s1.changed.join() === "src/exceptions/store.js" && s1.violations.length === 0 && s1.reason === null && s1.base === i3.commit, JSON.stringify([s1, branchLog()]));
   check("an item whose binding and commit both stand is reused for $0 — no call, the same commit — and a builder blocked with a reason is recorded with it, the finding quoting the reason and the report",
-    r3.doc.items[0].reused === true && r3.doc.items[0].commit === s1.commit && r3.doc.items[1].status === "blocked" && /Delivery` type/.test(r3.doc.items[1].reason) && r3.verdict.findings[0].rule === "builder-blocked" && /Delivery` type/.test(r3.verdict.findings[0].summary) && /^report:/.test(r3.verdict.findings[0].evidence) && stuck.calls.length === 1, JSON.stringify(r3.verdict.findings[0]));
+    q4.reused === true && q4.commit === i3.commit && s2.status === "blocked" && /Delivery` type/.test(s2.reason) && r2.verdict.findings.map((f) => `${f.rule}@${f.subject}`).join() === "builder-blocked@STORY-2" && /Delivery` type/.test(r2.verdict.findings[0].summary) && /^report:/.test(r2.verdict.findings[0].evidence) && again.calls.length === 2, JSON.stringify(r2.verdict.findings[0]));
+  check("the builder's prompt carries the item, its binding exactly, the shared interfaces the other items name, the screens it runs on, the questions the snapshot still carries as not its to decide, and — on a rebuild — the findings on its own previous build: STORY-1 sees its escape, STORY-2 its block",
+    /^## Where you are/.test(again.calls[0].prompt) && /## The binding — build exactly this/.test(again.calls[0].prompt) && /## Shared interfaces the other items name/.test(again.calls[0].prompt) && /STORY-2 · `deliveries.forShift`/.test(again.calls[0].prompt) && /## The signed design — the screens this item runs on/.test(again.calls[0].prompt) && /## The findings on the previous build of this item/.test(again.calls[0].prompt) && /surface-escape/.test(again.calls[0].prompt) && /src\/deliveries\/x\.js/.test(again.calls[0].prompt) && !/builder-blocked/.test(again.calls[0].prompt) && /## The findings on the previous build of this item/.test(again.calls[1].prompt) && /changed nothing/.test(again.calls[1].prompt) && !/surface-escape/.test(again.calls[1].prompt), again.calls[0].prompt.slice(0, 600));
+  check("the builder's system prompt is the identity plus the writer's mechanics: the scope line, the arithmetic named as checked elsewhere, and the report's contract — status, summary, suggestions, reason, nothing of the runner's",
+    /# Builder/.test(again.calls[0].options.systemPrompt) && /## Checked elsewhere[^#]*`surface-escape`[^#]*`record-write`/.test(again.calls[0].options.systemPrompt) && again.calls[0].options.outputFormat.schema.required.join() === "status,summary,suggestions,reason" && !("binding_hash" in again.calls[0].options.outputFormat.schema.properties), again.calls[0].options.systemPrompt.slice(-600));
 
-  // Round 4: the rest builds; the verdict passes; the branch carries one commit per built item over the seed, and main is untouched.
-  const rest = builder([BUILT("Run sheet built: T-3 by id."), BUILT("Queue built: T-4 by id.")], { 0: (cwd) => put(cwd, "src/deliveries/store.js", "x"), 1: (cwd) => put(cwd, "src/queue/q.js", "y") });
-  const r4 = await buildRound(cold, { ...roundCtx(cold, { review: r3.verdict }), _query: rest.query });
-  check("every item built: the verdict passes with no findings, the branch is seed → STORY-1 → STORY-2 → REQ-4 in the binding's order, and the project's own branch has not moved",
-    r4.verdict.verdict === "pass" && r4.verdict.findings.length === 0 && r4.doc.items.map((i) => `${i.work_item}:${i.status}:${i.reused ? 1 : 0}`).join() === "STORY-1:built:1,STORY-2:built:0,REQ-4:built:0" && branchLog().map((l) => l.split("|")[1].split(":")[0]).join() === "REQ-4,STORY-2,STORY-1,seed" && gitIn(cold, ["rev-parse", "main"]) === main && rest.calls.length === 2, branchLog().join(" · "));
+  // Round 3: STORY-2 builds; the other two stand; the verdict passes; the branch carries one commit per item over the seed, each from the round it built in, and main is untouched.
+  const rest = builder([BUILT("Run sheet built: T-3 by id.")], { 0: (cwd) => put(cwd, "src/deliveries/store.js", "x") });
+  const r3 = await buildRound(cold, { ...roundCtx(cold, { review: r2.verdict }), _query: rest.query });
+  check("every item built: the verdict passes with no findings, the branch is seed → REQ-4 → STORY-1 → STORY-2 — the order they built in, one call this round — and the project's own branch has not moved",
+    r3.verdict.verdict === "pass" && r3.verdict.findings.length === 0 && r3.doc.items.map((i) => `${i.work_item}:${i.status}:${i.reused ? 1 : 0}`).join() === "STORY-1:built:1,STORY-2:built:0,REQ-4:built:1" && branchLog().map((l) => l.split("|")[1].split(":")[0]).join() === "STORY-2,STORY-1,REQ-4,seed" && gitIn(cold, ["rev-parse", "main"]) === main && rest.calls.length === 1, branchLog().join(" · "));
   check("the record on disk is the last round's, and the loop's verdict file beside it", loadBuild(cold).items.every((i) => i.status === "built") && readDoc(cold, BUILD_VERDICT).verdict === "pass");
-  check("every rule the build's arithmetic can emit is declared to the builder as arithmetic, and the four a round can raise were raised here; `binding-moved` is the re-judge's (R5)",
-    [...emitted].every((r) => BUILD_RULES.includes(r)) && BUILD_RULES.filter((r) => r !== "binding-moved").every((r) => emitted.has(r) || r === "record-write") && checkBuild({ items: [{ work_item: "STORY-1", status: "violated", base: "b", changed: ["forge/x"], violations: [{ path: "forge/x", rule: "record-write" }], reason: "r", summary: "s" }] }).map((f) => f.rule).join() === "record-write", `emitted ${[...emitted].sort().join()} · declared ${[...BUILD_RULES].sort().join()}`);
 
   const builderId = identity(join(ROOT, "delivery", "build", "prompts", "builder.md"));
   check("the builder is told the diff is the control, to commit nothing, to name tests by criterion id, and the design's hooks — data-screen and data-control — which QA will drive by",
@@ -683,20 +681,28 @@ await withRoot({}, async (tmp) => {
   check("the design slice stays the item's own screens in full — SCREEN-2 is not drawn in STORY-1's design section, and the items that depend on nothing carry no dependency section",
     /### SCREEN-1 — Recording an exception/.test(section(p, "The signed design — the screens this item runs on")) && !/### SCREEN-2/.test(section(p, "The signed design — the screens this item runs on")) && !b.calls[0].prompt.includes("## What this item depends on") && !b.calls[1].prompt.includes("## What this item depends on"), section(p, "The signed design — the screens this item runs on").slice(0, 300));
 
-  // A halt lands on the build order: what follows the halted item in that order is unbuilt, and the finding says which order.
-  const { cold: halted, sdd: haltedSdd } = await seedBuild(tmp, { slug: "sluice", binding, files: { "README.md": "# Sluice\n" } });
-  const h = builder([BLOCKED("the design has no delivery-row control on SCREEN-2")]);
-  const rh = await buildRound(halted, { ...roundCtx(halted), _query: h.query });
-  check("the round halts at the first item in the build order that does not build — here STORY-2, first because STORY-1 depends on it — and the unbuilt finding names the order it was built in",
-    rh.doc.items.map((i) => `${i.work_item}:${i.status}`).join() === "STORY-2:blocked,REQ-4:unbuilt,STORY-1:unbuilt" && h.calls.length === 1 && rh.verdict.findings.filter((f) => f.rule === "unbuilt").every((f) => /after what it depends on/.test(f.evidence) && /halted at STORY-2/.test(f.summary)), JSON.stringify(rh.verdict.findings));
+  // A block lands on the dependencies, not the order: what depends on the blocked item is unbuilt behind it, naming it; what does not is built in the same round.
+  const { cold: behind, sdd: behindSdd } = await seedBuild(tmp, { slug: "sluice", binding, files: { "README.md": "# Sluice\n" } });
+  const h = builder([BLOCKED("the design has no delivery-row control on SCREEN-2"), BUILT("Queue built.")], { 1: (cwd) => put(cwd, "src/queue/q.js", "b") });
+  const rh = await buildRound(behind, { ...roundCtx(behind), _query: h.query });
+  rh.verdict.findings.forEach((f) => emitted.add(f.rule));
+  check("STORY-2 blocks; REQ-4, which depends on nothing, is built for its call; STORY-1, which depends on both, is unbuilt behind STORY-2 alone — the reason names the blocked dependency and not the built one, and the finding says why it was not attempted",
+    rh.doc.items.map((i) => `${i.work_item}:${i.status}`).join() === "STORY-2:blocked,REQ-4:built,STORY-1:unbuilt" && h.calls.length === 2 && rh.doc.items[2].reason === "it depends on STORY-2, which is blocked" && rh.verdict.findings.map((f) => `${f.rule}@${f.subject}`).join() === "builder-blocked@STORY-2,unbuilt@STORY-1" && /after what it depends on/.test(rh.verdict.findings[1].evidence) && rh.verdict.findings[1].summary === "STORY-1 was not built: it depends on STORY-2, which is blocked.", JSON.stringify(rh.verdict.findings));
+  const h2 = builder([BUILT("Run sheet built."), BUILT("Exceptions built.")], { 0: (cwd) => put(cwd, "src/deliveries/store.js", "a"), 1: (cwd) => put(cwd, "src/exceptions/store.js", "c") });
+  const rh2 = await buildRound(behind, { ...roundCtx(behind, { review: rh.verdict }), _query: h2.query });
+  check("the next round builds STORY-2 and then STORY-1 on it, REQ-4 standing; `unbuilt` said nothing about STORY-1's work, so its builder is shown no previous findings — STORY-2's is shown its block",
+    rh2.verdict.verdict === "pass" && rh2.doc.items.map((i) => `${i.work_item}:${i.status}:${i.reused ? 1 : 0}`).join() === "STORY-2:built:0,REQ-4:built:1,STORY-1:built:0" && h2.calls.length === 2 && /## The findings on the previous build of this item/.test(h2.calls[0].prompt) && /delivery-row/.test(h2.calls[0].prompt) && !/## The findings on the previous build/.test(h2.calls[1].prompt) && h2.calls[1].prompt.includes(`### STORY-2 — built at ${rh2.doc.items[0].commit.slice(0, 7)}`), `${rh2.doc.items.map((i) => `${i.work_item}:${i.status}`).join()} · ${h2.calls[1]?.prompt.slice(0, 300)}`);
 
   // A binding that was approved with a cycle in it — before the arithmetic held them — has no order: the round refuses by name before any call.
-  const ring = JSON.parse(JSON.stringify(haltedSdd));
+  const ring = JSON.parse(JSON.stringify(behindSdd));
   ring.items[1].controls.push({ screen_ref: "SCREEN-1", control: "record-exception" });
-  saveDoc(halted, SDD_FILE, "sdd", ring);
+  saveDoc(behind, SDD_FILE, "sdd", ring);
   const cyc = builder([BUILT()]);
-  const refused = await buildRound(halted, { ...roundCtx(halted), _query: cyc.query }).then(() => null, (e) => e);
+  const refused = await buildRound(behind, { ...roundCtx(behind), _query: cyc.query }).then(() => null, (e) => e);
   check("a cycle in the binding refuses the build round — dependency-cycle, the ring named — and no builder is called", refused?.code === "dependency-cycle" && /STORY-1 → STORY-2 → STORY-1/.test(refused.message) && cyc.calls.length === 0, refused?.message);
 });
+
+check("every rule the build's arithmetic can emit is declared to the builder as arithmetic, and the four a round can raise were raised across the rounds above; `binding-moved` is the re-judge's (R5)",
+  [...emitted].every((r) => BUILD_RULES.includes(r)) && BUILD_RULES.filter((r) => r !== "binding-moved").every((r) => emitted.has(r) || r === "record-write") && checkBuild({ items: [{ work_item: "STORY-1", status: "violated", base: "b", changed: ["forge/x"], violations: [{ path: "forge/x", rule: "record-write" }], reason: "r", summary: "s" }] }).map((f) => f.rule).join() === "record-write", `emitted ${[...emitted].sort().join()} · declared ${[...BUILD_RULES].sort().join()}`);
 
 done();

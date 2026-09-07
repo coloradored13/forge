@@ -470,30 +470,63 @@ await withRoot({ "prompts/j.md": IDENTITY }, async (root) => {
 }
 
 // ── R1 in build: one builder per item that needs building, nothing for one that stands; the verdict costs nothing; the estimate learns the builder's price ──
+/** The build record a retained round kept beside its verdict (R8). */
+const keptBuild = (root, kept) => JSON.parse(readFileSync(join(root, kept.dir, kept.kept.find((k) => k.path === "forge/delivery/build.json").as), "utf8"));
 await withRoot({}, async (tmp) => {
   const { cold, handoff, intake } = await seedBuild(tmp, { slug: "silt", files: { "README.md": "# Silt\n" } });
   const ledger = join(cold, LEDGER);
   const spentBefore = rows(ledger).length;
   const events = [];
-  // Round 1: STORY-1 built, STORY-2 blocked → the round halts, REQ-4 unbuilt → block → regenerate under the cap.
-  // Round 2: STORY-1 stands (no call), STORY-2 built, REQ-4 built → pass → approved at round 2.
-  const b = builder([BUILT(), BLOCKED("the design has no delivery-row control on SCREEN-2"), BUILT("Run sheet built."), BUILT("Queue built.")], {
+  // Round 1: STORY-1 built, STORY-2 blocked, REQ-4 built — it depends on nothing, so a block elsewhere is not its
+  // business → block → regenerate under the cap. Round 2: STORY-1 and REQ-4 stand (no call), STORY-2 built → pass.
+  const b = builder([BUILT(), BLOCKED("the design has no delivery-row control on SCREEN-2"), BUILT("Queue built."), BUILT("Run sheet built.")], {
     0: (cwd) => put(cwd, "src/exceptions/store.js", "a"),
-    2: (cwd) => put(cwd, "src/deliveries/store.js", "b"),
-    3: (cwd) => put(cwd, "src/queue/q.js", "c"),
+    2: (cwd) => put(cwd, "src/queue/q.js", "c"),
+    3: (cwd) => put(cwd, "src/deliveries/store.js", "b"),
   }, { usd: [0.7, 0.1, 0.5, 0.3] });
   const r = await runStage(cold, { stage: "build", _query: b.query, onEvent: (e) => events.push(e) });
   check("the loop runs build as a writer stage with no judge: round 1 blocks on the arithmetic and regenerates under the cap; round 2 passes — approved at round 2, four builder calls in all",
     r.status === "approved" && r.round === 2 && r.verdict.verdict === "pass" && b.calls.length === 4 && events.includes("build block · round 1 of 2 — regenerating"), `${r.status} r${r.round} · ${events.join(" | ")}`);
+  const r1 = rounds(cold, "build")[0];
+  const items1 = keptBuild(cold, r1).items;
+  check("a block does not halt the round: STORY-2 blocked and REQ-4, which depends on nothing, was built in the same round for one call — the round-1 record holds built, blocked, built; the verdict names the block and nothing unbuilt",
+    items1.map((i) => `${i.work_item}:${i.status}`).join() === "STORY-1:built,STORY-2:blocked,REQ-4:built" && r1.verdict.findings.map((f) => `${f.rule}@${f.subject}`).join() === "builder-blocked@STORY-2" && b.calls.length >= 3 && /## The work item\n\n### REQ-4/.test(b.calls[2].prompt), `${JSON.stringify(items1.map((i) => [i.work_item, i.status]))} · ${r1.verdict.findings.map((f) => `${f.rule}@${f.subject}`).join()}`);
   check("R1: the stage's cost is the builders' — four rows on the ledger for delivery/build/builder, $1.60 — and the verdict itself cost nothing: no model on it",
     r.cost.calls === 4 && Math.abs(r.cost.usd - 1.6) < 1e-9 && rows(ledger).slice(spentBefore).map((x) => `${x.stage}/${x.role}/${x.kind}`).join() === Array(4).fill("build/builder/builder").join() && r.verdict.cost.model === "none" && r.verdict.cost.usd === 0, JSON.stringify(r.cost));
   const doc = loadBuild(cold);
-  check("round 2 kept STORY-1 for $0 — reused, the round-1 commit, no call with its item in the prompt — and built the other two",
-    doc.items.map((i) => `${i.work_item}:${i.status}:${i.reused ? 1 : 0}`).join() === "STORY-1:built:1,STORY-2:built:0,REQ-4:built:0" && b.calls.slice(2).every((c) => !/### STORY-1 — story/.test(c.prompt)) && events.some((e) => /STORY-1 reused — binding unchanged/.test(e)) && gitIn(cold, ["log", "--format=%s", BRANCH]).split("\n").length === 4, events.join(" | "));
+  check("round 2 kept STORY-1 and REQ-4 for $0 — reused, the round-1 commits, no call with either item in the prompt — and built STORY-2 alone",
+    doc.items.map((i) => `${i.work_item}:${i.status}:${i.reused ? 1 : 0}`).join() === "STORY-1:built:1,STORY-2:built:0,REQ-4:built:1" && b.calls.slice(3).every((c) => !/### STORY-1 — story/.test(c.prompt) && !/### REQ-4 — /.test(c.prompt)) && events.filter((e) => /reused — binding unchanged/.test(e)).map((e) => e.split(" ")[1]).join() === "STORY-1,REQ-4" && gitIn(cold, ["log", "--format=%s", BRANCH]).split("\n").length === 4, events.join(" | "));
   check("R8: both rounds' verdicts are kept with the build record they judged", rounds(cold, "build").map((k) => `${k.round}:${k.verdict.verdict}`).join() === "1:block,2:pass" && rounds(cold, "build")[0].kept.some((k) => k.path === "forge/delivery/build.json"), JSON.stringify(rounds(cold, "build").map((k) => [k.round, k.verdict.verdict, k.kept.map((x) => x.path)])));
   const e = estimateRun(cold, { handoff, intake });
   check("the estimate now prices a build: the builder's mean over its four calls, times one per item — a number from history",
     Math.abs(e.stages[2].roles[0].per_call - 0.4) < 1e-9 && e.stages[2].roles[0].n === 4 && e.stages[2].calls === 3 && Math.abs(e.stages[2].usd - 1.2) < 1e-9, JSON.stringify(e.stages[2]));
+});
+
+// ── R1 behind a block: an item whose dependency did not build is unbuilt for $0, naming what it waits on; the chain is followed ──
+await withRoot({}, async (tmp) => {
+  // REQ-4 calls `runsheet.rows` from STORY-2; STORY-2 calls `deliveries.forShift` from STORY-1: a chain, STORY-1 at its root.
+  const CHAIN = { ...BINDING, items: [
+    BINDING.items[0],
+    { ...BINDING.items[1], interfaces: [{ ...BINDING.items[1].interfaces[0], from: "STORY-1" }, { name: "runsheet.rows", signature: "rows(shift_id: string): Row[]", shared: true }] },
+    { ...BINDING.items[2], interfaces: [...BINDING.items[2].interfaces, { name: "runsheet.rows", signature: "rows(shift_id: string): Row[]", shared: true, from: "STORY-2" }] },
+  ] };
+  const { cold } = await seedBuild(tmp, { slug: "chain", binding: CHAIN, files: { "README.md": "# Chain\n" } });
+  const events = [];
+  // Round 1: STORY-1 blocked → STORY-2 unbuilt behind it → REQ-4 unbuilt behind STORY-2; one call. Round 2: all three built.
+  const b = builder([BLOCKED("the design has no reason-chip control on SCREEN-1"), BUILT(), BUILT("Run sheet built."), BUILT("Queue built.")], {
+    1: (cwd) => put(cwd, "src/exceptions/store.js", "a"),
+    2: (cwd) => put(cwd, "src/deliveries/store.js", "b"),
+    3: (cwd) => put(cwd, "src/queue/q.js", "c"),
+  });
+  const r = await runStage(cold, { stage: "build", _query: b.query, onEvent: (e) => events.push(e) });
+  const r1 = rounds(cold, "build")[0];
+  const items1 = keptBuild(cold, r1).items;
+  check("round 1 spent one call: STORY-1 blocked; STORY-2, which calls its interface, is unbuilt behind it with no call, and REQ-4 behind STORY-2 — each reason names the item it waits on and how that item stands",
+    items1.map((i) => `${i.work_item}:${i.status}`).join() === "STORY-1:blocked,STORY-2:unbuilt,REQ-4:unbuilt" && items1[1].reason === "it depends on STORY-1, which is blocked" && items1[2].reason === "it depends on STORY-2, which was not built" && b.calls.length === 4 && /^build STORY-1 blocked — /.test(events.find((e) => /blocked —/.test(e)) ?? ""), `${JSON.stringify(items1.map((i) => [i.work_item, i.status, i.reason]))} · calls ${b.calls.length}`);
+  check("the round-1 verdict is one block and two unbuilt, in the item's name, the unbuilt finding saying what the item waits on; the events say the same as they go",
+    r1.verdict.verdict === "block" && r1.verdict.findings.map((f) => `${f.rule}@${f.subject}`).join() === "builder-blocked@STORY-1,unbuilt@STORY-2,unbuilt@REQ-4" && r1.verdict.findings[1].summary === "STORY-2 was not built: it depends on STORY-1, which is blocked." && events.filter((e) => /unbuilt — /.test(e)).join(" | ") === "build STORY-2 unbuilt — it depends on STORY-1, which is blocked | build REQ-4 unbuilt — it depends on STORY-2, which was not built", `${r1.verdict.findings.map((f) => `${f.rule}@${f.subject}: ${f.summary}`).join(" | ")} · ${events.join(" | ")}`);
+  check("round 2 builds the three in dependency order — STORY-1, then STORY-2 on its commit, then REQ-4 — and approves; the builder's dependency slice names STORY-1 as standing when STORY-2 is built",
+    r.status === "approved" && r.round === 2 && loadBuild(cold).items.map((i) => `${i.work_item}:${i.status}`).join() === "STORY-1:built,STORY-2:built,REQ-4:built" && /### STORY-1 — built at [0-9a-f]{7}\n/.test(b.calls[2].prompt) && gitIn(cold, ["log", "--format=%s", BRANCH]).split("\n").length === 4, `${r.status} r${r.round} · ${loadBuild(cold).items.map((i) => `${i.work_item}:${i.status}`).join()}`);
 });
 
 done();
