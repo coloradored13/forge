@@ -7,10 +7,11 @@
 // committed, and it is held to the item's surface (R2): a path outside it, or under the
 // pipeline's own directories, discards the item's work and is a finding. A clean item is
 // committed by the runner; a blocked one is a finding with the builder's reason, and the
-// round halts there, the rest unbuilt. No judge: the verdict is this arithmetic, filed
-// for $0 — QA is the judge. An item whose binding has not moved and whose commit stands
-// is reused for $0 (R1): manifest currency, so a second round rebuilds what the findings
-// name and nothing else.
+// round goes on: every item that does not depend on it is built, and what does is unbuilt
+// behind it for $0 — one round surfaces every block, not the first. No judge: the verdict
+// is this arithmetic, filed for $0 — QA is the judge. An item whose binding has not moved
+// and whose commit stands is reused for $0 (R1): manifest currency, so a second round
+// rebuilds what the findings name and nothing else.
 
 import { execFileSync } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync } from "node:fs";
@@ -51,8 +52,8 @@ export function loadBuild(root) { return readDoc(root, BUILD_FILE); }
 
 /**
  * One round: every binding item in order — reused where its build stands, built where it
- * does not, unbuilt past the first that blocks or violates — then the arithmetic filed as
- * the verdict, pinned to the handoff, the intake record, the binding and the build record.
+ * does not, unbuilt behind one it depends on that blocked or violated — then the arithmetic
+ * filed as the verdict, pinned to the handoff, the intake record, the binding and the build record.
  * @param ctx  { run, handoff, intake, review, onEvent, _query, _sleep }
  *             `review` is the previous round's verdict, or null — the items its findings name are rebuilt.
  * @returns { doc, verdict, file }
@@ -89,7 +90,8 @@ async function buildAll(root, { run, handoff, intake, sdd, review, onEvent, _que
   if (stray.length) throw new Refused("item-unknown", `build: ${stray.join(", ")} bound but not a work item the intake carries`);
   const { deps } = dependenciesOf(sdd, intake);
   const items = [];
-  let halted = null;
+  // what this round did not build, and how it stands — an item behind one of these is unbuilt, not attempted
+  const down = new Map();
   for (const it of order) {
     const binding_hash = itemHash(it, BOUND);
     const was = prior?.items.find((p) => p.work_item === it.work_item);
@@ -98,8 +100,12 @@ async function buildAll(root, { run, handoff, intake, sdd, review, onEvent, _que
       onEvent?.(`${it.work_item} reused — binding unchanged, ${was.commit.slice(0, 7)} stands`);
       continue;
     }
-    if (halted) {
-      items.push(entry(it.work_item, { status: "unbuilt", binding_hash, summary: `Not built: the round halted at ${halted}.`, reason: `the round halted at ${halted}` }));
+    const behind = [...new Set((deps.get(it.work_item) ?? []).map((d) => d.item))].filter((id) => down.has(id));
+    if (behind.length) {
+      const why = `it depends on ${behind.map((id) => `${id}, which ${down.get(id)}`).join(", and ")}`;
+      down.set(it.work_item, "was not built");
+      items.push(entry(it.work_item, { status: "unbuilt", binding_hash, summary: `Not built: ${why}.`, reason: why }));
+      onEvent?.(`${it.work_item} unbuilt — ${why}`);
       continue;
     }
     // whatever a dead call left in the worktree is nobody's: the base is the branch's head, clean
@@ -112,14 +118,14 @@ async function buildAll(root, { run, handoff, intake, sdd, review, onEvent, _que
     const { status, summary, suggestions, reason } = report;
     if (violations.length) {
       discard(wt);
-      halted = it.work_item;
+      down.set(it.work_item, "left its surface");
       items.push(entry(it.work_item, { status: "violated", binding_hash, base, changed, violations, summary, suggestions, reason: `the change set left the surface: ${violations.map((v) => `${v.path} (${v.rule})`).join(", ")}` }));
       onEvent?.(`${it.work_item} violated — ${violations.length} path(s) it may not change; discarded`);
       continue;
     }
     if (status === "blocked" || !changed.length) {
       discard(wt);
-      halted = it.work_item;
+      down.set(it.work_item, "is blocked");
       const why = status === "blocked" ? reason ?? "the builder gave no reason" : "the builder reported built and changed nothing";
       items.push(entry(it.work_item, { status: "blocked", binding_hash, base, changed, summary, suggestions, reason: why }));
       onEvent?.(`${it.work_item} blocked — ${why}`);
@@ -236,7 +242,7 @@ export function checkBuild(doc) {
     } else if (it.status === "blocked") {
       f("builder-blocked", it.work_item, `${it.work_item} was not built: ${it.reason}`, `report: ${it.summary}`, "Answer what it turns on — through Discovery if it is the contract or the design, in sdd if it is the binding — or override on the record.");
     } else if (it.status === "unbuilt") {
-      f("unbuilt", it.work_item, `${it.work_item} was not built: ${it.reason}.`, "each item is built after what it depends on, in the binding's order otherwise, and the round halts at the first that is not.", "Clear the item the round halted at; the next round builds on from there.");
+      f("unbuilt", it.work_item, `${it.work_item} was not built: ${it.reason}.`, "each item is built after what it depends on; one whose dependency did not build this round is not attempted — nothing of it stands in the checkout to build on.", "Clear what it depends on; the next round builds it on from there.");
     }
   }
   return findings;

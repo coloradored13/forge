@@ -25,7 +25,7 @@
     "items": {
       "type": "array",
       "x-runner": true,
-      "description": "One entry per binding item, in the binding's order — the build order. An item is `built` (its change set committed), `blocked` (the builder stopped with a reason; nothing kept), `violated` (its change set left the surface or touched the record; nothing kept) or `unbuilt` (the round halted before it).",
+      "description": "One entry per binding item, in the binding's order — the build order. An item is `built` (its change set committed), `blocked` (the builder stopped with a reason; nothing kept), `violated` (its change set left the surface or touched the record; nothing kept) or `unbuilt` (an item it depends on did not build this round; not attempted).",
       "items": { "$ref": "#/$defs/item" }
     },
     "x-drift-checked": { "type": "array", "x-runner": true, "items": { "type": "string" }, "const": ["/items", "/branch"] }
