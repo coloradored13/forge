@@ -9,6 +9,7 @@
   },
   "scripts": {
     "evals": "node evals/run-all.mjs",
+    "interview": "node tools/interview.mjs",
     "import-rule": "node tools/import-rule.mjs",
     "owns": "node tools/owns.mjs",
     "console": "node tools/console.mjs"

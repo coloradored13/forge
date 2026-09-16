@@ -8,5 +8,6 @@ One repo, two halves, one seam. **Discovery** (`discovery/`) produces what human
 - [PORT.md](PORT.md) — what crosses from v1 and when.
 - `shared/rules.json` — the rule registry: one enforcer per rule.
 - `npm run evals` — every gate, on seeded fixtures in temp roots, then the real tree.
+- `npm run interview -- start "your idea" --root /path/to/project` — open the adaptive defining interview; use `turn`, `workshop`, `flag`, `derive`, `react`, `status`, and `export` to run the first-release loop.
 
 Status: **M0** — spec approved, repo seeded. v1 is [Dev-Team](https://github.com/coloradored13/Dev-Team), archived as the evidence corpus.
