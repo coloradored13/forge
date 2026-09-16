@@ -77,8 +77,12 @@ export const TRANSITIONS = [
   { from: "approved",  event: "moved",      to: "stale",     guards: [], opens: true },
   { from: "review",    event: "moved",      to: "stale",     guards: [], opens: true },
   { from: "blocked",   event: "moved",      to: "stale",     guards: [], opens: true },
+  // JUDGED is derived from these rows, and a stage part way through a re-judge holds a
+  // judgement as much as one that finished. Left out, `adoptHandoff` skipped it and the
+  // in-flight verdict cleared against a handoff it had never seen.
+  { from: "rejudging", event: "moved",      to: "stale",     guards: [], opens: true },
   { from: "stale",     event: "rejudge",    to: "rejudging", guards: [] },
-  { from: "rejudging", event: "clear",      to: "approved",  guards: ["verdict", "non-block"], noWord: true },
+  { from: "rejudging", event: "clear",      to: "approved",  guards: ["verdict", "non-block", "fresh"], noWord: true },
   { from: "rejudging", event: "reblock",    to: "review",    guards: ["verdict", "block"] },
   { from: "approved",  event: "reopen",     to: "running",   guards: ["reason"], opens: true },
   { from: "*",         event: "stop",       to: "stopped",   guards: ["reason"] },

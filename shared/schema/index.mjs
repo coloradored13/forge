@@ -99,7 +99,25 @@ export function contractOf(full) {
   model.properties = Object.fromEntries(Object.entries(full.properties ?? {}).filter(([, p]) => !p["x-runner"]));
   model.required = (full.required ?? []).filter((k) => k in model.properties);
   const out = inlineRefs(model, full.$defs);
-  return strip(out);
+  // `x-runner` means the same thing at any depth: the runner derives it and the model is
+  // never asked for it. Filtered only at the top level, a runner-owned field nested in a
+  // definition was still offered on the wire — and a field a model is offered is a field
+  // some model will eventually fill in.
+  return strip(runnerless(out));
+}
+
+/** Drop every `x-runner` property, however deep, and any required entry that named one. */
+function runnerless(node) {
+  if (Array.isArray(node)) return node.map(runnerless);
+  if (!node || typeof node !== "object") return node;
+  const out = {};
+  for (const [k, v] of Object.entries(node)) {
+    if (k === "properties" && v && typeof v === "object") {
+      out.properties = Object.fromEntries(Object.entries(v).filter(([, p]) => !p?.["x-runner"]).map(([n, p]) => [n, runnerless(p)]));
+    } else out[k] = runnerless(v);
+  }
+  if (Array.isArray(out.required) && out.properties) out.required = out.required.filter((k) => k in out.properties);
+  return out;
 }
 
 /**

@@ -19,11 +19,11 @@ import { validate, load, contractOf } from "../shared/schema/index.mjs";
 import { stamp } from "../shared/hash.mjs";
 import { Refused } from "../shared/refused.mjs";
 import {
-  RUN_FILE, ROUNDS, STAGES, STATES, EVENTS, TRANSITIONS, GUARDS, DEFAULTS,
+  RUN_FILE, ROUNDS, STAGES, STATES, EVENTS, TRANSITIONS, GUARDS, DEFAULTS, JUDGED,
   createRun, readRun, apply, transition, heartbeat, liveness, view, adoptHandoff,
 } from "../delivery/state/index.mjs";
 
-const { check, done } = suite("transition-table · one state machine, one store, one reader", 93);
+const { check, done } = suite("transition-table · one state machine, one store, one reader", 96);
 
 const T0 = new Date("2026-09-05T12:00:00Z");
 const at = (ms) => new Date(T0.getTime() + ms);
@@ -191,8 +191,10 @@ const moved = apply(appr, { stage: "sdd", event: "moved", by: "runner", reason: 
 check("moved lands an approved stage in stale, round reset — a moved handoff is a new episode", moved.run.stages.sdd.status === "stale" && moved.run.stages.sdd.round === 0);
 const rj = apply(moved.run, { stage: "sdd", event: "rejudge", by: "wrapper", now: at(0) });
 check("rejudge lands in rejudging and starts the heartbeat", rj.run.stages.sdd.status === "rejudging" && rj.run.stages.sdd.heartbeat_at === T0.toISOString());
-check("clear on a non-block verdict lands back in approved with the round still 0 — a pin refresh is never a round (R5)",
-  (() => { const r = apply(rj.run, { stage: "sdd", event: "clear", by: "wrapper", verdict: V("pass") }); return r.run.stages.sdd.status === "approved" && r.run.stages.sdd.round === 0 && r.run.stages.sdd.verdict === V("pass").path; })());
+check("clear on a fresh non-block verdict lands back in approved with the round still 0 — a pin refresh is never a round (R5)",
+  (() => { const r = apply(rj.run, { stage: "sdd", event: "clear", by: "wrapper", verdict: V("pass"), fresh: true }); return r.run.stages.sdd.status === "approved" && r.run.stages.sdd.round === 0 && r.run.stages.sdd.verdict === V("pass").path; })());
+check("clear on a stale verdict is refused: every door into approved checks freshness, and a re-judge that finished against a handoff since replaced has judged nothing that is still true",
+  refusal(() => apply(rj.run, { stage: "sdd", event: "clear", by: "wrapper", verdict: V("pass"), fresh: false }))?.code === "verdict-stale");
 check("clear on a block is refused judge-blocked; reblock takes it to review, round still 0",
   refusal(() => apply(rj.run, { stage: "sdd", event: "clear", by: "wrapper", verdict: V("block") }))?.code === "judge-blocked"
   && (() => { const r = apply(rj.run, { stage: "sdd", event: "reblock", by: "wrapper", verdict: V("block") }); return r.run.stages.sdd.status === "review" && r.run.stages.sdd.round === 0; })());
@@ -212,8 +214,12 @@ for (const from of ["review", "blocked"]) {
   check(`from ${from}: rejudge → reblock lands in review at round 0, and regenerate is open again — the cap counts from the moved contract`,
     rb.run.stages.sdd.status === "review" && rb.run.stages.sdd.round === 0 && apply(rb.run, { stage: "sdd", event: "regenerate", by: "runner", verdict: V("block") }).run.stages.sdd.status === "running");
 }
-check("moved from running, rejudging, pending or stopped is refused no-transition — nothing judged there is stale",
-  ["running", "rejudging", "pending", "stopped"].every((from) => refusal(() => apply(inState(from), { stage: "sdd", event: "moved", by: "runner", reason: "handoff v4 → v5" }))?.code === "no-transition"));
+check("moved from running, pending or stopped is refused no-transition — nothing judged there is stale",
+  ["running", "pending", "stopped"].every((from) => refusal(() => apply(inState(from), { stage: "sdd", event: "moved", by: "runner", reason: "handoff v4 → v5" }))?.code === "no-transition"));
+check("moved from rejudging goes stale: a stage part way through a re-judge holds a judgement as much as one that finished, and a handoff adopted under it leaves the in-flight verdict judging something gone",
+  (() => { const r = apply(inState("rejudging"), { stage: "sdd", event: "moved", by: "runner", reason: "handoff v4 → v5" }); return r.run.stages.sdd.status === "stale" && r.flags.some((f) => f.event === "moved"); })());
+check("JUDGED is every state a moved handoff stales, derived from the rows — the adopt door and the reopen door read the same set",
+  [...JUDGED].sort().join() === "approved,blocked,rejudging,review");
 
 // Reopen (R6): a human's reason redoes an approved stage — a new episode in running, the
 // reason held on the stage until the redo approves, so a restart over a dead or stopped
