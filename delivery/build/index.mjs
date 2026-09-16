@@ -153,6 +153,7 @@ async function build(root, wt, { run, handoff, intake, sdd, item, deps, built, r
   const contract = handoff.contract;
   const w = intake.work_items.find((x) => x.id === item.work_item);
   if (!w) throw new Refused("item-unknown", `build: ${item.work_item} is bound but is not a work item the intake carries`);
+  const alsoServes = (item.covers ?? []).filter((id) => id !== item.work_item);
   const refs = new Set(w.screens.map((s) => s.screen_ref));
   const dependsOn = renderDependencies(deps, { built, sdd, design: handoff.design });
   const shared = sdd.items.filter((o) => o !== item).flatMap((o) => o.interfaces.filter((i) => i.shared).map((i) => `- ${o.work_item} · \`${i.name}\`: \`${i.signature}\``));
@@ -168,7 +169,9 @@ async function build(root, wt, { run, handoff, intake, sdd, item, deps, built, r
   });
   const prompt = [
     `## Where you are\n\nYour working directory is a checkout of the product on branch \`${BRANCH}\` at commit ${base}. Everything you change from here is this item's change set, and it is held to the surface in the binding below. Commit nothing: the runner commits what stays inside the surface and discards what does not.`,
-    `## The work item\n\n${renderWorkItem(w, intake)}`,
+    alsoServes.length
+      ? `## The work items this unit builds (${[item.work_item, ...alsoServes].join(", ")})\n\n${[w, ...alsoServes.map((id) => (intake.work_items ?? []).find((x) => x.id === id))].filter(Boolean).map((x) => renderWorkItem(x, intake)).join("\n\n")}`
+      : `## The work item\n\n${renderWorkItem(w, intake)}`,
     `## The binding — build exactly this\n\n${renderItem(item)}`,
     `## Shared interfaces the other items name — exact, character for character\n\n${shared.join("\n") || "(none)"}`,
     `## The signed design — the screens this item runs on\n\n${refs.size ? renderDesign({ ...handoff.design, screens: handoff.design.screens.filter((s) => refs.has(s.screen_ref)) }) : "(this item runs on no screen)"}`,

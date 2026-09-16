@@ -47,7 +47,13 @@
       "required": ["work_item", "approach", "interfaces", "tests", "controls", "surface", "risks"],
       "additionalProperties": false,
       "properties": {
-        "work_item": { "type": "string", "pattern": "^(STORY|REQ)-\\d+$", "description": "The intake work item this binds. Exactly one binding per work item is arithmetic." },
+        "work_item": { "type": "string", "pattern": "^(STORY|REQ)-\\d+$", "description": "The work item this unit is named for, and one it covers. Its id everywhere downstream." },
+        "covers": {
+          "type": "array",
+          "default": [],
+          "items": { "type": "string", "pattern": "^(STORY|REQ)-\\d+$" },
+          "description": "Further work items this one unit builds, beyond the one it is named for. Stories are sliced by what a person values; a build is ordered by what depends on what, and the two do not always agree. When one story's test drives a control on another's screen, or two need each other, they are one buildable thing and belong in one unit. Every work item is covered exactly once across the set — merging changes who builds what, never what gets built."
+        },
         "approach": { "type": "string", "minLength": 1, "description": "How it gets built, in prose — the first place mechanism may be discussed. Say what is exercised and where state lives; do not restate the story." },
         "interfaces": {
           "type": "array",
