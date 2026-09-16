@@ -161,13 +161,17 @@ async function judgeAll(root, { run, handoff, intake, doc, carried = [], onEvent
   const contract = handoff.contract;
   const byId = new Map(intake.work_items.map((w) => [w.id, w]));
   const items = doc.items.map((it) => {
+    const mine = covered(it);
     const w = byId.get(it.work_item);
-    const refs = new Set(w.screens.map((s) => s.screen_ref));
+    const all = mine.map((id) => byId.get(id)).filter(Boolean);
+    const refs = new Set(all.flatMap((x) => x.screens.map((s) => s.screen_ref)));
     const others = doc.items.filter((o) => o !== it).flatMap((o) => o.interfaces.map((i) => `- ${o.work_item} · \`${i.name}\`: \`${i.signature}\``));
     return {
       id: it.work_item,
+      covers: mine,
       sections: [
-        ["The work item", renderWorkItem(w, intake)],
+        [mine.length > 1 ? `The work items this unit builds (${mine.join(", ")})` : "The work item",
+         all.map((x) => renderWorkItem(x, intake)).join("\n\n")],
         [VOCABULARY, renderVocabulary(contract)],
         ["The signed design — the screens this item runs on", refs.size ? renderDesign({ ...handoff.design, screens: handoff.design.screens.filter((s) => refs.has(s.screen_ref)) }) : "(this item runs on no screen)"],
         ["The binding", renderItem(it)],
@@ -256,11 +260,17 @@ function renderExisting(ex) {
  *            unowned: [{ item, screen_ref, control }] foreign controls no item running there binds,
  *            unknownFrom: [{ item, name, from, why }] `from` naming no item, an item not naming the interface, or itself }
  */
+/** Every work item a unit builds: the one it is named for, and whatever else it covers. */
+export const covered = (it) => [it.work_item, ...(it.covers ?? [])];
+
 export function dependenciesOf(doc, intake) {
   const work = new Map((intake.work_items ?? []).map((w) => [w.id, w]));
   const items = (doc.items ?? []).filter((it) => work.has(it.work_item));
   const at = new Map(items.map((it, i) => [it.work_item, i]));
-  const runsOn = (it, ref) => work.get(it.work_item).screens.some((s) => s.screen_ref === ref);
+  // A unit runs on every screen of every item it covers. Merging two items makes what
+  // passed between them internal — which is how a ring is broken: not by re-annotating
+  // the edge, but by putting both ends inside one buildable thing.
+  const runsOn = (it, ref) => covered(it).some((id) => work.get(id)?.screens.some((s) => s.screen_ref === ref));
   const binds = (it, ref, id) => it.controls.some((c) => c.screen_ref === ref && c.control === id);
   const deps = new Map(), unowned = [], unknownFrom = [];
   for (const it of items) {
@@ -268,15 +278,17 @@ export function dependenciesOf(doc, intake) {
     for (const c of it.controls) {
       if (runsOn(it, c.screen_ref)) continue;
       const owners = items.filter((o) => o !== it && runsOn(o, c.screen_ref) && binds(o, c.screen_ref, c.control));
+      // `runsOn` already covers this unit's own screens, so reaching here means the screen
+      // belongs to another unit — a real edge, or nobody's.
       if (owners.length === 0) unowned.push({ item: it.work_item, screen_ref: c.screen_ref, control: c.control });
       for (const o of owners) ways.push({ item: o.work_item, via: `${c.screen_ref}/\`${c.control}\``, screen_ref: c.screen_ref, control: c.control });
     }
     for (const i of it.interfaces) {
       if (!i.from) continue;
-      const from = (doc.items ?? []).find((o) => o.work_item === i.from);
-      const why = i.from === it.work_item ? "itself" : !from ? "no item" : !from.interfaces.some((x) => x.name === i.name) ? "does not name" : null;
+      const from = (doc.items ?? []).find((o) => covered(o).includes(i.from));
+      const why = covered(it).includes(i.from) ? "itself" : !from ? "no item" : !from.interfaces.some((x) => x.name === i.name) ? "does not name" : null;
       if (why) { unknownFrom.push({ item: it.work_item, name: i.name, from: i.from, why }); continue; }
-      if (at.has(i.from)) ways.push({ item: i.from, via: `\`${i.name}\``, name: i.name });
+      if (at.has(from.work_item)) ways.push({ item: from.work_item, via: `\`${i.name}\``, name: i.name });
     }
     const seen = new Set();
     deps.set(it.work_item, ways.filter((w) => !seen.has(`${w.item} ${w.via}`) && seen.add(`${w.item} ${w.via}`)).sort((a, b) => at.get(a.item) - at.get(b.item)));
@@ -334,16 +346,20 @@ export function checkBinding(intake, design, doc) {
   const named = new Map();
 
   for (const it of doc.items ?? []) {
+    const mine = covered(it);
+    const unknown = mine.filter((id) => !work.has(id));
+    if (unknown.length) { f("high", "item-unknown", it.work_item, `${it.work_item} covers ${unknown.join(", ")}, which the intake does not carry.`, `\`/items\` ${it.work_item} covers ${mine.join(", ")}; the intake's \`/work_items\` has no ${unknown.join(", ")}.`, "Cover the intake's work items and nothing else."); continue; }
     const w = work.get(it.work_item);
-    if (!w) { f("high", "item-unknown", it.work_item, `${it.work_item} is bound but is not a work item the intake carries.`, `\`/items\` names ${it.work_item}; the intake's \`/work_items\` does not.`, "Bind the intake's work items and nothing else."); continue; }
-    bound.set(it.work_item, (bound.get(it.work_item) ?? 0) + 1);
+    for (const id of mine) bound.set(id, (bound.get(id) ?? 0) + 1);
     for (const c of it.controls) {
       const on = screens.get(c.screen_ref);
       if (!on) f("high", "control-not-in-design", it.work_item, `${it.work_item} binds \`${c.control}\` on ${c.screen_ref}, a screen the signed design does not have.`, `\`/items\` ${it.work_item} controls names ${c.screen_ref}; the design's \`/screens\` has no such screen_ref.`, "Bind controls on screens the design holds.");
       else if (!on.has(c.control)) f("high", "control-not-in-design", it.work_item, `${it.work_item} binds \`${c.control}\` on ${c.screen_ref}, which the signed design does not carry.`, `${c.screen_ref} controls: ${[...on].map((x) => `\`${x}\``).join(", ") || "(none)"}; \`${c.control}\` is not among them.`, "Bind a control the design gave an id, or raise the missing control as a question — sdd never invents an interface.");
     }
-    const carried = new Set(w.criteria.map((c) => c.id));
-    const scenarios = new Set(w.scenarios);
+    // A unit answers for everything it covers: the criteria to prove and the scenarios to
+    // run are the union, so merging two items never drops what either promised.
+    const carried = new Set(mine.flatMap((id) => work.get(id).criteria.map((c) => c.id)));
+    const scenarios = new Set(mine.flatMap((id) => work.get(id).scenarios ?? []));
     const proved = new Set();
     for (const t of it.tests) {
       const seen = testIds.get(t.id);
@@ -357,17 +373,17 @@ export function checkBinding(intake, design, doc) {
       if (t.scenario && !scenarios.has(t.scenario)) f("high", "scenario-unknown", t.id, `${t.id} implements ${t.scenario}, which is not a scenario of ${it.work_item}.`, `${it.work_item} scenarios: ${[...scenarios].join(", ") || "(none)"}.`, "Name a scenario the item runs, or null.");
     }
     for (const c of carried) {
-      if (!proved.has(c)) f("high", "criterion-untested", c, `${c} on ${it.work_item} has no test.`, `${c}: ${w.criteria.find((x) => x.id === c)?.statement}; no test on ${it.work_item} names it in \`proves\`.`, "Write the test that proves it — exercises and asserts — or raise in a question why it cannot be tested yet.");
+      if (!proved.has(c)) f("high", "criterion-untested", c, `${c} on ${it.work_item} has no test.`, `${c}: ${mine.flatMap((id) => work.get(id).criteria).find((x) => x.id === c)?.statement}; no test on ${it.work_item} names it in \`proves\`.`, "Write the test that proves it — exercises and asserts — or raise in a question why it cannot be tested yet.");
     }
     for (const i of it.interfaces) {
       named.set(i.name, [...(named.get(i.name) ?? []), { item: it.work_item, signature: i.signature, shared: i.shared }]);
     }
   }
   for (const [id, n] of bound) {
-    if (n > 1) f("high", "item-bound-twice", id, `${id} has ${n} bindings.`, `\`/items\` holds ${n} entries with work_item ${id}.`, "One binding per work item.");
+    if (n > 1) f("high", "item-bound-twice", id, `${id} is covered by ${n} units.`, `\`/items\` binds ${id} ${n} times, as \`work_item\` or in a \`covers\`.`, "One unit builds it. Two units building the same item is two builds of the same thing, each unaware of the other.");
   }
   for (const id of work.keys()) {
-    if (!bound.has(id)) f("high", "item-unbound", id, `${id} is a work item and has no binding.`, `the intake's \`/work_items\` holds ${id}; \`/items\` has no entry with work_item ${id}.`, "Bind every work item — a build starts from the binding, and an item without one is built from nothing.");
+    if (!bound.has(id)) f("high", "item-unbound", id, `${id} is a work item and no unit covers it.`, `the intake's \`/work_items\` holds ${id}; no entry in \`/items\` names it as \`work_item\` or in \`covers\`.`, "Cover every work item — a build starts from the binding, and an item no unit covers is built from nothing.");
   }
   const { deps, unowned, unknownFrom } = dependenciesOf(doc, intake);
   for (const u of unowned) {

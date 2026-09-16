@@ -27,14 +27,14 @@ import { Refused, readDoc, saveDoc, readVerdict, freshVerdict, staleness, DESIGN
 import { answer } from "../discovery/doors/index.mjs";
 import { write, review, signoff, checkDesign, GATE as DESIGN_GATE, REVIEW_GATE as DESIGN_REVIEW, ARITHMETIC as DESIGN_RULES } from "../discovery/design/index.mjs";
 import { intake } from "../delivery/intake/index.mjs";
-import { checkBinding, dependenciesOf, buildOrder, renderItem, ARITHMETIC as SDD_RULES, UNTESTED, GATE as SDD_GATE, SDD_FILE } from "../delivery/sdd/index.mjs";
+import { checkBinding, covered, dependenciesOf, buildOrder, renderItem, ARITHMETIC as SDD_RULES, UNTESTED, GATE as SDD_GATE, SDD_FILE } from "../delivery/sdd/index.mjs";
 import { scopeOfRevision, carry, CARRIED } from "../delivery/sdd/revise.mjs";
 import { round as buildRound, contain, globToRegExp, loadBuild, checkBuild, ARITHMETIC as BUILD_RULES, BRANCH, WORKTREE, BUILD_FILE, VERDICT_FILE as BUILD_VERDICT } from "../delivery/build/index.mjs";
 import { INTAKE_FILE } from "../delivery/intake/index.mjs";
 import { identity } from "../shared/prompt/index.mjs";
 import { ROOT } from "./_harness.mjs";
 
-const { check, done } = suite("scope · R2 the line is a gate input, R12 shape before scope", 167);
+const { check, done } = suite("scope · R2 the line is a gate input, R12 shape before scope", 171);
 
 const same = (a, b) => a.length === b.length && [...a].sort().join(" ") === [...b].sort().join(" ");
 const REQ = (n, status = "committed") => ({ id: `REQ-${n}`, statement: `s${n}`, type: "functional", done_definition: "d", acceptance_criteria: [{ id: "AC-1", statement: "a" }], status, context: "", flags: [] });
@@ -502,6 +502,28 @@ await withRoot({}, async (tmp) => {
   v = held(doc);
   check("two items each driving the other's screen is a cycle — no order builds them — one blocking finding whose subject is the whole ring, so every member is in the revision's scope; the order is null",
     v.verdict === "block" && rules(v) === "dependency-cycle" && v.findings[0].subject === "STORY-1, STORY-2" && /STORY-1 → STORY-2 → STORY-1/.test(v.findings[0].summary) && /SCREEN-2\/`delivery-row`/.test(v.findings[0].evidence) && /SCREEN-1\/`record-exception`/.test(v.findings[0].evidence) && buildOrder(doc, record).order === null && buildOrder(doc, record).cycle.join() === "STORY-1,STORY-2,STORY-1", JSON.stringify(v.findings));
+  // The ring above, and the one move that answers it: both ends in one unit. What passed
+  // between them is internal, there is no edge left to order, and nothing either story
+  // promised is lost — the unit answers for the criteria and scenarios of both.
+  doc = clone();
+  doc.items[0].controls.push({ screen_ref: "SCREEN-2", control: "delivery-row" });
+  doc.items[1].controls.push({ screen_ref: "SCREEN-1", control: "record-exception" });
+  const ring = doc.items[1];
+  doc.items[0].covers = ["STORY-2"];
+  doc.items[0].tests = [...doc.items[0].tests, ...ring.tests];
+  doc.items[0].controls = [...doc.items[0].controls, ...ring.controls];
+  doc.items = doc.items.filter((it) => it.work_item !== "STORY-2");
+  v = held(doc);
+  check("a unit covering both ends of a ring has no ring to order: what passed between them is its own to build, the order is whole, and the partition still covers every work item exactly once",
+    v.verdict !== "block" && !rules(v).includes("dependency-cycle") && buildOrder(doc, record).order !== null && buildOrder(doc, record).cycle === null
+      && doc.items.flatMap(covered).sort().join() === "REQ-4,STORY-1,STORY-2", JSON.stringify({ rules: rules(v), order: buildOrder(doc, record).order?.map((i) => i.work_item) }));
+  check("a merged unit still answers for everything it covers: a criterion of the item it absorbed, left untested, blocks on the unit that now owns it",
+    (() => { const d = clone(); d.items[0].covers = ["STORY-2"]; d.items = d.items.filter((it) => it.work_item !== "STORY-2"); const r = held(d); return r.verdict === "block" && rules(r).includes("criterion-untested"); })());
+  check("covering a work item twice blocks: two units building the same item is two builds of it, neither aware of the other",
+    (() => { const d = clone(); d.items[0].covers = ["STORY-2"]; const r = held(d); return r.verdict === "block" && rules(r).includes("item-bound-twice"); })());
+  check("an interface naming a work item its own unit already covers blocks — the unit builds it, so there is no provider to name",
+    (() => { const d = clone(); d.items[0].covers = ["STORY-2"]; d.items = d.items.filter((it) => it.work_item !== "STORY-2"); d.items[0].interfaces[0] = { ...d.items[0].interfaces[0], from: "STORY-2" }; return rules(held(d)).includes("interface-from-unknown"); })());
+
   doc = clone(); doc.items.push({ ...clone().items[1], work_item: "STORY-9", tests: [], controls: [{ screen_ref: "SCREEN-1", control: "reason-chip" }] });
   check("an item the intake does not carry is left out of the dependencies — item-unknown is its finding, and the derivation does not throw on it", rules(held(doc)) === "item-unknown" && ordered(doc) === "STORY-1,STORY-2,REQ-4");
 
