@@ -166,8 +166,8 @@ await withRoot({}, async (tmp) => {
   const CLEAN = (item) => ({ findings: [], deferred: [{ subject: item, summary: `${item}: the signal dropping mid-write.`, beyond: "untested" }], checked: 1, skipped: 0 });
   const { disc, cold, handoff } = await seedDelivery(tmp, { slug: "tare" });
   const e0 = estimateRun(cold, { handoff });
-  check("before any call the estimate has the round's shape — intake asks nothing of a model, sdd is one writer and one judge per work item the slicing will produce, build one builder per item and no judge — and no price: no history is 'no history', not a number",
-    e0.stages.map((s) => `${s.stage}:${s.calls}`).join() === "intake:0,sdd:4,build:3" && e0.stages[1].roles.map((r) => `${r.role}×${r.calls}`).join() === "writer×1,judge×3" && e0.stages[2].roles.map((r) => `${r.role}×${r.calls}`).join() === "builder×3" && e0.stages.slice(1).every((s) => s.roles.every((r) => r.per_call === null && r.n === 0 && r.usd === null)) && e0.calls === 7 && e0.usd === null && e0.stages[0].usd === 0 && e0.standing.spent === 0, JSON.stringify(e0));
+  check("before any call the estimate has the round's shape — intake asks nothing of a model, sdd is one writer and one judge per work item the slicing will produce, build one builder per item and no judge, qa one oracle per item and no writer — and no price: no history is 'no history', not a number",
+    e0.stages.map((s) => `${s.stage}:${s.calls}`).join() === "intake:0,sdd:4,build:3,qa:3" && e0.stages[1].roles.map((r) => `${r.role}×${r.calls}`).join() === "writer×1,judge×3" && e0.stages[2].roles.map((r) => `${r.role}×${r.calls}`).join() === "builder×3" && e0.stages.slice(1).every((s) => s.roles.every((r) => r.per_call === null && r.n === 0 && r.usd === null)) && e0.stages[3].roles.map((r) => `${r.role}${r.calls}`).join() === "judge3" && e0.calls === 10 && e0.usd === null && e0.stages[0].usd === 0 && e0.standing.spent === 0, JSON.stringify(e0));
   check("the shape names the model each role would run on — the run's override where there is one, the shared default where there is not", e0.stages[1].roles.map((r) => r.model).join() === `${modelFor({ half: "delivery", role: "writer" })},${modelFor({ half: "delivery", role: "judge" })}` && estimateRun(cold, { handoff, models: { "delivery.judge": "claude-sonnet-5" } }).stages[1].roles[1].model === "claude-sonnet-5");
 
   const q = scripted({ structuredSeq: [BINDING, CLEAN("STORY-1"), CLEAN("STORY-2"), CLEAN("REQ-4")], usd: [0.9, 0.2, 0.3, 0.4] });
@@ -339,12 +339,12 @@ await withRoot({ "prompts/j.md": IDENTITY }, async (root) => {
     const script = scripted({ structuredSeq: [BAD, CHURNED, PROVES_NOTHING, CLEAN("STORY-2"), CLEAN("REQ-4"), ANSWERED, CLEAN("STORY-1"), REBOUND, CLEAN("STORY-2"), RESCOPED, CLEAN("STORY-2")] });
     const opts = { _query: slow(script.query), _now: clock, _pulse_ms: 1, onEvent: (e) => events.push(e) };
 
-    check("the loop knows which stages it can run — intake, sdd and build — and says so in one table; build has a writer and no judge",
-      Object.keys(AUTHORED).join() === "intake,sdd,build" && AUTHORED.intake.writer === false && AUTHORED.sdd.writer === true && AUTHORED.build.writer === true && PULSE_MS === 15_000);
+    check("the loop knows which stages it can run — intake, sdd, build and qa — and says so in one table; qa has no writer, because it proves what is there rather than making it",
+      Object.keys(AUTHORED).join() === "intake,sdd,build,qa" && AUTHORED.qa.writer === false && AUTHORED.intake.writer === false && AUTHORED.sdd.writer === true && AUTHORED.build.writer === true && PULSE_MS === 15_000);
     const order = await refusal(() => runStage(cold, { stage: "sdd", ...opts }));
-    const unauthored = await refusal(() => runStage(cold, { stage: "qa", ...opts }));
+    const unauthored = await refusal(() => runStage(cold, { stage: "release", ...opts }));
     const nostage = await refusal(() => runStage(cold, { stage: "ship", ...opts }));
-    check("a stage runs from an approved one: sdd before intake is stage-order; qa is stage-unauthored (M3); a name that is not a stage is no-stage — nothing was called",
+    check("a stage runs from an approved one: sdd before intake is stage-order; release is stage-unauthored; a name that is not a stage is no-stage — nothing was called",
       order?.code === "stage-order" && /intake is pending/.test(order.message) && unauthored?.code === "stage-unauthored" && nostage?.code === "no-stage" && script.calls.length === 0, `${order?.code} ${unauthored?.code} ${nostage?.code}`);
 
     const r0 = await runStage(cold, { stage: "intake", ...opts });
