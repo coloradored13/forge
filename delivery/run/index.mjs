@@ -16,6 +16,7 @@ import { rows, estimate, standing, modelFor, tally } from "../../shared/agent-ca
 import { STAGES, JUDGED, LEDGER, readRun, transition, heartbeat, liveness } from "../state/index.mjs";
 import { intake, takePinned, compile, slice, INTAKE_FILE } from "../intake/index.mjs";
 import { round as sddRound, rejudge as sddRejudge, PER_RESPONSE } from "../sdd/index.mjs";
+import { round as qaRound, rejudge as qaRejudge } from "../qa/index.mjs";
 import { round as buildRound, rejudge as buildRejudge } from "../build/index.mjs";
 
 export { Refused };
@@ -50,6 +51,14 @@ export const AUTHORED = {
     rejudge: async (root, ctx) => (await buildRejudge(root, ctx)).file,
     // one builder per binding item and no judge — the verdict is arithmetic; a reused item is no call, so this is the ceiling
     calls: ({ handoff, intake }) => ({ builder: (intake?.work_items ?? slice(handoff, compile(handoff).scenarios)).length }),
+  },
+  qa: {
+    writer: false,
+    round: async (root, ctx) => (await qaRound(root, ctx)).file,
+    rejudge: async (root, ctx) => (await qaRejudge(root, ctx)).file,
+    // the suites are run once, whatever they cost in wall clock, and one oracle per binding
+    // item reads what came out — no writer: qa proves what is there, it does not make it
+    calls: ({ handoff, intake }) => ({ judge: (intake?.work_items ?? slice(handoff, compile(handoff).scenarios)).length }),
   },
 };
 
