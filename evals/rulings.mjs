@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { suite, withRoot, scripted } from "./_harness.mjs";
 import { seedProject, seedPrototype } from "./_fixture.mjs";
-import { validate } from "../shared/schema/index.mjs";
+import { outputContract, validate } from "../shared/schema/index.mjs";
 import { verify } from "../shared/hash.mjs";
 import { mechanics } from "../shared/prompt/index.mjs";
 import { runJudge, splitReraised } from "../shared/judge/index.mjs";
@@ -20,7 +20,7 @@ import { rows as calls } from "../shared/agent-call/ledger.mjs";
 import { Refused, rulingsOf, staleness, PRD_FILE } from "../discovery/record/index.mjs";
 import { answer } from "../discovery/doors/index.mjs";
 
-const { check, done } = suite("rulings · R3 answers are spec", 27);
+const { check, done } = suite("rulings · R3 answers are spec", 31);
 
 const refusal = (fn) => { try { fn(); return null; } catch (e) { return e; } };
 
@@ -86,25 +86,33 @@ await withRoot({}, async (parent) => {
     f("STORY-2", { rule: "not-a-slice", severity: "medium", confidence: "likely" }),
   ];
   const split = splitReraised(findings, rulings);
-  check("splitReraised: by subject (the ruling, its question) or by mention; the criterion it became is held to", split.reraised.map((x) => x.subject).join() === "RUL-1,OQ-1,STORY-1" && split.kept.map((x) => x.subject).join() === "REQ-1/AC-3,STORY-2" && split.reraised.every((x) => x.ruling === "RUL-1"));
-  check("splitReraised: RUL-10 is not RUL-1", splitReraised([f("x", { evidence: "see RUL-10" })], rulings).reraised.length === 0);
+  check("splitReraised: by subject — the ruling, or the question it answered", split.reraised.map((x) => x.subject).join() === "RUL-1,OQ-1" && split.reraised.every((x) => x.ruling === "RUL-1"));
+  check("a defect that cites the ruling it breaks is a defect, not a re-raise: STORY-1 survives on its subject, whatever its evidence argues",
+    split.kept.map((x) => x.subject).join() === "STORY-1,REQ-1/AC-3,STORY-2", JSON.stringify(split.kept.map((x) => x.subject)));
+  check("a high/certain finding removed as a re-raise could never block — so the text is never what removes it",
+    splitReraised([f("STORY-9", { summary: "SMS recovery contradicts RUL-1, which requires email" })], rulings).kept.length === 1);
+  check("splitReraised: a finding about the criterion the ruling became is held to", splitReraised([f("REQ-1/AC-3", { evidence: "see RUL-1" })], rulings).reraised.length === 0);
   check("with no rulings nothing is removed", splitReraised(findings, []).kept.length === 5);
 
   const q = scripted({ structured: { findings, deferred: [], checked: 2, skipped: 0 } });
   const identity = join(parent, "reviewer.md");
   writeFileSync(identity, "# Reviewer\n\nYou hold stories to the bar a PM would.");
   const verdict = await runJudge({ gate: "story-reviewer", half: "discovery", stage: "stories", identity, sections: [["Stories", "…"]], artifacts: [{ id: "prd-dock", path: PRD_FILE, doc: loadPrd(root) }], rulings, funnel: funnelPath(root), cwd: root, ledger: ledgerPath(root), _query: q.query });
-  check("runJudge removes the three re-raises, keeps the two real findings, and the verdict is the real findings'",
-    verdict.reraised === 3 && verdict.findings.map((x) => x.subject).join() === "REQ-1/AC-3,STORY-2" && verdict.verdict === "block" && !("dropped" in verdict), JSON.stringify(verdict.findings.map((x) => x.subject)));
-  check("the verdict validates with reraised on it", validate("finding", verdict).ok && verdict.judged[0].content_hash === loadPrd(root).meta.content_hash);
+  check("runJudge removes the two re-raises and keeps the three findings about artifacts",
+    verdict.reraised === 2 && verdict.findings.map((x) => x.subject).join() === "STORY-1,REQ-1/AC-3,STORY-2" && verdict.verdict === "block" && !("dropped" in verdict), JSON.stringify(verdict.findings.map((x) => x.subject)));
+  check("what was removed is on the verdict whole, not only counted — a count says something went and never what",
+    verdict.removed.length === 2 && verdict.removed.map((x) => `${x.subject}:${x.ruling}`).join() === "RUL-1:RUL-1,OQ-1:RUL-1" && verdict.removed.every((x) => x.summary && x.rule), JSON.stringify(verdict.removed));
+  check("the verdict validates with reraised and removed on it", validate("finding", verdict).ok && verdict.judged[0].content_hash === loadPrd(root).meta.content_hash);
+  check("neither is the model's to write: removed and ruling are absent from the output contract",
+    !("removed" in outputContract("finding").properties) && !("ruling" in outputContract("finding").properties.findings.items.properties));
   const funnel = rows(funnelPath(root));
   check("each re-raise is a funnel row naming the gate, the rule, the subject and the ruling (R8)",
-    funnel.length === 3 && funnel.every((r) => r.signal === "reraised" && r.gate === "story-reviewer" && r.ruling === "RUL-1") && funnel.map((r) => r.subject).join() === "RUL-1,OQ-1,STORY-1", JSON.stringify(funnel));
+    funnel.length === 2 && funnel.every((r) => r.signal === "reraised" && r.gate === "story-reviewer" && r.ruling === "RUL-1") && funnel.map((r) => r.subject).join() === "RUL-1,OQ-1", JSON.stringify(funnel));
   check("the judge was shown the rulings in its system prompt", /RUL-1/.test(q.calls[0].options.systemPrompt) && /RUL-2/.test(q.calls[0].options.systemPrompt));
 
   const clean = scripted({ structured: { findings: [f("REQ-1/AC-3")], deferred: [], checked: 1, skipped: 0 } });
   const v2 = await runJudge({ gate: "story-reviewer", half: "discovery", stage: "stories", identity, sections: [], artifacts: [], rulings: [], funnel: funnelPath(root), cwd: root, ledger: ledgerPath(root), _query: clean.query });
-  check("with no rulings a judge run records nothing and removes nothing", v2.reraised === 0 && v2.findings.length === 1 && rows(funnelPath(root)).length === 3);
+  check("with no rulings a judge run records nothing and removes nothing", v2.reraised === 0 && v2.removed.length === 0 && v2.findings.length === 1 && rows(funnelPath(root)).length === 2);
   check("no model was reached: every call went through the script, and the ledger holds them", q.calls.length === 1 && clean.calls.length === 1 && existsSync(ledgerPath(root)) && calls(ledgerPath(root)).length === 2);
 });
 

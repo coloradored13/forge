@@ -37,11 +37,17 @@
       "minimum": 0,
       "description": "Items deliberately not examined. Reported, never hidden."
     },
+    "removed": {
+      "type": "array",
+      "x-runner": true,
+      "description": "The findings the runner removed as re-raises, kept whole. A count alone cannot be audited: it says something was dropped and never what.",
+      "items": { "$ref": "#/$defs/finding" }
+    },
     "reraised": {
       "type": "integer",
       "minimum": 0,
       "x-runner": true,
-      "description": "Findings the runner removed because they re-raise a settled ruling (R3). A reviewer that keeps re-raising is a funnel signal (R8)."
+      "description": "How many findings the runner removed as re-raises (R3). A reviewer that keeps re-raising is a funnel signal (R8); `removed` holds what they were."
     },
     "judged": {
       "type": "array",
@@ -113,6 +119,11 @@
         "rule": {
           "type": "string",
           "description": "The rule broken, named — not a description of the problem. A judge that cannot name the rule it applied is guessing."
+        },
+        "ruling": {
+          "type": "string",
+          "x-runner": true,
+          "description": "Set by the runner on a finding it removed as a re-raise: the ruling whose question this re-litigates. Never the judge's to write."
         },
         "subject": {
           "type": "string",

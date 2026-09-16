@@ -24,15 +24,22 @@ const WRITES = new Set(["Write", "Edit", "NotebookEdit", "Bash"]);
 export const JUDGE_ROLE = { discovery: "reviewer", delivery: "judge" };
 
 /**
- * A finding re-raises a ruling when it is about the ruling itself or the question the
- * ruling answered — by id, in its subject or its text. A finding about the criterion
- * the ruling became is not a re-raise: the criterion is spec now and may be held to.
+ * A finding re-raises a ruling when it is ABOUT the ruling itself or the question the
+ * ruling answered — its subject, and only its subject. A finding about the criterion the
+ * ruling became is not a re-raise: the criterion is spec now and may be held to.
+ *
+ * This read the finding's whole text for a ruling id, and could not tell "RUL-12 should
+ * have been decided differently" from "this artifact violates RUL-12". The second is a
+ * defect, and the clearest way to argue it is to cite the ruling — so the better the
+ * judge's reasoning, the more likely its finding was deleted. Removal happens before
+ * ranking, so a deleted finding never reached `deriveVerdict` and could never block.
+ * Measured on a real run: five findings dropped this way, two of them in the round that
+ * approved the stage, with nothing on the record but a count.
  */
 export function splitReraised(findings, rulings = []) {
   const kept = [], reraised = [];
   for (const f of findings) {
-    const text = [f.subject, f.rule, f.summary, f.evidence].filter(Boolean).join(" ");
-    const hit = rulings.find((r) => f.subject === r.id || (r.oq && f.subject === r.oq) || new RegExp(`(?<![\\w-])${r.id}(?![\\w-])`).test(text));
+    const hit = rulings.find((r) => f.subject === r.id || (r.oq && f.subject === r.oq));
     if (hit) reraised.push({ ...f, ruling: hit.id }); else kept.push(f);
   }
   return { kept, reraised };
@@ -88,6 +95,10 @@ export async function runJudge({
     checked: r.structured.checked ?? 0,
     skipped: r.structured.skipped ?? 0,
     reraised: reraised.length,
+    // The findings themselves, not only how many. In Delivery nothing passes `funnel`, so
+    // the count was the whole record of a removal: subject, rule and reasoning were gone
+    // and nobody could tell whether what went was a re-litigation or a defect.
+    removed: reraised,
     judged,
     cost: { model: r.model, usd: r.usd, ms: r.ms },
   };
