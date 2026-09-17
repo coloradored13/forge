@@ -5,15 +5,16 @@
 
 import { suite, withRoot, scripted } from "./_harness.mjs";
 import { seedBuild, builder, put, BUILT, CLEAN } from "./_fixture.mjs";
-import { checkRun, execute, round, SUITES, ARITHMETIC, COUNTER, IDENTITY } from "../delivery/qa/index.mjs";
+import { checkRun, execute, round, SUITES, ARITHMETIC, COUNTER, IDENTITY, QA_FILE } from "../delivery/qa/index.mjs";
+import { verdictFreshness } from "../shared/judge/index.mjs";
 import { runStage } from "../delivery/run/index.mjs";
-import { readDoc } from "../shared/store.mjs";
+import { readDoc, saveDoc } from "../shared/store.mjs";
 import { WORKTREE } from "../delivery/build/index.mjs";
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 
-const { check, done } = suite("qa — the proof: criteria discharged by what ran", 22);
+const { check, done } = suite("qa — the proof: criteria discharged by what ran", 24);
 
 const intake = {
   work_items: [
@@ -128,6 +129,22 @@ await withRoot({}, async (tmp) => {
   check("a qa round files its verdict and hands the loop the path to it — a verdict returned in hand is a round that judged nothing, with every oracle call paid for and discarded at the door",
     typeof r.file === "string" && !!filed && typeof filed.verdict === "string" && filed.gate === "qa",
     JSON.stringify({ returned: typeof r.file, value: typeof r.file === "string" ? r.file : Object.keys(r.file ?? {}), read: filed ? { gate: filed.gate, verdict: filed.verdict } : null }));
+
+  // Filing it is not enough: a verdict that pinned nothing is unknown, never fresh, and
+  // `approve` guards on freshness. Unpinned, a clean qa verdict is refused forever and the
+  // stage can never close — the run reaches the last door and stops at it.
+  const fresh = verdictFreshness(filed ?? {}, { root: cold });
+  check("the verdict pins the chain it rests on — contract, binding, build, and what ran — so the approve door can open and a later change makes it stale",
+    fresh.fresh === true && (filed?.judged ?? []).length === 5,
+    JSON.stringify({ fresh, pinned: (filed?.judged ?? []).map((p) => p.id) }));
+
+  // The pin is load-bearing, not decorative: re-running the suites rewrites the executed
+  // record, and the verdict must stop being evidence about it.
+  saveDoc(cold, QA_FILE, "qa", { id: "bakehouse", meta: {}, suites: [], tests: [], "x-drift-checked": ["/tests"] });
+  const after = verdictFreshness(readDoc(cold, r.file), { root: cold });
+  check("re-running the suites makes the standing verdict stale — the record it judged is not the record on disk",
+    after.fresh === false && after.stale.some((s) => s.path === QA_FILE),
+    JSON.stringify(after));
 });
 
 check("every arithmetic rule is declared, and the counter-proposal is the oracle's alone",

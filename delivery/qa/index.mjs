@@ -19,12 +19,12 @@
 import { join } from "node:path";
 import { readDoc, saveDoc, saveVerdict } from "../../shared/store.mjs";
 import { Refused } from "../../shared/refused.mjs";
-import { runPerItemJudge } from "../../shared/judge/index.mjs";
+import { runPerItemJudge, pin } from "../../shared/judge/index.mjs";
 import { scopeOf } from "../../shared/scope.mjs";
 import { readRun, takeHandoff, LEDGER } from "../state/index.mjs";
 import { INTAKE_FILE } from "../intake/index.mjs";
-import { loadSdd, covered, renderWorkItem } from "../sdd/index.mjs";
-import { loadBuild, WORKTREE } from "../build/index.mjs";
+import { loadSdd, covered, renderWorkItem, SDD_FILE } from "../sdd/index.mjs";
+import { loadBuild, WORKTREE, BUILD_FILE } from "../build/index.mjs";
 
 export const GATE = "qa";
 export const QA_FILE = join("forge", "delivery", "qa.json");
@@ -196,21 +196,23 @@ export async function round(root, ctx = {}) {
   for (const s of results.suites) ctx.onEvent?.(`${s.id}: ${s.tests} test(s), ${s.ok ? "exit 0" : "non-zero"}`);
 
   const arithmetic = checkRun(intake, sdd, results);
+
+  // The executed record goes down before anything judges it, because it is what the
+  // verdict will be pinned to and a pin needs the stamped document. The raw output is not
+  // on it: it is large, it is not a fact about the product, and the oracle has read it.
+  const doc = saveDoc(root, QA_FILE, "qa", {
+    id: run.id, meta: {},
+    suites: results.suites.map(({ out, ...s }) => s),
+    tests: results.tests,
+    "x-drift-checked": ["/tests"],
+  });
+
   const judge = await runPerItemJudge({
     gate: GATE, half: "delivery", stage: GATE, identity: IDENTITY,
     items: (sdd.items ?? []).map((it) => ({ id: it.work_item, sections: sections({ item: it, intake, design: handoff.design, results }) })),
     scope: scopeOf(handoff.contract), rulings: (handoff.contract?.rulings ?? []), arithmetic: [...ARITHMETIC, COUNTER],
     cwd: root, ledger: join(root, LEDGER), budget: run.budget, models: run.models,
     onEvent: ctx.onEvent, _query: ctx._query, _sleep: ctx._sleep,
-  });
-
-  // The raw output is not on the record: it is large, it is not a fact about the product,
-  // and the oracle has already read it. What is kept is what ran and what it did.
-  const doc = saveDoc(root, QA_FILE, "qa", {
-    id: run.id, meta: {},
-    suites: results.suites.map(({ out, ...s }) => s),
-    tests: results.tests,
-    "x-drift-checked": ["/tests"],
   });
 
   const findings = [...arithmetic, ...judge.verdict.findings];
@@ -220,6 +222,19 @@ export async function round(root, ctx = {}) {
     findings,
     verdict: findings.some((x) => x.severity === "high" && x.confidence === "certain") ? "block" : findings.length ? "advise" : "pass",
     checked: results.tests.length,
+    // A verdict is about the hashes it pinned and nothing else, and one that pinned
+    // nothing is unknown rather than fresh (R5) — so an unpinned qa verdict can never pass
+    // the approve door, however clean it is. The chain this judgement rests on: the
+    // contract it was judged against, the binding that named the tests, the build that was
+    // run, and the record of what running it produced. Any of them moving makes this
+    // verdict evidence about something that is no longer on disk.
+    judged: [
+      pin({ id: `handoff-v${handoff.version}`, path: run.handoff.path, doc: handoff }),
+      pin({ id: intake.id, path: INTAKE_FILE, doc: intake }),
+      pin({ id: sdd.id, path: SDD_FILE, doc: sdd }),
+      pin({ id: build.id, path: BUILD_FILE, doc: build }),
+      pin({ id: doc.id, path: QA_FILE, doc }),
+    ],
   };
 
   // The verdict goes on disk before it goes back. The loop is handed a root-relative path,
