@@ -4,13 +4,16 @@
 // what its own test was checking. Both directions, scripted seams only (R15).
 
 import { suite, withRoot, scripted } from "./_harness.mjs";
-import { checkRun, execute, SUITES, ARITHMETIC, COUNTER, IDENTITY } from "../delivery/qa/index.mjs";
+import { seedBuild, builder, put, BUILT, CLEAN } from "./_fixture.mjs";
+import { checkRun, execute, round, SUITES, ARITHMETIC, COUNTER, IDENTITY } from "../delivery/qa/index.mjs";
+import { runStage } from "../delivery/run/index.mjs";
+import { readDoc } from "../shared/store.mjs";
 import { WORKTREE } from "../delivery/build/index.mjs";
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 
-const { check, done } = suite("qa — the proof: criteria discharged by what ran", 21);
+const { check, done } = suite("qa — the proof: criteria discharged by what ran", 22);
 
 const intake = {
   work_items: [
@@ -102,6 +105,30 @@ check("a suite that exits non-zero because a test failed is not `suite-failed` �
 f = checkRun(intake, sdd, { suites: [{ id: "unit", command: "node --test tests/unit/", ran: true, ok: false, tests: 1, out: "Error: Cannot find module '/x/tests/unit'" }], tests: [] });
 check("a suite that could not start but still printed one title naming the path it failed to load is `suite-failed` — a title carrying no test id is not a test",
   of(f, "suite-failed").length === 1 && of(f, "suite-failed")[0].subject === "unit" && /none carrying a test id/.test(of(f, "suite-failed")[0].evidence), JSON.stringify(f.map((x) => `${x.rule}:${x.subject}`)));
+
+// ── the round's contract with the loop: a verdict on disk, named by a path ──
+// The loop is handed a root-relative path and `transition` re-reads the file itself, so a
+// round that returns the verdict in hand reads back as a round that judged nothing. Every
+// piece of this stage was checked above and the stage still could not finish a round: the
+// parts were exercised, the seam to the loop was not.
+await withRoot({}, async (tmp) => {
+  const { cold } = await seedBuild(tmp, { files: { "README.md": "# Dock\n" } });
+  const b = builder([BUILT(), BUILT("Run sheet built."), BUILT("Queue built.")],
+    { 0: (cwd) => put(cwd, "src/exceptions/store.js", "a"), 1: (cwd) => put(cwd, "src/deliveries/store.js", "b"), 2: (cwd) => put(cwd, "src/queue/q.js", "c") });
+  await runStage(cold, { stage: "build", _query: b.query });
+
+  const out = ["ok 1 - T-1 — records it", "ok 2 - T-2 — never updated", "ok 3 - T-3 — four rows", "ok 4 - T-4 — the queue flushes"].join("\n");
+  const r = await round(cold, {
+    _exec: async () => ({ ok: true, out }),
+    _query: scripted({ structuredSeq: [CLEAN("STORY-1"), CLEAN("STORY-2"), CLEAN("REQ-4")] }).query,
+  });
+  // Read only what can be a path: handed the verdict itself, `readDoc` throws, and a throw
+  // aborts the file instead of reporting the one thing this check exists to report.
+  const filed = typeof r.file === "string" ? readDoc(cold, r.file) : null;
+  check("a qa round files its verdict and hands the loop the path to it — a verdict returned in hand is a round that judged nothing, with every oracle call paid for and discarded at the door",
+    typeof r.file === "string" && !!filed && typeof filed.verdict === "string" && filed.gate === "qa",
+    JSON.stringify({ returned: typeof r.file, value: typeof r.file === "string" ? r.file : Object.keys(r.file ?? {}), read: filed ? { gate: filed.gate, verdict: filed.verdict } : null }));
+});
 
 check("every arithmetic rule is declared, and the counter-proposal is the oracle's alone",
   new Set(ARITHMETIC).size === ARITHMETIC.length && !ARITHMETIC.includes(COUNTER) && COUNTER === "counter-proposal");
