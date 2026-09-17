@@ -138,11 +138,19 @@ export async function escalate(root, { stage, by, reason, onEvent, _query, _slee
  * regenerated; a later stage that is alive refuses the reopen first. Then the episode runs.
  * Refuses the table's own (`no-transition` when the stage is not approved, `reason-required`).
  */
-export async function reopen(root, { stage, by, reason, items = null, onEvent, _query, _sleep, _perResponse, _now = () => new Date(), _pulse_ms = PULSE_MS } = {}) {
+export async function reopen(root, { stage, by, reason, items = null, from = null, onEvent, _query, _sleep, _perResponse, _now = () => new Date(), _pulse_ms = PULSE_MS } = {}) {
   const run = needRun(root);
   const authored = need(stage, run);
   const now = _now();
   const later = STAGES.slice(STAGES.indexOf(stage) + 1);
+  // `from` names the later gate whose verdict sent this work back, so the writer can be
+  // handed that gate's findings rather than a sentence about them. It must be a later
+  // stage — an earlier one cannot have judged work this stage had not yet produced — and
+  // it must have a verdict on record, or there is nothing to carry.
+  if (from) {
+    if (!later.includes(from)) throw new Refused("redo-unknown", `${stage}: a redo comes from a later stage — ${from} is not one of ${later.join(", ") || "(none)"}`);
+    if (!run.stages[from]?.verdict) throw new Refused("redo-unjudged", `${stage}: ${from} has filed no verdict, so it has no findings to send back`);
+  }
   const alive = later.find((s) => liveness(run.stages[s], { now, window: run.liveness_ms }).state === "alive");
   if (alive) throw new Refused("stage-running", `${stage}: ${alive} is running and alive on what ${stage} produced — wait for it, or stop it with a reason`);
   if (items?.length) {
@@ -150,7 +158,7 @@ export async function reopen(root, { stage, by, reason, items = null, onEvent, _
     const unknown = items.filter((id) => !carried.has(id));
     if (unknown.length) throw new Refused("item-unknown", `${stage}: the reopen names ${unknown.join(", ")}, which the intake does not carry — name work items the record knows, or none to redo every item`);
   }
-  transition(root, { stage, event: "reopen", by, reason, items: items?.length ? [...new Set(items)] : undefined, now });
+  transition(root, { stage, event: "reopen", by, reason, items: items?.length ? [...new Set(items)] : undefined, from: from ?? undefined, now });
   for (const s of later) if (JUDGED.has(run.stages[s].status)) transition(root, { stage: s, event: "moved", by, reason: `${stage} reopened: ${reason}`, now });
   return episode(root, { stage, authored, mode: "start", by, onEvent, _query, _sleep, _perResponse, _now, _pulse_ms });
 }
@@ -179,6 +187,25 @@ export async function advance(root, opts = {}) {
 
 // ── the episode ──
 
+/**
+ * The findings a later gate laid at this stage's door, as a verdict the writer's renderer
+ * already knows how to show. Only findings whose `redo` names this stage: a judge that
+ * diagnosed a defect said whose it is (finding.schema `redo`), and handing a writer the
+ * ones addressed to somebody else invites it to fix work that is not its own. Arithmetic
+ * findings name no stage and are not carried — `test-failed` is the consequence a judge's
+ * finding explains, and the explanation is what the writer needs.
+ *
+ * Null when nothing is addressed here, so the caller falls back to the ordinary review.
+ */
+function redoFindings(root, { from, stage }) {
+  const at = needRun(root).stages[from]?.verdict;
+  const verdict = at ? readDoc(root, at) : null;
+  if (!verdict) return null;
+  const findings = (verdict.findings ?? []).filter((f) => f.redo === stage);
+  if (!findings.length) return null;
+  return { ...verdict, findings, deferred: [], checked: findings.length };
+}
+
 async function episode(root, { stage, authored, mode, by, onEvent, _query, _sleep, _perResponse, _now, _pulse_ms }) {
   let path = needRun(root).stages[stage].verdict;
   if (mode !== "dispose") {
@@ -187,8 +214,18 @@ async function episode(root, { stage, authored, mode, by, onEvent, _query, _slee
     // answering that block: the writer sees the findings, as it does on regenerate; a
     // start over a reopen is answering the reason: the writer sees the standing verdict too
     const prior = !rejudging && path ? readDoc(root, path) : null;
-    const reopened = Boolean(needRun(root).stages[stage].reopened);
-    path = await work(root, { stage, authored, rejudging, review: prior && (prior.verdict === "block" || reopened) ? prior : null, by, onEvent, _query, _sleep, _perResponse, _now, _pulse_ms });
+    const opened = needRun(root).stages[stage].reopened;
+    const reopened = Boolean(opened);
+    // A stage reopened by a later gate answers that gate, not itself. Its own standing
+    // verdict approved — that is why it is approved — so it carries no findings, and a
+    // writer handed it is told nothing about why it is redoing the work. The findings
+    // that named this stage live on the verdict of the gate that found them, and only
+    // that gate's judge saw the evidence: rendering them for the writer is the whole of
+    // the carry. Without it the reason is a sentence a human wrote, and the judgement a
+    // model was paid to make is re-made by whoever composed it.
+    const downstream = !rejudging && opened?.from ? redoFindings(root, { from: opened.from, stage }) : null;
+    const review = downstream ?? (prior && (prior.verdict === "block" || reopened) ? prior : null);
+    path = await work(root, { stage, authored, rejudging, review, by, onEvent, _query, _sleep, _perResponse, _now, _pulse_ms });
     if (rejudging) {
       const doc = readDoc(root, path);
       const event = doc?.verdict === "block" ? "reblock" : "clear";
