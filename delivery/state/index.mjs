@@ -132,7 +132,7 @@ export function apply(run, ctx) {
   // a reopen is the human's reason to redo an approved stage — and the items it names, when it
   // names any: it rides the episode on the stage until the redo files a verdict — a restart
   // still knows why it runs and what it is about; a later round does not need to
-  if (event === "reopen") next.reopened = { by: ctx.by, reason: ctx.reason, at: now, ...(ctx.items?.length ? { items: [...ctx.items] } : {}) };
+  if (event === "reopen") next.reopened = { by: ctx.by, reason: ctx.reason, at: now, ...(ctx.items?.length ? { items: [...ctx.items] } : {}), ...(ctx.from ? { from: ctx.from } : {}) };
   if (row.counts) delete next.reopened;
   if (LIVE.has(row.to)) { next.started_at = now; next.heartbeat_at = now; next.finished_at = null; }
   const filed = Boolean(ctx.verdict?.path && row.guards.includes("verdict"));
@@ -236,13 +236,13 @@ function verdictAt(root, path) {
  * stopped by the store with the error as the flagged reason, and the error is rethrown —
  * the record says what happened, and the caller hears it.
  */
-export function transition(root, { stage, event, by, reason, items, override, verdict, now } = {}) {
+export function transition(root, { stage, event, by, reason, items, override, verdict, from, now } = {}) {
   const run = needRun(root);
   const st = run.stages[stage];
   const path = verdict ?? st?.verdict ?? null;
   const doc = verdictAt(root, path);
   const freshness = doc ? verdictFreshness(doc, { root }) : null;
-  const ctx = { stage, event, by, reason, items, override, now, verdict: doc ? { verdict: doc.verdict, path } : null, fresh: freshness?.fresh ?? null };
+  const ctx = { stage, event, by, reason, items, override, from, now, verdict: doc ? { verdict: doc.verdict, path } : null, fresh: freshness?.fresh ?? null };
   const out = apply(run, ctx);
   writeRun(root, out.run);
   if (out.filed) {

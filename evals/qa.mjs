@@ -8,14 +8,14 @@ import { seedBuild, builder, put, BUILT, CLEAN } from "./_fixture.mjs";
 import { checkRun, execute, round, SUITES, ARITHMETIC, COUNTER, IDENTITY, QA_FILE } from "../delivery/qa/index.mjs";
 import { verdictFreshness } from "../shared/judge/index.mjs";
 import { validate } from "../shared/schema/index.mjs";
-import { runStage } from "../delivery/run/index.mjs";
+import { runStage, reopen } from "../delivery/run/index.mjs";
 import { readDoc, saveDoc } from "../shared/store.mjs";
 import { WORKTREE } from "../delivery/build/index.mjs";
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 
-const { check, done } = suite("qa — the proof: criteria discharged by what ran", 28);
+const { check, done } = suite("qa — the proof: criteria discharged by what ran", 30);
 
 const intake = {
   work_items: [
@@ -146,6 +146,43 @@ await withRoot({}, async (tmp) => {
   check("re-running the suites makes the standing verdict stale — the record it judged is not the record on disk",
     after.fresh === false && after.stale.some((s) => s.path === QA_FILE),
     JSON.stringify(after));
+});
+
+// ── the carry: the stage that must answer a finding is handed the finding ──
+// A reopened stage's own verdict approved — that is why it was approved — so it carries no
+// findings, and a writer given it learns nothing about why it is redoing the work. Without
+// the carry the only channel is the reopen's `reason`: a sentence a human composed, which
+// re-makes by hand the judgement a model was paid to make independently.
+await withRoot({}, async (tmp) => {
+  const { cold } = await seedBuild(tmp, { files: { "README.md": "# Dock\n" } });
+  const b = builder([BUILT(), BUILT("b"), BUILT("c")],
+    { 0: (cwd) => put(cwd, "src/exceptions/store.js", "a"), 1: (cwd) => put(cwd, "src/deliveries/store.js", "b"), 2: (cwd) => put(cwd, "src/queue/q.js", "c") });
+  await runStage(cold, { stage: "build", _query: b.query });
+
+  // The oracle diagnoses a wrong test and names the binding as whose it is.
+  const ORACLE = {
+    findings: [{
+      severity: "high", confidence: "certain", rule: "the test is wrong", subject: "T-1", redo: "sdd",
+      summary: "T-1 asserts the reason chip is visible; REQ-1/AC-1 requires the exception to be on the record.",
+      evidence: "the test asserts a chip is visible. The criterion: a reviewer records a decision at the moment they make it.",
+      remedy: "Bind a test that observes the recorded exception, not the control that starts it.",
+    }],
+    deferred: [], checked: 1, skipped: 0,
+  };
+  await runStage(cold, { stage: "qa", _query: scripted({ structured: ORACLE }).query });
+
+  const items = (await import("./_fixture.mjs")).BINDING;
+  const redo = scripted({ structuredSeq: [{ items: items.items, questions: [] }, CLEAN("STORY-1"), CLEAN("STORY-2"), CLEAN("REQ-4")] });
+  await reopen(cold, { stage: "sdd", by: "Brad", reason: "qa sent the binding back", from: "qa", _query: redo.query });
+  const prompt = redo.calls[0]?.prompt ?? "";
+
+  check("a stage reopened by a later gate is handed that gate's own findings — the judge that saw the evidence wrote them, and the writer answers those rather than somebody's summary",
+    /T-1 asserts the reason chip is visible/.test(prompt) && /the test is wrong/.test(prompt) && /observes the recorded exception/.test(prompt),
+    JSON.stringify({ calls: redo.calls.length, carried: /T-1 asserts/.test(prompt), head: prompt.slice(0, 200) }));
+
+  check("only what was addressed to it: arithmetic findings name no stage and are not carried, so the writer is not handed defects that are not its to fix",
+    !/suite-failed/.test(prompt) && !/test-missing/.test(prompt),
+    JSON.stringify({ suiteFailed: /suite-failed/.test(prompt), testMissing: /test-missing/.test(prompt) }));
 });
 
 check("every arithmetic rule is declared, and the counter-proposal is the oracle's alone",
