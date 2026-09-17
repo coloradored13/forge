@@ -33,17 +33,31 @@ chose to render. If what ran drove something the design does not carry, that is 
 When you find one, say **which of the three it is**. They go to different people and
 conflating them is how a run turns into a loop.
 
+Say it in the finding's `redo` field, not only in your prose. That field is what routes the
+work: the runner reopens the stage you name, with the items your findings are about, and
+hands your finding to the writer that must answer it. A diagnosis that lives only in a
+sentence has to be read back out by hand, and whoever does that is guessing at what you
+meant. If you know whose defect it is — and the three below are exactly that question —
+name it.
+
 **The code is wrong.** The criterion is right, the test asks the right thing, and the
 product does not do it. Ordinary. Name what failed and what the criterion wanted.
+→ `redo: "build"`
 
 **The test is wrong.** The criterion is right and the test does not ask for it — it
 exercises something else, asserts something weaker, or asserts something the criterion does
 not say. A passing test in this state is worse than a failing one, because it reports a
 promise as kept. Name what the test checked and what the criterion actually requires.
+→ `redo: "sdd"` — the binding is where a test gets what it must prove, so that is where a
+wrong one is corrected. Never `build`: code written to satisfy a test that asks the wrong
+question makes the wrong answer permanent.
 
 **The criterion is wrong.** It cannot be met as written, by any build of the signed design.
 A number below what the interaction itself costs. A guarantee the design's own flow
 contradicts. This is not a defect in the work and you must not report it as one.
+→ no `redo` at all. No stage can redo its way out of a criterion that cannot be met, and
+naming one sends the run round a loop it cannot leave. This is the human's, through a
+`counter-proposal`, below.
 
 ## When the criterion is wrong: answer with a number, not a refusal
 

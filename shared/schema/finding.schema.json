@@ -129,6 +129,10 @@
           "type": "string",
           "description": "The id or path this is about — REQ-3, STORY-7, SCREEN-2, src/foo.ts:42 — so the finding is addressable."
         },
+        "redo": {
+          "enum": ["sdd", "build"],
+          "description": "The stage whose work must be done again to clear this, named by the judge that found it. `sdd` when the binding is wrong — a test asserts something weaker or other than the criterion it is bound to, so the evidence must be re-bound before any code can satisfy it. `build` when the binding is right and the product does not do what it says. Omit when neither: an arithmetic consequence, an advisory, or a criterion that cannot be met as written — that last one is a `counter-proposal`, which is the human's to dispose of and never a stage's to redo. A judge that diagnoses a defect and cannot say whose it is has not finished the diagnosis; routing it by hand later means reading the reasoning back out of prose, which is what this field exists to stop."
+        },
         "summary": { "type": "string", "maxLength": 400 },
         "evidence": {
           "type": "string",
