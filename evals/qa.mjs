@@ -7,6 +7,7 @@ import { suite, withRoot, scripted } from "./_harness.mjs";
 import { seedBuild, builder, put, BUILT, CLEAN } from "./_fixture.mjs";
 import { checkRun, execute, round, SUITES, ARITHMETIC, COUNTER, IDENTITY, QA_FILE } from "../delivery/qa/index.mjs";
 import { verdictFreshness } from "../shared/judge/index.mjs";
+import { validate } from "../shared/schema/index.mjs";
 import { runStage } from "../delivery/run/index.mjs";
 import { readDoc, saveDoc } from "../shared/store.mjs";
 import { WORKTREE } from "../delivery/build/index.mjs";
@@ -14,7 +15,7 @@ import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 
-const { check, done } = suite("qa — the proof: criteria discharged by what ran", 24);
+const { check, done } = suite("qa — the proof: criteria discharged by what ran", 28);
 
 const intake = {
   work_items: [
@@ -167,5 +168,24 @@ check("it does not decide whether a test passed, and does not repeat the arithme
   /You do not decide whether a test passed/.test(oracle) && /already holds/.test(oracle));
 check("it is told not to manufacture doubt — an oracle that finds fault everywhere is worth nothing",
   /manufacture doubt/.test(oracle));
+
+// ── the diagnosis routes the work, so it has to be a field and not a sentence ──
+const verdictWith = (finding) => ({ gate: "qa", verdict: "advise", findings: [finding], deferred: [], checked: 1, skipped: 0 });
+const FIND = { severity: "medium", confidence: "certain", rule: "the test is wrong", subject: "T-9", summary: "s", evidence: "e" };
+check("a finding may name the stage that must redo its work, and only a stage that can",
+  validate("finding", verdictWith({ ...FIND, redo: "sdd" })).ok &&
+  validate("finding", verdictWith({ ...FIND, redo: "build" })).ok &&
+  !validate("finding", verdictWith({ ...FIND, redo: "qa" })).ok &&
+  validate("finding", verdictWith(FIND)).ok,
+  JSON.stringify(validate("finding", verdictWith({ ...FIND, redo: "qa" })).errors));
+
+check("the oracle is told to put the diagnosis in the field, not only in its prose — a sentence has to be read back out by hand",
+  /`redo`\s+field,\s+not\s+only\s+in\s+your\s+prose/.test(oracle) && /routes\s+the\s+work/.test(oracle));
+
+check("a wrong test is the binding's to fix, never the code's — code written to satisfy a test that asks the wrong question makes the wrong answer permanent",
+  /→ `redo: "sdd"`/.test(oracle) && /Never `build`/.test(oracle) && /→ `redo: "build"`/.test(oracle));
+
+check("a criterion that cannot be met names no stage — no stage can redo its way out of it, and naming one is a loop the run cannot leave",
+  /no `redo` at all/.test(oracle) && /loop it cannot leave/.test(oracle));
 
 done();
