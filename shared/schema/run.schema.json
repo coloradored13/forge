@@ -96,6 +96,7 @@
         "by": { "type": "string" },
         "reason": { "type": "string" },
         "items": { "$ref": "#/$defs/items", "description": "A reopen's declared scope, kept as history after the stage no longer holds it." },
+        "from": { "type": "string", "description": "On a reopen a gate drove rather than a person: the later stage whose verdict sent the work back. These flags are the redo cycles — counted off the record rather than stored, the way liveness is read and never kept — and the ceiling bounds them, so a pipeline that keeps sending work round eventually lands at the human with its history in one place." },
         "override": { "type": "boolean", "description": "True when a human's word passed a guard that would otherwise have refused." },
         "guard": { "type": "string", "description": "The guard overridden, by its refusal code — judge-blocked, verdict-stale." },
         "note": { "type": "string", "description": "What the runner has to say about it: the finding overridden, the silence that read as dead." }

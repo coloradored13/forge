@@ -123,7 +123,7 @@ export function apply(run, ctx) {
     if (!GUARDS.reason.test(st, run, ctx)) throw new Refused("reason-required", `${stage}: an override is a human's word — it takes a name and a reason`, { stage, event, guard: name });
     flags.push({ at: now, stage, event, by: ctx.by, reason: ctx.reason, override: true, guard: g.code, note: g.say(st, run, ctx) });
   }
-  if (FLAGGED.has(event)) flags.push({ at: now, stage, event, by: ctx.by ?? "runner", reason: ctx.reason ?? "", ...(ctx.items?.length ? { items: [...ctx.items] } : {}), override: false });
+  if (FLAGGED.has(event)) flags.push({ at: now, stage, event, by: ctx.by ?? "runner", reason: ctx.reason ?? "", ...(ctx.items?.length ? { items: [...ctx.items] } : {}), ...(ctx.from ? { from: ctx.from } : {}), override: false });
   if (row.recovers) flags.push({ at: now, stage, event, by: ctx.by ?? "wrapper", reason: "restarted over a dead stage", override: false, note: `the stage was dead: silent ${liveness(st, { now: ctx.now, window: run.liveness_ms }).silent_ms} ms, window ${run.liveness_ms} ms` });
 
   const next = { ...st, status: row.to };
