@@ -12,7 +12,7 @@
     "suites": {
       "type": "array",
       "x-runner": true,
-      "description": "One per suite QA knows how to run. `ok` is the runner's exit, `tests` how many titles it named — a suite that exits non-zero having named none did not run, which is a different thing from one whose tests failed.",
+      "description": "One per suite QA knows how to run. `ok` is the runner's exit, `tests` how many titles it named. A suite that exits non-zero having produced no test the binding can join to did not run, which is a different thing from one whose tests failed — and the join, not the title count, is what says so: a runner handed a path it cannot load still prints one title naming that path.",
       "items": {
         "type": "object",
         "required": ["id", "command", "ran", "ok", "tests"],

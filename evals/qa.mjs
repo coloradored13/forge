@@ -5,9 +5,12 @@
 
 import { suite, withRoot, scripted } from "./_harness.mjs";
 import { checkRun, execute, SUITES, ARITHMETIC, COUNTER, IDENTITY } from "../delivery/qa/index.mjs";
+import { WORKTREE } from "../delivery/build/index.mjs";
 import { readFileSync, existsSync } from "node:fs";
+import { join } from "node:path";
+import { spawnSync } from "node:child_process";
 
-const { check, done } = suite("qa — the proof: criteria discharged by what ran", 19);
+const { check, done } = suite("qa — the proof: criteria discharged by what ran", 21);
 
 const intake = {
   work_items: [
@@ -39,6 +42,23 @@ const lineOut = ["  ✓  1 tests/a.spec.js:3:1 › REQ-1/AC-1 · T-1 — records
   "  1) tests/b.spec.js:9:1 › REQ-1/AC-2 · T-2 — reads the day", "  2 failed", "  1 passed (3s)"].join("\n");
 const line = SUITES[1].parse(lineOut);
 check("line reporter: a title listed as a numbered failure is failed, whatever else names it", line.some((r) => !r.passed && /T-2/.test(r.title)), JSON.stringify(line));
+
+// ── the configured command, run for real against a real test file ──
+// The only check that could have caught the invocation defect: a string assertion on the
+// command says nothing about whether the runner finds anything, and the parsers above are
+// fed output rather than producing it. So spawn the configured command over a seeded
+// tests/unit and require the id to come back through the parser the suite declares.
+withRoot({
+  [join(WORKTREE, "tests", "unit", "sample.spec.js")]:
+    `import { test } from "node:test";\nimport assert from "node:assert";\ntest("T-1 — the configured command finds this file", () => assert.ok(true));\n`,
+}, (root) => {
+  const [cmd, ...args] = SUITES[0].command;
+  const r = spawnSync(cmd, args, { cwd: join(root, WORKTREE), encoding: "utf8" });
+  const rows = SUITES[0].parse(`${r.stdout ?? ""}${r.stderr ?? ""}`);
+  check("the configured unit command actually finds and names the tests in tests/unit — a bare directory path does not, and every test in it then reads as missing from the product",
+    r.status === 0 && rows.length === 1 && rows[0].passed && /\bT-1\b/.test(rows[0].title),
+    JSON.stringify({ command: SUITES[0].command.join(" "), status: r.status, rows, err: String(r.stderr ?? "").slice(0, 200) }));
+});
 
 // ── a test id seen twice is discharged by both or by neither ──
 await withRoot({}, async (root) => {
@@ -75,6 +95,13 @@ check("a suite that exits non-zero having named no test did not run — that is 
 f = checkRun(intake, sdd, { suites: [{ id: "unit", command: "node --test", ran: true, ok: false, tests: 3, out: "" }], tests: [T("T-1", true), T("T-2", false), T("T-3", true)] });
 check("a suite that exits non-zero because a test failed is not `suite-failed` — the failure is already named by the test",
   !rules(f).includes("suite-failed"), JSON.stringify(f));
+
+// A runner handed a path it cannot load still prints one title — named after the path.
+// Counting titles read that as a live suite, and reported every test it should have run
+// as missing from the product. The join decides, so one title carrying no id is not a test.
+f = checkRun(intake, sdd, { suites: [{ id: "unit", command: "node --test tests/unit/", ran: true, ok: false, tests: 1, out: "Error: Cannot find module '/x/tests/unit'" }], tests: [] });
+check("a suite that could not start but still printed one title naming the path it failed to load is `suite-failed` — a title carrying no test id is not a test",
+  of(f, "suite-failed").length === 1 && of(f, "suite-failed")[0].subject === "unit" && /none carrying a test id/.test(of(f, "suite-failed")[0].evidence), JSON.stringify(f.map((x) => `${x.rule}:${x.subject}`)));
 
 check("every arithmetic rule is declared, and the counter-proposal is the oracle's alone",
   new Set(ARITHMETIC).size === ARITHMETIC.length && !ARITHMETIC.includes(COUNTER) && COUNTER === "counter-proposal");
