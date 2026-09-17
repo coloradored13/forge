@@ -16,7 +16,7 @@ import { rows, estimate, standing, modelFor, tally } from "../../shared/agent-ca
 import { STAGES, JUDGED, LEDGER, readRun, transition, heartbeat, liveness } from "../state/index.mjs";
 import { intake, takePinned, compile, slice, INTAKE_FILE } from "../intake/index.mjs";
 import { round as sddRound, rejudge as sddRejudge, PER_RESPONSE } from "../sdd/index.mjs";
-import { round as qaRound, rejudge as qaRejudge } from "../qa/index.mjs";
+import { round as qaRound, rejudge as qaRejudge, COUNTER } from "../qa/index.mjs";
 import { round as buildRound, rejudge as buildRejudge } from "../build/index.mjs";
 
 export { Refused };
@@ -171,18 +171,80 @@ export async function reopen(root, { stage, by, reason, items = null, from = nul
  * episode. Anything else is a fault and propagates.
  */
 export async function advance(root, opts = {}) {
-  const out = { stages: [], halted: null };
+  const out = { stages: [], halted: null, redos: [] };
+  for (;;) {
+    out.halted = await sweep(root, opts, out);
+    if (!out.halted) return out;
+    const plan = out.halted.why === "review" ? redoPlan(root, out.halted.stage) : null;
+    if (!plan?.length) return out;
+
+    // The cross-stage bound. A stage's own cap counts rounds inside it and is reset by the
+    // reopen (`opens`), so it cannot bound a cycle that leaves the stage and comes back:
+    // qa blocks → sdd redoes → build redoes → qa runs again. Unbounded, that is a gate
+    // paying for its own opinion in a circle. The ceiling is the number already on the
+    // record for how much a run may buy, so the redos take it too.
+    const run = needRun(root);
+    const spent = run.flags.filter((f) => f.event === "reopen" && f.from).length;
+    if (spent >= run.ceiling) {
+      out.halted = { stage: out.halted.stage, why: "redo-ceiling", message: `${out.halted.stage} sent work back ${spent} time(s), the ceiling — the block is the human's call now` };
+      return out;
+    }
+
+    // The earliest stage only. Reopening sdd sends build stale by the same door, so build
+    // re-judges and regenerates against the binding that just moved — and a wrong test is
+    // often why the code was wrong, so its findings may not survive the re-bind. Reopening
+    // both would also refuse: the second stage is no longer `approved` once the first has
+    // sent it stale. Anything still wrong comes back named on the next verdict.
+    const [first] = plan;
+    const by = opts.by ?? "runner";
+    const reason = `${out.halted.stage} sent ${first.items.length} item(s) back: ${first.items.join(", ")}`;
+    opts.onEvent?.(`${out.halted.stage} → ${first.stage} redo ${spent + 1} of ${run.ceiling} · ${reason}`);
+    out.redos.push({ from: out.halted.stage, to: first.stage, items: first.items, cycle: spent + 1 });
+    try { await reopen(root, { ...opts, stage: first.stage, items: first.items, from: out.halted.stage, by, reason }); }
+    catch (e) { if (e instanceof Refused) { out.halted = { stage: first.stage, why: e.code, message: e.message }; return out; } throw e; }
+  }
+}
+
+/** One pass through the stages in order; the halt, or null when every stage approved. */
+async function sweep(root, opts, out) {
   for (const stage of STAGES) {
     const run = needRun(root);
     if (run.stages[stage].status === "approved") continue;
-    if (!AUTHORED[stage]) { out.halted = { stage, why: "stage-unauthored" }; break; }
+    if (!AUTHORED[stage]) return { stage, why: "stage-unauthored" };
     let r;
     try { r = await runStage(root, { ...opts, stage }); }
-    catch (e) { if (e instanceof Refused) { out.halted = { stage, why: e.code, message: e.message }; break; } throw e; }
+    catch (e) { if (e instanceof Refused) return { stage, why: e.code, message: e.message }; throw e; }
     out.stages.push(r);
-    if (r.status !== "approved") { out.halted = { stage, why: r.status }; break; }
+    if (r.status !== "approved") return { stage, why: r.status };
   }
-  return out;
+  return null;
+}
+
+/**
+ * What a blocking verdict asks of the stages before it: each stage its findings named, with
+ * the work items those findings were about, in pipeline order so the earliest goes first.
+ *
+ * The items come from the per-item judgements, not from parsing subjects — a finding's
+ * subject is a test id or a criterion, and the item it belongs to is already known because
+ * the item is what its judge was asked about. Null when nothing routes: no `redo` anywhere,
+ * or a `counter-proposal`, which says the criterion itself cannot be met. No stage can redo
+ * its way out of that one, so it is the PM's and the loop stops rather than spending a
+ * cycle proving it again.
+ */
+export function redoPlan(root, stage) {
+  const at = needRun(root).stages[stage]?.verdict;
+  const verdict = at ? readDoc(root, at) : null;
+  if (!verdict || verdict.verdict !== "block") return null;
+  if ((verdict.findings ?? []).some((f) => f.rule === COUNTER)) return null;
+  const by = new Map();
+  for (const it of verdict.items ?? []) {
+    for (const f of it.findings ?? []) {
+      if (!f.redo) continue;
+      if (!by.has(f.redo)) by.set(f.redo, new Set());
+      by.get(f.redo).add(it.id);
+    }
+  }
+  return STAGES.filter((s) => by.has(s)).map((s) => ({ stage: s, items: [...by.get(s)].sort() }));
 }
 
 // ── the episode ──

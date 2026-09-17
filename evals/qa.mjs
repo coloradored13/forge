@@ -8,14 +8,14 @@ import { seedBuild, builder, put, BUILT, CLEAN } from "./_fixture.mjs";
 import { checkRun, execute, round, SUITES, ARITHMETIC, COUNTER, IDENTITY, QA_FILE } from "../delivery/qa/index.mjs";
 import { verdictFreshness } from "../shared/judge/index.mjs";
 import { validate } from "../shared/schema/index.mjs";
-import { runStage, reopen } from "../delivery/run/index.mjs";
+import { runStage, reopen, advance, redoPlan } from "../delivery/run/index.mjs";
 import { readDoc, saveDoc } from "../shared/store.mjs";
 import { WORKTREE } from "../delivery/build/index.mjs";
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 
-const { check, done } = suite("qa — the proof: criteria discharged by what ran", 30);
+const { check, done } = suite("qa — the proof: criteria discharged by what ran", 33);
 
 const intake = {
   work_items: [
@@ -183,6 +183,72 @@ await withRoot({}, async (tmp) => {
   check("only what was addressed to it: arithmetic findings name no stage and are not carried, so the writer is not handed defects that are not its to fix",
     !/suite-failed/.test(prompt) && !/test-missing/.test(prompt),
     JSON.stringify({ suiteFailed: /suite-failed/.test(prompt), testMissing: /test-missing/.test(prompt) }));
+});
+
+// ── the loop routes on the diagnosis, and the ceiling bounds the circle ──
+// Driven through `advance`, not its parts: every defect this stage has had was in a seam
+// between components that each tested clean. An oracle that always sends the binding back
+// makes the cycle run until something stops it, which is the only way to see what does.
+await withRoot({}, async (tmp) => {
+  const { cold } = await seedBuild(tmp, { files: { "README.md": "# Dock\n" } });
+  const b = builder([BUILT(), BUILT("b"), BUILT("c")],
+    { 0: (cwd) => put(cwd, "src/exceptions/store.js", "a"), 1: (cwd) => put(cwd, "src/deliveries/store.js", "b"), 2: (cwd) => put(cwd, "src/queue/q.js", "c") });
+  await runStage(cold, { stage: "build", _query: b.query });
+
+  const { BINDING } = await import("./_fixture.mjs");
+  const SEND_BACK = {
+    findings: [{
+      severity: "high", confidence: "certain", rule: "the test is wrong", subject: "T-1", redo: "sdd",
+      summary: "T-1 asserts the chip is visible; the criterion requires the exception on the record.",
+      evidence: "assertion: chip visible. criterion: a reviewer records a decision at the moment they make it.",
+    }],
+    deferred: [], checked: 1, skipped: 0,
+  };
+  // One seam, three answers — told apart by the sections each prompt actually carries.
+  const seen = { oracle: 0, writer: 0, judge: 0 };
+  const CLEAN_JUDGE = { findings: [], deferred: [], checked: 1, skipped: 0 };
+  const reply = (prompt) => {
+    // The oracle is asked per work item; only STORY-1's answer sends anything back, so the
+    // plan must carry that item alone out of the three judged — a redo that names every
+    // item rewrites work no finding was about.
+    if (/Suite output/.test(prompt)) { seen.oracle++; return /REQ-1\/AC-1/.test(prompt) ? SEND_BACK : CLEAN_JUDGE; }
+    if (/Interfaces the other items name/.test(prompt)) { seen.judge++; return CLEAN_JUDGE; }
+    seen.writer++; return { items: BINDING.items, questions: [] };
+  };
+  const q = ({ prompt, options }) => (async function* () {
+    yield { type: "system", subtype: "init", session_id: "s" };
+    yield { type: "assistant", session_id: "s", message: { content: [{ type: "text", text: "ok" }] } };
+    yield { type: "result", session_id: "s", subtype: "success", is_error: false, errors: [], total_cost_usd: 0.01, num_turns: 1, structured_output: reply(prompt), modelUsage: { [options.model]: { inputTokens: 10, outputTokens: 5, cacheReadInputTokens: 0, cacheCreationInputTokens: 0, costUSD: 0.01 } } };
+  })();
+
+  const events = [];
+  const out = await advance(cold, { _query: q, onEvent: (e) => events.push(e) });
+  const run = readDoc(cold, "forge/run.json");
+  const sent = run.flags.filter((f) => f.event === "reopen" && f.from === "qa");
+
+  check("a blocking verdict whose findings name a stage is not a human door — the loop reopens that stage itself, with the items the findings were about, and says so",
+    out.redos.length > 0 && out.redos[0].from === "qa" && out.redos[0].to === "sdd" && out.redos[0].items.join() === "STORY-1" &&
+    sent.length > 0 && sent[0].stage === "sdd" && /sent 1 item\(s\) back/.test(sent[0].reason) &&
+    events.some((e) => /qa → sdd redo 1 of 3/.test(e)),
+    JSON.stringify({ redos: out.redos, flags: sent.map((f) => `${f.stage}:${f.from}:${f.reason}`), halted: out.halted }));
+
+  check("the circle is bounded by the ceiling, not by a stage's own cap — a reopen resets that cap, so only a count across stages can stop an oracle that keeps sending the same work back",
+    out.halted?.why === "redo-ceiling" && sent.length === run.ceiling && /the block is the human's call now/.test(out.halted.message ?? ""),
+    JSON.stringify({ halted: out.halted, reopens: sent.length, ceiling: run.ceiling, oracleRounds: seen.oracle }));
+});
+
+// A criterion that cannot be met routes to nobody: the loop must not spend a cycle on it.
+await withRoot({}, async (tmp) => {
+  const { cold } = await seedBuild(tmp, { files: { "README.md": "# Dock\n" } });
+  const b = builder([BUILT(), BUILT("b"), BUILT("c")],
+    { 0: (cwd) => put(cwd, "src/exceptions/store.js", "a"), 1: (cwd) => put(cwd, "src/deliveries/store.js", "b"), 2: (cwd) => put(cwd, "src/queue/q.js", "c") });
+  await runStage(cold, { stage: "build", _query: b.query });
+  await runStage(cold, { stage: "qa", _query: scripted({ structured: {
+    findings: [{ severity: "high", confidence: "certain", rule: COUNTER, subject: "REQ-1/AC-1", summary: "30000ms is below the typing alone; 35000ms is reachable.", evidence: "measured 34758ms, of which 34200ms is scripted input." }],
+    deferred: [], checked: 1, skipped: 0,
+  } }).query });
+  check("a counter-proposal routes to nobody — no stage can redo its way out of a criterion that cannot be met, so the plan is empty and the run stops at the human",
+    redoPlan(cold, "qa") === null, JSON.stringify(redoPlan(cold, "qa")));
 });
 
 check("every arithmetic rule is declared, and the counter-proposal is the oracle's alone",
