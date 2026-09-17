@@ -18,6 +18,7 @@ import { intake, takePinned, compile, slice, INTAKE_FILE } from "../intake/index
 import { round as sddRound, rejudge as sddRejudge, PER_RESPONSE } from "../sdd/index.mjs";
 import { round as qaRound, rejudge as qaRejudge, COUNTER } from "../qa/index.mjs";
 import { round as buildRound, rejudge as buildRejudge } from "../build/index.mjs";
+import { round as releaseRound, rejudge as releaseRejudge } from "../release/index.mjs";
 
 export { Refused };
 /** How often the wrapper writes the heartbeat while a stage's code runs. */
@@ -59,6 +60,14 @@ export const AUTHORED = {
     // the suites are run once, whatever they cost in wall clock, and one oracle per binding
     // item reads what came out — no writer: qa proves what is there, it does not make it
     calls: ({ handoff, intake }) => ({ judge: (intake?.work_items ?? slice(handoff, compile(handoff).scenarios)).length }),
+  },
+  release: {
+    writer: false,
+    round: async (root, ctx) => (await releaseRound(root, ctx)).file,
+    rejudge: async (root, ctx) => (await releaseRejudge(root, ctx)).file,
+    // no model at all: the manifest is a projection of records already filed, and the
+    // verdict is whether the vendored checker passes in a clone nobody has touched
+    calls: () => ({}),
   },
 };
 

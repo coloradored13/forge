@@ -1,0 +1,311 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forge.local/schema/manifest.schema.json",
+  "title": "Provenance manifest — what was promised, what proves it, and what it cost",
+  "description": "The claim graph the product carries in its own repo (SPEC §5 release). One row per criterion, each row tying the promise to the executed evidence and the commits that made it: criteria → tests → commits → work items → design → stories → requirements → contract → PRD. Nothing here is a new judgement — every field is copied from a record some gate already filed, so the manifest is a projection and never a source. The verifier beside it re-derives what it can from the repo alone, which is why the chain carries ids and hashes rather than prose.",
+  "type": "object",
+  "required": [
+    "id",
+    "meta",
+    "handoff",
+    "chain",
+    "verdicts",
+    "pins",
+    "cost",
+    "verifier",
+    "x-drift-checked"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string",
+      "x-runner": true
+    },
+    "meta": {
+      "type": "object",
+      "x-runner": true,
+      "description": "The stamp (shared/hash)."
+    },
+    "built_at": {
+      "type": "string",
+      "x-runner": true
+    },
+    "argv": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "x-runner": true,
+      "description": "How the run was invoked. A manifest that cannot say what command produced it asks a reader to take the rest on trust."
+    },
+    "handoff": {
+      "type": "object",
+      "x-runner": true,
+      "required": [
+        "version",
+        "path",
+        "content_hash"
+      ],
+      "additionalProperties": false,
+      "description": "The signed contract this release answers — the head of the chain. Discovery's word, pinned.",
+      "properties": {
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "path": {
+          "type": "string"
+        },
+        "content_hash": {
+          "type": "string"
+        }
+      }
+    },
+    "product": {
+      "type": "object",
+      "x-runner": true,
+      "required": [
+        "branch",
+        "commit"
+      ],
+      "additionalProperties": false,
+      "description": "The commit this manifest is about. A fresh clone of this branch at this commit is what the verifier checks.",
+      "properties": {
+        "branch": {
+          "type": "string"
+        },
+        "commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        }
+      }
+    },
+    "chain": {
+      "type": "array",
+      "x-runner": true,
+      "description": "One row per criterion the contract carries — the spine. A criterion with no test, or no passing test, is still a row: the manifest says what was promised and what became of it, and a promise quietly dropped is the one thing it must never allow.",
+      "items": {
+        "type": "object",
+        "required": [
+          "criterion",
+          "statement",
+          "requirement",
+          "work_item",
+          "tests",
+          "discharged"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "criterion": {
+            "type": "string",
+            "description": "REQ-n/AC-m — the promise."
+          },
+          "statement": {
+            "type": "string",
+            "description": "What it promised, verbatim from the contract."
+          },
+          "requirement": {
+            "type": "string",
+            "description": "REQ-n — the requirement it belongs to."
+          },
+          "story": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The story it was elicited through, when one carries it."
+          },
+          "work_item": {
+            "type": "string",
+            "description": "The item Delivery sliced it into and built."
+          },
+          "screens": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The signed screens it is lived on, when it is a surface criterion."
+          },
+          "tests": {
+            "type": "array",
+            "description": "The bound tests and what running them did. Empty means nothing was bound — the criterion is unproved and the row says so.",
+            "items": {
+              "type": "object",
+              "required": [
+                "id",
+                "passed"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "pattern": "^T-\\d+$"
+                },
+                "suite": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "title": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "passed": {
+                  "type": "boolean",
+                  "description": "False also when it did not run: a test that did not run has not passed."
+                },
+                "ran": {
+                  "type": "boolean"
+                }
+              }
+            }
+          },
+          "commits": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{40}$"
+            },
+            "description": "The commits that built the work item this criterion rides on. The verifier checks each is reachable in the clone it runs in."
+          },
+          "discharged": {
+            "type": "boolean",
+            "description": "True only when at least one bound test ran and passed. Never a judgement — read off the executed record."
+          }
+        }
+      }
+    },
+    "verdicts": {
+      "type": "array",
+      "x-runner": true,
+      "description": "Every gate's last verdict. The manifest does not restate them; it says where they are and what each came to, so a reader can go and look. Their bytes are pinned below with everything else.",
+      "items": {
+        "type": "object",
+        "required": [
+          "gate",
+          "verdict",
+          "path"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "gate": {
+            "type": "string"
+          },
+          "verdict": {
+            "enum": [
+              "pass",
+              "block",
+              "advise"
+            ]
+          },
+          "path": {
+            "type": "string"
+          },
+          "round": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "pins": {
+      "type": "array",
+      "x-runner": true,
+      "description": "Every record this release rests on, by the sha256 of its bytes on disk. Bytes and not a document hash, deliberately: the checker beside this file then needs no knowledge of any artifact's type or of which pointers it declares — it reads a file and hashes it, which is the one thing that cannot be got subtly wrong. A pin that no longer matches means the manifest describes something that is no longer here.",
+      "items": {
+        "type": "object",
+        "required": [
+          "what",
+          "path",
+          "sha256"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "what": {
+            "type": "string",
+            "description": "Plain name for a reader: `handoff v2`, `qa verdict`, `the binding`."
+          },
+          "path": {
+            "type": "string",
+            "description": "Root-relative, so it resolves in any clone."
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        }
+      }
+    },
+    "advisories": {
+      "$ref": "finding.schema.json#/properties/findings",
+      "x-runner": true,
+      "description": "Findings that did not block — the ones a round proceeded past (R6). They ship with the product because a reader deciding whether to trust it is entitled to what the gates said and did not stop for. The shape is the finding shape and is referenced, not retyped (R10)."
+    },
+    "deferrals": {
+      "$ref": "finding.schema.json#/properties/deferred",
+      "x-runner": true,
+      "description": "What the judges noticed beyond the line (R2). Not this release's work, and the next round's seed."
+    },
+    "drift": {
+      "$ref": "intake.schema.json#/properties/drift",
+      "x-runner": true,
+      "description": "What intake found had moved since the last handoff, per id — its own shape, referenced rather than retyped (R10). On a first release nothing has moved and `against` is null."
+    },
+    "cost": {
+      "type": "object",
+      "x-runner": true,
+      "required": [
+        "usd",
+        "calls"
+      ],
+      "additionalProperties": false,
+      "description": "What the run cost, from the ledger (R1) — by stage, so a reader can see where it went.",
+      "properties": {
+        "usd": {
+          "type": "number",
+          "minimum": 0
+        },
+        "calls": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "by_stage": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number"
+          }
+        }
+      }
+    },
+    "verifier": {
+      "type": "object",
+      "x-runner": true,
+      "required": [
+        "path",
+        "sha256"
+      ],
+      "additionalProperties": false,
+      "description": "The vendored checker committed beside this file. It imports nothing from Forge and reaches no network: a reader with the clone and node can re-run the manifest's checkable claims without trusting the thing that wrote them.",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "sha256 of the verifier's own bytes — so a checker edited after the fact cannot pass as the one that shipped."
+        }
+      }
+    },
+    "x-drift-checked": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "x-runner": true
+    }
+  }
+}
