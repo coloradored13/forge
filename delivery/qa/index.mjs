@@ -38,7 +38,11 @@ export const COUNTER = "counter-proposal";
 
 /** The suites, and how each names the tests it ran. One home for what QA knows how to run. */
 export const SUITES = [
-  { id: "unit", command: ["node", "--test", "--test-reporter=tap", "tests/unit/"], parse: tap },
+  // The glob is node's to expand, not the shell's — `run` spawns without one. A bare
+  // directory is not a portable way to ask: on node 22 `--test tests/unit/` resolves the
+  // path as a module to execute, fails with MODULE_NOT_FOUND, and reports one phantom
+  // subtest named after the directory. Every real test in it then reads as `test-missing`.
+  { id: "unit", command: ["node", "--test", "--test-reporter=tap", "tests/unit/*.spec.js"], parse: tap },
   { id: "browser", command: ["npx", "--no-install", "playwright", "test", "tests/browser", "--reporter=line"], parse: line },
 ];
 
@@ -115,9 +119,16 @@ export function checkRun(intake, sdd, results) {
   const findings = [];
   const f = (severity, rule, subject, summary, evidence, remedy) => findings.push({ severity, confidence: "certain", rule, subject, summary, evidence, remedy });
 
+  // A suite is alive if it contributed a test the binding can join to, not if it printed
+  // something shaped like a title. Counting titles let a suite that failed to start at all
+  // evade this: node's runner, handed a path it cannot load, still emits one subtest named
+  // after the path — one title, zero ids, `tests === 0` false, and the whole suite's tests
+  // reported as `test-missing` against the product instead of `suite-failed` against the
+  // runner. The join is what QA actually needs, so the join is what decides.
   for (const s of results.suites) {
-    if (s.ok === false && s.tests === 0) {
-      f("high", "suite-failed", s.id, `The ${s.id} suite did not run.`, `\`${s.command}\` exited non-zero and named no tests. Output: ${s.out.slice(0, 400)}`, "A suite that cannot start proves nothing. Fix the runner, then judge — an unrun suite must never read as a passing one.");
+    const joined = results.tests.filter((t) => t.suite === s.id).length;
+    if (s.ok === false && joined === 0) {
+      f("high", "suite-failed", s.id, `The ${s.id} suite did not run.`, `\`${s.command}\` exited non-zero and produced no test the binding names${s.tests ? ` (it printed ${s.tests} title(s), none carrying a test id)` : ""}. Output: ${s.out.slice(0, 400)}`, "A suite that cannot start proves nothing. Fix the runner, then judge — an unrun suite must never read as a passing one, and its tests must not be reported missing from the product.");
     }
   }
 
