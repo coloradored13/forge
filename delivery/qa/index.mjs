@@ -17,7 +17,7 @@
 // in seconds rather than opening an investigation. Delivery never edits the contract (R5).
 
 import { join } from "node:path";
-import { readDoc, saveDoc } from "../../shared/store.mjs";
+import { readDoc, saveDoc, saveVerdict } from "../../shared/store.mjs";
 import { Refused } from "../../shared/refused.mjs";
 import { runPerItemJudge } from "../../shared/judge/index.mjs";
 import { scopeOf } from "../../shared/scope.mjs";
@@ -214,16 +214,21 @@ export async function round(root, ctx = {}) {
   });
 
   const findings = [...arithmetic, ...judge.verdict.findings];
-  return {
-    file: {
-      ...judge.verdict,
-      gate: GATE,
-      findings,
-      verdict: findings.some((x) => x.severity === "high" && x.confidence === "certain") ? "block" : findings.length ? "advise" : "pass",
-      checked: results.tests.length,
-    },
-    results,
+  const verdict = {
+    ...judge.verdict,
+    gate: GATE,
+    findings,
+    verdict: findings.some((x) => x.severity === "high" && x.confidence === "certain") ? "block" : findings.length ? "advise" : "pass",
+    checked: results.tests.length,
   };
+
+  // The verdict goes on disk before it goes back. The loop is handed a root-relative path,
+  // not a document: `transition` re-reads the file itself, so that what the door disposes
+  // of is what was filed rather than what a caller says was filed. A round that returns the
+  // verdict in hand instead reads back as a round that judged nothing — every oracle call
+  // made, paid for, and discarded at the door.
+  saveVerdict(root, VERDICT_FILE, verdict);
+  return { doc, verdict, file: VERDICT_FILE, results };
 }
 
 /** A re-judge runs nothing new: the suites are the record, and the oracle reads them again. */
