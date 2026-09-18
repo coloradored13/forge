@@ -66,7 +66,15 @@ export const GUARDS = {
  */
 export const TRANSITIONS = [
   { from: "pending",   event: "start",      to: "running",   guards: [] },
-  { from: "stopped",   event: "start",      to: "running",   guards: [], opens: true },
+  // Not `opens`. Every other row that starts a new episode has earned it: a reopen follows
+  // an approval, and `moved` follows a handoff the prior rounds did not judge. A stop
+  // settles nothing — the stage was mid-work or at its cap — so resuming it resumes the
+  // same episode, rounds and all. Resetting here made the cap optional: stop a capped
+  // stage, start it again, and it has a fresh cap without the ceiling or a reason ever
+  // being consulted, while `escalate` — the door built for exactly this — buys one round
+  // and demands both. Used honestly on this project and still indistinguishable, afterwards,
+  // from the same two events used to walk around R6.
+  { from: "stopped",   event: "start",      to: "running",   guards: [] },
   { from: "running",   event: "start",      to: "running",   guards: ["dead"], recovers: true },
   { from: "running",   event: "finish",     to: "review",    guards: ["verdict"], counts: true },
   { from: "review",    event: "approve",    to: "approved",  guards: ["fresh", "non-block"] },

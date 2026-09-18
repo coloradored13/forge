@@ -23,7 +23,7 @@ import {
   createRun, readRun, apply, transition, heartbeat, liveness, view, adoptHandoff,
 } from "../delivery/state/index.mjs";
 
-const { check, done } = suite("transition-table · one state machine, one store, one reader", 96);
+const { check, done } = suite("transition-table · one state machine, one store, one reader", 97);
 
 const T0 = new Date("2026-09-05T12:00:00Z");
 const at = (ms) => new Date(T0.getTime() + ms);
@@ -179,8 +179,21 @@ check("blocked → approved is the same approve door: refused judge-blocked with
   check("the walk: two judged rounds hit the cap; one escalation buys the third; the ceiling refuses a fourth; three rounds are on the stage",
     cannot?.code === "at-cap" && noMore?.code === "no-transition" && ceiling?.code === "at-ceiling" && r.stages.sdd.status === "blocked" && r.stages.sdd.round === 3, `${cannot?.code} ${noMore?.code} ${ceiling?.code} ${r.stages.sdd.status} r${r.stages.sdd.round}`);
   step("stop", { by: "Brad", reason: "taking it up with the team" });
-  check("stop lands in stopped with the reason flagged; start from stopped opens a new episode at round 0",
-    r.stages.sdd.status === "stopped" && r.flags.at(-1).event === "stop" && step("start", { now: at(200_000) }).run.stages.sdd.round === 0);
+  check("stop lands in stopped with the reason flagged, and starting again resumes the same episode — a stop settles nothing, so it does not hand back rounds",
+    r.stages.sdd.status === "stopped" && r.flags.at(-1).event === "stop" && step("start", { now: at(200_000) }).run.stages.sdd.round === r.stages.sdd.round);
+
+  // The hole this closes: a stage at its cap, stopped and started, must still be at its cap.
+  // Otherwise R6's cap is advisory — two events walk around it with no reason and no ceiling
+  // consulted, while escalate buys one round and demands both.
+  check("a capped stage stopped and started again is still capped — the cap is a door, not a suggestion, and stop-then-start is not a way through it",
+    (() => {
+      const capped = inState("review", { round: 2 });
+      const stopped = apply(capped, { stage: "sdd", event: "stop", by: "Brad", reason: "the machine died" }).run;
+      const back = apply(stopped, { stage: "sdd", event: "start", by: "Brad" }).run;
+      if (back.stages.sdd.round !== 2) return false;
+      const atReview = { ...back, stages: { ...back.stages, sdd: { ...back.stages.sdd, status: "review" } } };
+      return refusal(() => apply(atReview, { stage: "sdd", event: "regenerate", ...SATISFIED }))?.code === "at-cap";
+    })());
   check("stop without a reason is refused reason-required", refusal(() => apply(inState("review"), { stage: "sdd", event: "stop", by: "Brad" }))?.code === "reason-required");
   check("flags are append-only across the walk: escalate, stop — nothing removed", r.flags.map((f) => f.event).join() === "escalate,stop");
 }
@@ -358,7 +371,7 @@ await withRoot({}, async (tmp) => {
     JSON.stringify(after.flags.at(-1)));
   check("the stopped record validates — a stop the store takes is a stop the schema admits", validate("run", after).ok, validate("run", after).errors.join("; "));
   const restarted = refusal(() => transition(root, { stage: "sdd", event: "start", by: "wrapper", now: at(200_000) }));
-  check("start from the stopped stage opens a new episode at round 0, the same as any stop", restarted === null && readRun(root).stages.sdd.status === "running" && readRun(root).stages.sdd.round === 0, restarted?.message);
+  check("start from the stopped stage resumes the episode it stopped in, rounds intact — only an approval or a moved handoff earns a fresh count", restarted === null && readRun(root).stages.sdd.status === "running" && readRun(root).stages.sdd.round === 1, `${restarted?.message} round=${readRun(root).stages.sdd.round}`);
 });
 
 done();
