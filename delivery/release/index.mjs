@@ -64,6 +64,8 @@ function git(cwd, args, { ok = true } = {}) {
  * nothing was ever bound to still gets a row, saying exactly that.
  */
 export function chainOf({ intake, sdd, build, qa }) {
+  // What the run was never equipped to ask, from qa's own record of it.
+  const waiting = new Map((qa?.unprovable ?? []).map((u) => [u.id, u.needs]));
   const byItem = new Map((sdd?.items ?? []).map((it) => [it.work_item, it]));
   // An item merged into another is bound through its coverer, so read the union.
   const coverer = new Map();
@@ -95,6 +97,12 @@ export function chainOf({ intake, sdd, build, qa }) {
         // Read off the executed record, never decided here: a criterion is discharged when
         // a test bound to it ran and passed, and by nothing else.
         discharged: tests.some((t) => t.passed),
+        // And when it is not: whether the product failed the promise, or nobody here was
+        // equipped to ask it. Only when EVERY bound test waited — one test that could have
+        // run and did not pass makes this an ordinary undischarged criterion.
+        ...(tests.length && !tests.some((t) => t.passed) && tests.every((t) => waiting.has(t.id))
+          ? { unprovable: [...new Set(tests.flatMap((t) => waiting.get(t.id) ?? []))] }
+          : {}),
       });
     }
   }
@@ -302,7 +310,10 @@ export function checkRelease(manifest, verified) {
   // the manifest is correct to say so — but a release that ships them silently is the
   // failure this stage exists to prevent, so each one is named.
   for (const r of manifest.chain.filter((x) => !x.discharged)) {
-    const why = !r.tests.length ? "no test is bound to it" : r.tests.every((t) => !t.ran) ? "its test(s) did not run" : "its test(s) ran and did not pass";
+    const why = r.unprovable?.length ? `this machine could not walk it: the test(s) wait on ${r.unprovable.join(", ")}`
+      : !r.tests.length ? "no test is bound to it"
+        : r.tests.every((t) => !t.ran) ? "its test(s) did not run"
+          : "its test(s) ran and did not pass";
     f("high", "criterion-undischarged", r.criterion, `${r.criterion} is not discharged by anything that ran.`,
       `${r.statement}\n  on ${r.work_item} — ${why}: ${r.tests.map((t) => `${t.id} ${t.ran ? (t.passed ? "passed" : "failed") : "did not run"}`).join("; ") || "(none)"}`,
       "Discharge it, bind evidence for it in sdd, or dispose of it on the record — a release does not quietly drop a promise the contract carries.");

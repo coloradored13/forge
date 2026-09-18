@@ -4,25 +4,60 @@
   "title": "QA — what ran, and what it did",
   "description": "The executed record (SPEC §5 qa): every suite QA ran and every test it recognised, by the id the binding gave it. Nothing here is anyone's opinion — a suite either started or did not, a test either passed or did not, and both are read from output. The oracle's judgement on whether a criterion is discharged lives on the verdict, not here, so that what was observed and what it was taken to mean can be read apart. Hashed over the tests, so a verdict pinned to it goes stale when the suites are run again.",
   "type": "object",
-  "required": ["id", "meta", "suites", "tests", "x-drift-checked"],
+  "required": [
+    "id",
+    "meta",
+    "suites",
+    "tests",
+    "x-drift-checked",
+    "unprovable"
+  ],
   "additionalProperties": false,
   "properties": {
-    "id": { "type": "string", "x-runner": true },
-    "meta": { "type": "object", "x-runner": true, "description": "The stamp (shared/hash)." },
+    "id": {
+      "type": "string",
+      "x-runner": true
+    },
+    "meta": {
+      "type": "object",
+      "x-runner": true,
+      "description": "The stamp (shared/hash)."
+    },
     "suites": {
       "type": "array",
       "x-runner": true,
       "description": "One per suite QA knows how to run. `ok` is the runner's exit, `tests` how many titles it named. A suite that exits non-zero having produced no test the binding can join to did not run, which is a different thing from one whose tests failed — and the join, not the title count, is what says so: a runner handed a path it cannot load still prints one title naming that path.",
       "items": {
         "type": "object",
-        "required": ["id", "command", "ran", "ok", "tests"],
+        "required": [
+          "id",
+          "command",
+          "ran",
+          "ok",
+          "tests"
+        ],
         "additionalProperties": false,
         "properties": {
-          "id": { "type": "string" },
-          "command": { "type": "string", "description": "What was run, verbatim, so a person can run it themselves." },
-          "ran": { "type": "boolean" },
-          "ok": { "type": ["boolean", "null"] },
-          "tests": { "type": "integer", "minimum": 0 }
+          "id": {
+            "type": "string"
+          },
+          "command": {
+            "type": "string",
+            "description": "What was run, verbatim, so a person can run it themselves."
+          },
+          "ran": {
+            "type": "boolean"
+          },
+          "ok": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "tests": {
+            "type": "integer",
+            "minimum": 0
+          }
         }
       }
     },
@@ -32,16 +67,62 @@
       "description": "Every test the binding named that QA found in a suite's output, joined by the id carried in its title. An id the binding names and no title carries does not appear here — it is `test-missing` on the verdict, because a test that did not run must never be indistinguishable from one that passed.",
       "items": {
         "type": "object",
-        "required": ["id", "title", "suite", "passed"],
+        "required": [
+          "id",
+          "title",
+          "suite",
+          "passed"
+        ],
         "additionalProperties": false,
         "properties": {
-          "id": { "type": "string", "pattern": "^T-\\d+$" },
-          "title": { "type": "string" },
-          "suite": { "type": "string" },
-          "passed": { "type": "boolean", "description": "True only if every test carrying this id passed: one id driven by two tests is discharged by both or by neither." }
+          "id": {
+            "type": "string",
+            "pattern": "^T-\\d+$"
+          },
+          "title": {
+            "type": "string"
+          },
+          "suite": {
+            "type": "string"
+          },
+          "passed": {
+            "type": "boolean",
+            "description": "True only if every test carrying this id passed: one id driven by two tests is discharged by both or by neither."
+          }
         }
       }
     },
-    "x-drift-checked": { "type": "array", "items": { "type": "string" }, "x-runner": true }
+    "x-drift-checked": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "x-runner": true
+    },
+    "unprovable": {
+      "type": "array",
+      "x-runner": true,
+      "description": "Tests the binding named that could not be walked here, with the environment names they were waiting on. Kept apart from `tests` because a test that did not run is not a test that failed, and a reader of the record is owed the difference: one says the product is wrong, the other says this machine could not ask.",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "needs"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^T-\\d+$"
+          },
+          "needs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
   }
 }

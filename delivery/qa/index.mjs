@@ -33,7 +33,33 @@ export const VERDICT_FILE = join("forge", "delivery", "reviews", "qa.json");
 export const IDENTITY = new URL("./prompts/oracle.md", import.meta.url).pathname;
 
 /** Checked by running things, never the oracle's to report (R10). */
-export const ARITHMETIC = ["test-missing", "test-failed", "criterion-unproved", "suite-failed"];
+export const ARITHMETIC = ["test-missing", "test-failed", "criterion-unproved", "criterion-unprovable", "suite-failed"];
+
+/**
+ * The tests the binding says this machine cannot walk, and the names they wait on — read
+ * from the binding's `needs` and then checked, never taken on trust. A test whose needs
+ * are all present is an ordinary test: if it fails, it failed.
+ *
+ * The difference this draws is the one a manifest could not say. A criterion can go
+ * undischarged because the product is wrong, or because nobody here owned the rig the
+ * promise is about — Bakehouse's REQ-14/AC-1 is a power cut, and T-80 refuses to
+ * substitute a process kill for one because a kill leaves the page cache up and a build
+ * that never flushed would pass. That refusal is the discipline this whole architecture
+ * is for, and it was being recorded as a failing test.
+ *
+ * It does not lower the bar. An unprovable criterion is still undischarged, still blocks,
+ * still lands on the manifest — declaring a need buys a reason, never a pass.
+ */
+export function unprovable(sdd, env = process.env) {
+  const out = [];
+  for (const it of sdd?.items ?? []) {
+    for (const t of it.tests ?? []) {
+      const waiting = (t.needs ?? []).filter((n) => !String(env[n] ?? "").trim());
+      if (waiting.length) out.push({ id: t.id, needs: waiting });
+    }
+  }
+  return out;
+}
 /** What the oracle may say instead of a verdict: the criterion is wrong, and here is the number that is not. */
 export const COUNTER = "counter-proposal";
 
@@ -84,7 +110,10 @@ async function run(cwd, command, _exec) {
  * Nothing here is a judgement: a test the binding names either ran or it did not, and
  * either passed or it did not.
  */
-export function checkRun(intake, sdd, results) {
+export function checkRun(intake, sdd, results, env = process.env) {
+  // What this machine was never going to be able to walk, checked against the environment
+  // rather than taken from the binding's word.
+  const waiting = new Map(unprovable(sdd, env).map((u) => [u.id, u.needs]));
   const findings = [];
   const f = (severity, rule, subject, summary, evidence, remedy) => findings.push({ severity, confidence: "certain", rule, subject, summary, evidence, remedy });
 
@@ -101,7 +130,9 @@ export function checkRun(intake, sdd, results) {
   // A suite that legitimately holds nothing is only silent when the binding names nothing
   // for it either, and then there is nothing left unmatched to blame it for.
   const found = new Set(results.tests.map((t) => t.id));
-  const unmatched = (sdd.items ?? []).flatMap((it) => (it.tests ?? []).map((t) => t.id)).filter((id) => !found.has(id));
+  // A test this machine was never going to walk is not evidence that a runner broke, so it
+  // does not count toward the unmatched that blame one.
+  const unmatched = (sdd.items ?? []).flatMap((it) => (it.tests ?? []).map((t) => t.id)).filter((id) => !found.has(id) && !waiting.has(id));
   for (const s of results.suites) {
     const joined = results.tests.filter((t) => t.suite === s.id).length;
     if (joined > 0 || (s.ok !== false && !unmatched.length)) continue;
@@ -118,6 +149,7 @@ export function checkRun(intake, sdd, results) {
   for (const it of sdd.items ?? []) {
     for (const t of it.tests ?? []) {
       const got = ran.get(t.id);
+      if (waiting.has(t.id)) continue; // its criterion is reported below, with what it waits on
       if (!got) f("high", "test-missing", t.id, `${t.id} is in the binding and did not run.`, `\`/items\` ${it.work_item} names ${t.id}; no test the suites ran carries that id in its title.`, "Run it, or say in the binding why it cannot be run — a criterion whose test never ran is not discharged, it is unmeasured.");
       else if (!got.passed) f("high", "test-failed", t.id, `${t.id} failed.`, `${got.suite}: ${got.title}`, "The code, the test, or the criterion is wrong. Which one it is, is the oracle's to say.");
     }
@@ -129,6 +161,16 @@ export function checkRun(intake, sdd, results) {
     const tests = (sdd.items ?? []).flatMap((it) => (it.tests ?? []).filter((t) => (t.proves ?? []).includes(id)).map((t) => ({ ...t, item: it.work_item })));
     if (!tests.length) { f("high", "criterion-unproved", id, `${id} on ${c.item} has no test in the binding.`, `no test in \`/items\` names ${id} in \`proves\`.`, "Bind the test that proves it — sdd is where a criterion gets its evidence."); continue; }
     const passed = tests.filter((t) => ran.get(t.id)?.passed);
+    // Every test bound to it waits on this machine: the criterion is unproved, and the
+    // reason is the rig and not the product. It blocks exactly as hard — a promise nobody
+    // could check is not a promise kept — but the record no longer says the product failed.
+    if (!passed.length && tests.length && tests.every((t) => waiting.has(t.id))) {
+      const needs = [...new Set(tests.flatMap((t) => waiting.get(t.id) ?? []))];
+      f("high", "criterion-unprovable", id, `${id} on ${c.item} cannot be proved on this machine.`,
+        `${c.statement}\n  every test bound to it waits on the environment: ${tests.map((t) => `${t.id} needs ${(waiting.get(t.id) ?? []).join(", ")}`).join("; ")}`,
+        `Give the run what it waits on — ${needs.join(", ")} — and judge again, or dispose of the criterion on the record. Nothing here says the product is wrong: it says nobody asked it.`);
+      continue;
+    }
     if (!passed.length) f("high", "criterion-unproved", id, `${id} on ${c.item} is not discharged by anything that ran.`, `${c.statement}\n  tests: ${tests.map((t) => `${t.id} ${ran.has(t.id) ? (ran.get(t.id).passed ? "passed" : "failed") : "did not run"}`).join("; ")}`, "Discharge it, or answer it as a counter-proposal — what was asked, what was measured, and what is achievable.");
   }
   return findings;
@@ -174,7 +216,7 @@ export async function round(root, ctx = {}) {
   const results = await execute(root, ctx);
   for (const s of results.suites) ctx.onEvent?.(`${s.id}: ${s.tests} test(s), ${s.ok ? "exit 0" : "non-zero"}`);
 
-  const arithmetic = checkRun(intake, sdd, results);
+  const arithmetic = checkRun(intake, sdd, results, ctx._env ?? process.env);
 
   // The executed record goes down before anything judges it, because it is what the
   // verdict will be pinned to and a pin needs the stamped document. The raw output is not
@@ -183,7 +225,8 @@ export async function round(root, ctx = {}) {
     id: run.id, meta: {},
     suites: results.suites.map(({ out, ...s }) => s),
     tests: results.tests,
-    "x-drift-checked": ["/tests"],
+    unprovable: unprovable(sdd, ctx._env ?? process.env),
+    "x-drift-checked": ["/tests", "/unprovable"],
   });
 
   const judge = await runPerItemJudge({

@@ -30,6 +30,10 @@ One entry per thing the item promises. `proves` names criteria by their join id 
 
 A criterion the design puts on a screen is proved in a browser, driving the product against the signed design's controls by id. A criterion with no screen is proved at the unit or integration level, whichever exercises the real boundary. Scenario steps that name a screen's state — "the record button disabled" — are browser assertions on that state by its name.
 
+Where a criterion cannot be walked without something of the machine it runs on — a device to power-cut, a card reader, a paid sandbox — name what it needs in the test's `needs`, as environment names. Say it here rather than letting the test discover it: the seam is where a person can see that a promise will want a rig, before anyone builds against it.
+
+This buys a reason and never a pass. QA checks each name against the environment and does not take the claim on trust — a test whose needs are all present and still fails has failed — and a criterion nothing could walk is still undischarged, still blocks, and still lands on the manifest, saying which of the two it was. Name a need only where the promise genuinely turns on it: a test that claims to want a device in order to read a string will be read as one that did not want to be run.
+
 ## The controls
 
 Every design control this item wires on its own screens, and every one its tests drive on another item's screen — by the id the signed design gave it, on the screen the design holds it. A control on a screen this item does not run on is a dependency: the item that runs there binds and builds it, this one drives it, and that item is built first. Name it on both, or the order of the build does not know. The design is the whole vocabulary: a control it does not carry does not exist, and a build that needs one has found a gap in the design, which is a question, not an invention. Do not rename; do not abbreviate.

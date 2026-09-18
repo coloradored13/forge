@@ -161,14 +161,25 @@ function main() {
   const undischarged = chain.filter((r) => !r.discharged);
 
   if (process.argv.includes("--json")) {
-    process.stdout.write(JSON.stringify({ ok: failed.length === 0, checks, undischarged: undischarged.map((r) => r.criterion) }, null, 2) + "\n");
+    process.stdout.write(JSON.stringify({ ok: failed.length === 0, checks, undischarged: undischarged.filter((r) => !r.unprovable?.length).map((r) => r.criterion), unprovable: undischarged.filter((r) => r.unprovable?.length).map((r) => ({ criterion: r.criterion, needs: r.unprovable })) }, null, 2) + "\n");
   } else {
     for (const c of checks) process.stdout.write(`${c.ok ? "ok  " : "FAIL"}  ${c.name}${c.detail ? `\n        ${c.detail}` : ""}\n`);
     process.stdout.write(`\n${checks.length - failed.length}/${checks.length} checks passed\n`);
     // Not a failure of the manifest — a fact about the release, and the reader's to weigh.
     if (undischarged.length) {
-      process.stdout.write(`\n${undischarged.length} criterion(s) the release does not claim to have discharged:\n`);
-      for (const r of undischarged) process.stdout.write(`  ${r.criterion} — ${r.statement}\n`);
+      // Two different things to know about a release, and a reader who cannot tell them
+      // apart learns the wrong one: a promise the product fails, and a promise nobody
+      // running this had the equipment to ask about.
+      const failed = undischarged.filter((r) => !r.unprovable?.length);
+      const waited = undischarged.filter((r) => r.unprovable?.length);
+      if (failed.length) {
+        process.stdout.write(`\n${failed.length} criterion(s) the release does not claim to have discharged:\n`);
+        for (const r of failed) process.stdout.write(`  ${r.criterion} — ${r.statement}\n`);
+      }
+      if (waited.length) {
+        process.stdout.write(`\n${waited.length} criterion(s) this release was not equipped to check. Nothing here says the\nproduct is wrong; it says the run could not ask:\n`);
+        for (const r of waited) process.stdout.write(`  ${r.criterion} — needs ${r.unprovable.join(", ")}\n      ${r.statement}\n`);
+      }
     }
   }
   return failed.length === 0 ? 0 : 1;
