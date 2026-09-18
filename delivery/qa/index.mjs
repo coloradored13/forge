@@ -25,6 +25,7 @@ import { readRun, takeHandoff, LEDGER } from "../state/index.mjs";
 import { INTAKE_FILE } from "../intake/index.mjs";
 import { loadSdd, covered, renderWorkItem, SDD_FILE } from "../sdd/index.mjs";
 import { loadBuild, WORKTREE, BUILD_FILE } from "../build/index.mjs";
+import { RUNNERS } from "../../shared/runners.mjs";
 
 export const GATE = "qa";
 export const QA_FILE = join("forge", "delivery", "qa.json");
@@ -36,15 +37,8 @@ export const ARITHMETIC = ["test-missing", "test-failed", "criterion-unproved", 
 /** What the oracle may say instead of a verdict: the criterion is wrong, and here is the number that is not. */
 export const COUNTER = "counter-proposal";
 
-/** The suites, and how each names the tests it ran. One home for what QA knows how to run. */
-export const SUITES = [
-  // The glob is node's to expand, not the shell's — `run` spawns without one. A bare
-  // directory is not a portable way to ask: on node 22 `--test tests/unit/` resolves the
-  // path as a module to execute, fails with MODULE_NOT_FOUND, and reports one phantom
-  // subtest named after the directory. Every real test in it then reads as `test-missing`.
-  { id: "unit", command: ["node", "--test", "--test-reporter=tap", "tests/unit/*.spec.js"], parse: tap },
-  { id: "browser", command: ["npx", "--no-install", "playwright", "test", "tests/browser", "--reporter=line"], parse: line },
-];
+/** The runners Forge knows, from their one home (shared/runners) — what to run and how to read it. */
+export const SUITES = RUNNERS;
 
 export function loadQa(root) { return readDoc(root, QA_FILE); }
 
@@ -55,31 +49,6 @@ export function loadQa(root) { return readDoc(root, QA_FILE); }
  * rather than passed over in silence.
  */
 const idsIn = (title) => [...String(title).matchAll(/\bT-\d+\b/g)].map((m) => m[0]);
-
-/** TAP, as node's runner emits it: `ok 3 - T-14 …` / `not ok 4 - T-9 …`. */
-function tap(out) {
-  const rows = [];
-  for (const raw of out.split("\n")) {
-    const m = /^(not ok|ok)\s+\d+\s*-?\s*(.*)$/.exec(raw.trim());
-    if (m && !/# SKIP/i.test(raw)) rows.push({ title: m[2].trim(), passed: m[1] === "ok" });
-  }
-  return rows;
-}
-
-/** Playwright's line reporter: a failing test is listed under `N failed` by its title. */
-function line(out) {
-  const rows = [];
-  for (const raw of out.split("\n")) {
-    const ok = /^\s*✓|^\s*\d+\)\s/.test(raw);
-    const m = /›\s*(.+?)\s*$/.exec(raw);
-    if (m) rows.push({ title: m[1].trim(), passed: !/^\s*\d+\)/.test(raw) && !/✘|×/.test(raw) });
-    else if (ok) continue;
-  }
-  // The line reporter prints failures after a `N failed` header; anything it did not name
-  // as failing and the binding expects is resolved against the summary below.
-  const failed = new Set(rows.filter((r) => !r.passed).map((r) => r.title));
-  return rows.map((r) => ({ ...r, passed: !failed.has(r.title) }));
-}
 
 /**
  * Run every suite in the build's worktree. Returns what ran, by test id, and the raw

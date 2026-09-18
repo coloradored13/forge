@@ -9,7 +9,7 @@ import { dirname, join } from "node:path";
 import { skeleton } from "../shared/schema/index.mjs";
 import { HANDOFFS } from "../shared/handoff.mjs";
 import { scripted } from "./_harness.mjs";
-import { setupProject } from "../discovery/setup/index.mjs";
+import { reconcileIgnore, setupProject } from "../discovery/setup/index.mjs";
 import { openPrd, loadPrd, savePrd } from "../discovery/workshop/index.mjs";
 import { readDoc, saveDoc, traceOf, PROTOTYPE_FILE, HTML_FILE, STORIES_FILE, DESIGN_FILE } from "../discovery/record/index.mjs";
 import { review, signoff } from "../discovery/design/index.mjs";
@@ -169,6 +169,10 @@ export function coldRoot(tmp, disc, name = "cold") {
   const cold = join(tmp, name);
   mkdirSync(join(cold, ".git"), { recursive: true });
   mkdirSync(join(cold, HANDOFFS), { recursive: true });
+  // A Delivery root is a Forge project root: setup wrote its .gitignore, covering what the
+  // runners Forge runs there leave behind. Without it the fixture is a repo no setup ever
+  // made, and a builder that runs the suites reads as one that left its surface.
+  reconcileIgnore(cold);
   for (const f of readdirSync(join(disc, HANDOFFS))) copyFileSync(join(disc, HANDOFFS, f), join(cold, HANDOFFS, f));
   return cold;
 }
