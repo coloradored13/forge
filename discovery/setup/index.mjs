@@ -9,12 +9,46 @@ import { execFileSync } from "node:child_process";
 import { join, resolve, dirname, basename, sep } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
+import { GENERATED } from "../../shared/runners.mjs";
 
 export const PIPELINE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 export const DEFAULT_PARENT = join(homedir(), "Forge");
 export const PROJECT_FILE = join("forge", "project.json");
 export const LEDGER = join("forge", "discovery", "calls.jsonl");
 const SLUG = /^[a-z0-9][a-z0-9-]{0,63}$/;
+
+/** What every project keeps out of its repository, whatever it is built with. */
+const IGNORE_BASE = ["node_modules/", ".DS_Store"];
+
+/**
+ * What the project's `.gitignore` must carry: the ordinary things, and whatever the
+ * runners Forge will run there leave beside the product (shared/runners `generates`).
+ *
+ * Forge writes this file and Forge chooses those runners, so it writes the one that
+ * follows from the other. Left incomplete, the runner's output reads to Delivery's
+ * change-set accounting as source a builder touched outside its surface — which is how a
+ * builder came to be blocked for verifying its own tests.
+ */
+export const ignoreLines = () => [...IGNORE_BASE, ...GENERATED];
+
+/**
+ * Write the file, or add to it what it does not yet carry. Reconciling rather than
+ * overwriting is what makes this safe on a project Forge did not create: an existing
+ * `.gitignore` is the project's, and lines it already has — in any order, with whatever
+ * comments around them — are left exactly as they are. Returns what had to be added.
+ */
+export function reconcileIgnore(root) {
+  const f = join(root, ".gitignore");
+  const held = existsSync(f) ? readFileSync(f, "utf8") : null;
+  const lines = new Set((held ?? "").split("\n").map((l) => l.trim()));
+  const missing = ignoreLines().filter((l) => !lines.has(l));
+  if (!missing.length) return [];
+  const body = held === null
+    ? `${missing.join("\n")}\n`
+    : `${held}${held.endsWith("\n") || held === "" ? "" : "\n"}${missing.join("\n")}\n`;
+  writeFileSync(f, body);
+  return missing;
+}
 
 export class SetupRefused extends Error {
   constructor(code, message) { super(message); this.code = code; }
@@ -81,8 +115,11 @@ export function setupProject({
   if (created) {
     mkdirSync(root, { recursive: true });
     writeFileSync(join(root, "README.md"), `# ${title ?? slug}\n\nA Forge project. \`discovery/\` holds the PM's artifacts; \`forge/\` holds run records and the provenance manifest; everything else is the product.\n`);
-    writeFileSync(join(root, ".gitignore"), "node_modules/\n.DS_Store\n");
   }
+  // Both paths, every time: a project Forge attaches needs this as much as one it creates,
+  // and more — its `.gitignore` was written for whatever it was before Forge's runners ran
+  // in it. Reconciling is idempotent, so setting a project up twice adds nothing twice.
+  const ignored = reconcileIgnore(root);
   for (const d of ["discovery", "forge"]) mkdirSync(join(root, d), { recursive: true });
 
   const project = existsSync(projectFile) ? JSON.parse(readFileSync(projectFile, "utf8")) : {
@@ -102,11 +139,11 @@ export function setupProject({
     run("git", ["add", PROJECT_FILE]);
     run("git", ["commit", "-q", "-m", "forge: record the remote"]);
   } else {
-    run("git", ["add", "forge", "discovery"]);
+    run("git", ["add", "forge", "discovery", ".gitignore"]);
     run("git", ["commit", "-q", "-m", "forge: attach project", "--allow-empty"]);
   }
 
-  return { root, created, remote: project.repo.remote, project };
+  return { root, created, remote: project.repo.remote, project, ignored };
 }
 
 /** The project record a Discovery door works from. */

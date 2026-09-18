@@ -24,14 +24,15 @@ import { rows as funnelRows, funnelPath } from "../shared/funnel.mjs";
 import { SUMMARY_MAX } from "../shared/judge/index.mjs";
 import { createRun, readRun, transition, adoptHandoff, LEDGER } from "../delivery/state/index.mjs";
 import { intake, parseGherkin, INTAKE_FILE, VERDICT_FILE, GATE as INTAKE_GATE, QUESTION_BUDGET } from "../delivery/intake/index.mjs";
-import { setupProject, loadProject, ledgerPath, insidePipeline, SetupRefused, PIPELINE_ROOT } from "../discovery/setup/index.mjs";
+import { setupProject, loadProject, ledgerPath, insidePipeline, SetupRefused, PIPELINE_ROOT, reconcileIgnore } from "../discovery/setup/index.mjs";
+import { GENERATED } from "../shared/runners.mjs";
 import { loadPrd } from "../discovery/workshop/index.mjs";
 import { readDoc, readVerdict, isSigned, DESIGN_FILE, REVIEWS } from "../discovery/record/index.mjs";
 import { answer } from "../discovery/doors/index.mjs";
 import { review, signoff } from "../discovery/design/index.mjs";
 import { exportHandoff, readiness, compile, designState, renderHandoff, repoOf, GATE as EXPORT_GATE, EXITS, IDEA, TRACKERS } from "../discovery/export/index.mjs";
 
-const { check, done } = suite("seam · import rule, project repo, handoff", 146);
+const { check, done } = suite("seam · import rule, project repo, handoff", 149);
 
 const RULES = `{"rules":[],"halves":["discovery","delivery","shared"]}`;
 
@@ -138,6 +139,31 @@ withRoot({ "pipeline/shared/rules.json": RULES, "pipeline/SPEC.md": "#", "taken/
   const again = setupProject({ slug: "theirs", path: theirs, existing: true, pipelineRoot, _exec });
   check("re-attaching the same project is idempotent — project.json is kept, not rewritten", again.project.created === attached.project.created && JSON.parse(readFileSync(join(theirs, "forge", "project.json"), "utf8")).title === "Theirs");
   check("a directory that is not a project cannot be loaded", (() => { try { loadProject(join(tmp, "taken")); return false; } catch (e) { return e.code === "no-project"; } })());
+
+  // ── the repo Forge writes is configured for the runners Forge will run in it ──
+  // Left incomplete, a runner's output reads to Delivery's change-set accounting as source
+  // a builder touched outside its surface — which is how a builder came to be blocked for
+  // verifying its own tests. Forge writes the .gitignore and Forge picks the runners; it
+  // owes the one that follows from the other.
+  const lines = (p) => readFileSync(join(p, ".gitignore"), "utf8").split("\n").map((l) => l.trim());
+  check("a project Forge creates ignores what its runners leave behind, not only node_modules",
+    GENERATED.length > 0 && GENERATED.every((g) => lines(root).includes(g)) && lines(root).includes("node_modules/"),
+    JSON.stringify({ generated: GENERATED, file: lines(root).filter(Boolean) }));
+
+  check("a project Forge attaches gets the same, and its .gitignore is staged with the rest — a repo written before Forge's runners ran in it needs this more, not less",
+    GENERATED.length > 0 && GENERATED.every((g) => lines(theirs).includes(g)) && execs.some((e) => e.args[0] === "add" && e.args.includes(".gitignore")),
+    JSON.stringify({ file: lines(theirs).filter(Boolean), staged: execs.filter((e) => e.args[0] === "add").map((e) => e.args) }));
+
+  check("reconciling adds only what is missing and keeps what the project already wrote — an existing .gitignore is the project's, in its own order and with its own comments",
+    (() => {
+      const own = join(tmp, "own");
+      mkdirSync(own, { recursive: true });
+      writeFileSync(join(own, ".gitignore"), "# ours\ndist/\nnode_modules/\n");
+      const added = reconcileIgnore(own);
+      const after = readFileSync(join(own, ".gitignore"), "utf8");
+      return !added.includes("node_modules/") && added.includes("test-results/")
+        && after.startsWith("# ours\ndist/\nnode_modules/\n") && reconcileIgnore(own).length === 0;
+    })());
 });
 
 // ── R14 · the handoff's schemas hold no field of their own: the contract is the PRD's fields, the handoff embeds the documents' ──
@@ -575,10 +601,10 @@ await withRoot({}, async (tmp) => {
   const { cold } = await seedBuild(tmp, { slug: "ferry", files: { "README.md": "# Ferry\n", "src/index.js": "export {};\n", "package.json": "{\"name\":\"ferry\"}\n" } });
   const wt = join(cold, WORKTREE);
   const ledger = join(cold, LEDGER);
-  check("the seed is a repository whose main holds the product, the handoffs and the run record — the record is in git, as a project's would be", gitIn(cold, ["ls-files"]).split("\n").join() === "README.md,discovery/handoffs/handoff-v1.json,discovery/handoffs/handoff-v1.md,forge/run.json,package.json,src/index.js");
+  check("the seed is a repository whose main holds the product, the handoffs and the run record — the record is in git, as a project's would be", gitIn(cold, ["ls-files"]).split("\n").join() === ".gitignore,README.md,discovery/handoffs/handoff-v1.json,discovery/handoffs/handoff-v1.md,forge/run.json,package.json,src/index.js");
   const got = worktree(cold);
   check("the worktree is `.worktrees/build` on `forge/build`, cut from the project's head: the product is there, the record's directories are not — sparse, not deleted — and the project's own status does not see the worktree",
-    got === wt && gitIn(wt, ["rev-parse", "--abbrev-ref", "HEAD"]) === BRANCH && gitIn(wt, ["rev-parse", "HEAD"]) === gitIn(cold, ["rev-parse", "main"]) && readdirSync(wt).sort().join() === ".git,README.md,package.json,src" && RECORD.every((d) => !existsSync(join(wt, d))) && gitIn(wt, ["ls-files"]).split("\n").includes("forge/run.json") && readFileSync(join(cold, ".git", "info", "exclude"), "utf8").split("\n").includes(".worktrees/build/") && !gitIn(cold, ["status", "--short"]).includes(".worktrees"), `${readdirSync(wt).join()} · ${gitIn(cold, ["status", "--short"])}`);
+    got === wt && gitIn(wt, ["rev-parse", "--abbrev-ref", "HEAD"]) === BRANCH && gitIn(wt, ["rev-parse", "HEAD"]) === gitIn(cold, ["rev-parse", "main"]) && readdirSync(wt).sort().join() === ".git,.gitignore,README.md,package.json,src" && RECORD.every((d) => !existsSync(join(wt, d))) && gitIn(wt, ["ls-files"]).split("\n").includes("forge/run.json") && readFileSync(join(cold, ".git", "info", "exclude"), "utf8").split("\n").includes(".worktrees/build/") && !gitIn(cold, ["status", "--short"]).includes(".worktrees"), `${readdirSync(wt).join()} · ${gitIn(cold, ["status", "--short"])}`);
   check("asking again is the same worktree, not a second one", worktree(cold) === wt && gitIn(cold, ["worktree", "list"]).split("\n").length === 2);
 
   // The builder runs in the worktree, told both roots: the worktree's and the project's record directories are denied.

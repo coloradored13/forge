@@ -34,7 +34,7 @@ import { INTAKE_FILE } from "../delivery/intake/index.mjs";
 import { identity } from "../shared/prompt/index.mjs";
 import { ROOT } from "./_harness.mjs";
 
-const { check, done } = suite("scope · R2 the line is a gate input, R12 shape before scope", 171);
+const { check, done } = suite("scope · R2 the line is a gate input, R12 shape before scope", 173);
 
 const same = (a, b) => a.length === b.length && [...a].sort().join(" ") === [...b].sort().join(" ");
 const REQ = (n, status = "committed") => ({ id: `REQ-${n}`, statement: `s${n}`, type: "functional", done_definition: "d", acceptance_criteria: [{ id: "AC-1", statement: "a" }], status, context: "", flags: [] });
@@ -670,6 +670,37 @@ await withRoot({}, async (tmp) => {
 
   // Round 2, with the findings: STORY-1 clean; STORY-2 blocks with a reason of its own; REQ-4 stands — no call.
   const again = builder([BUILT(), BLOCKED("the binding's `Delivery` type is in no interface — approach: \"renders one row per delivery\"")], { 0: (cwd) => put(cwd, "src/exceptions/store.js", "export const record = () => {};\n") });
+
+  // ── a builder that runs the suites has not left its surface ──
+  // The binding asks builders to write tests; verifying them means running them, and a
+  // runner writes beside the product when it does. That output is not source the builder
+  // touched — it is the runner's, it is regenerable, and a project using that runner keeps
+  // it out of its repository. Forge writes the project's .gitignore (discovery/setup) and
+  // Forge chooses the runners (shared/runners), so the output never reaches the change set
+  // at all. It blocked a real build before it did: six surface-escapes on one item and
+  // eight more cascading from them, for the side effect of proving the tests could fail.
+  await withRoot({}, async (tmp2) => {
+    const { cold: c2 } = await seedBuild(tmp2, { slug: "kiln", files: { "README.md": "# Kiln\n" } });
+    const ran = builder([BUILT(), BUILT("b"), BUILT("c")], {
+      0: (cwd) => {
+        put(cwd, "src/exceptions/store.js", "export const record = () => {};\n");
+        put(cwd, "test-results/.last-run.json", '{"status":"passed"}\n');
+        put(cwd, "test-results/tests-browser-a/error-context.md", "# context\n");
+        put(cwd, "playwright-report/index.html", "<html></html>\n");
+      },
+      1: (cwd) => put(cwd, "src/deliveries/store.js", "b"),
+      2: (cwd) => put(cwd, "src/queue/q.js", "c"),
+    });
+    const rRun = await buildRound(c2, { ...roundCtx(c2), _query: ran.query });
+    const item = rRun.doc.items[0];
+    check("a builder whose test run wrote test-results/ and playwright-report/ is built, not violated — the runner's output is not in the change set, so it cannot read as source outside the surface",
+      item.status === "built" && item.changed.join() === "src/exceptions/store.js" &&
+      item.violations.length === 0 && rRun.verdict.verdict === "pass",
+      JSON.stringify({ status: item.status, changed: item.changed, violations: item.violations, verdict: rRun.verdict.verdict }));
+
+    check("and that output is genuinely on disk — the claim is that it is not accounted, not that it was never written",
+      existsSync(join(c2, WORKTREE, "test-results", ".last-run.json")) && existsSync(join(c2, WORKTREE, "playwright-report", "index.html")));
+  });
   const r2 = await buildRound(cold, { ...roundCtx(cold, { review: r1.verdict }), _query: again.query });
   r2.verdict.findings.forEach((f) => emitted.add(f.rule));
   const [s1, s2, q4] = r2.doc.items;
