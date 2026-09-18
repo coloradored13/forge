@@ -4,69 +4,176 @@
   "title": "SDD — the binding",
   "description": "What sdd owns (SPEC §5): the signed design and the compiled scenarios bound to tests and interfaces per work item, before code. One document for the whole set, so an interface two items share is written once by one hand and named verbatim by both. The writer returns the items and its questions; the runner writes the id, the traces and the stamp. sdd never invents an interface: every control is the design's by id, every test proves a criterion by id.",
   "type": "object",
-  "required": ["id", "meta", "traces", "items", "questions", "x-drift-checked"],
+  "required": [
+    "id",
+    "meta",
+    "traces",
+    "items",
+    "questions",
+    "x-drift-checked"
+  ],
   "additionalProperties": false,
   "properties": {
-    "id": { "type": "string", "pattern": "^sdd-[a-z0-9-]+$", "x-runner": true },
-    "meta": { "type": "object", "x-runner": true, "description": "The stamp (shared/hash)." },
+    "id": {
+      "type": "string",
+      "pattern": "^sdd-[a-z0-9-]+$",
+      "x-runner": true
+    },
+    "meta": {
+      "type": "object",
+      "x-runner": true,
+      "description": "The stamp (shared/hash)."
+    },
     "traces": {
       "type": "object",
       "x-runner": true,
       "description": "What the binding was written from, by hash: the pinned handoff and the intake record.",
-      "required": ["handoff", "intake"],
+      "required": [
+        "handoff",
+        "intake"
+      ],
       "additionalProperties": false,
       "properties": {
-        "handoff": { "type": "object", "required": ["version", "content_hash"], "additionalProperties": false, "properties": { "version": { "type": "integer" }, "content_hash": { "type": "string" } } },
-        "intake": { "type": "object", "required": ["content_hash"], "additionalProperties": false, "properties": { "content_hash": { "type": "string" } } }
+        "handoff": {
+          "type": "object",
+          "required": [
+            "version",
+            "content_hash"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "version": {
+              "type": "integer"
+            },
+            "content_hash": {
+              "type": "string"
+            }
+          }
+        },
+        "intake": {
+          "type": "object",
+          "required": [
+            "content_hash"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "content_hash": {
+              "type": "string"
+            }
+          }
+        }
       }
     },
     "items": {
       "type": "array",
       "description": "One binding per intake work item — a story, or a requirement no story carries. Not one per requirement: the work item is what gets built, and a binding that skips it breaks the chain a build walks back to the PRD.",
-      "items": { "$ref": "#/$defs/item" }
+      "items": {
+        "$ref": "#/$defs/item"
+      }
     },
     "questions": {
       "type": "array",
       "description": "What the binding could not decide without guessing. A blocking question blocks the stage until a human answers in Discovery or overrides on the record; a guess written past would be invisible. Delivery cannot amend the PRD — the question crosses the seam as a question.",
       "items": {
         "type": "object",
-        "required": ["subject", "question", "blocking"],
+        "required": [
+          "subject",
+          "question",
+          "blocking"
+        ],
         "additionalProperties": false,
         "properties": {
-          "subject": { "type": ["string", "null"], "description": "The work item, criterion or screen the question is about, by id." },
-          "question": { "type": "string", "minLength": 1 },
-          "blocking": { "type": "boolean" }
+          "subject": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The work item, criterion or screen the question is about, by id."
+          },
+          "question": {
+            "type": "string",
+            "minLength": 1
+          },
+          "blocking": {
+            "type": "boolean"
+          }
         }
       }
     },
-    "x-drift-checked": { "type": "array", "x-runner": true, "items": { "type": "string" }, "const": ["/items", "/questions"] }
+    "x-drift-checked": {
+      "type": "array",
+      "x-runner": true,
+      "items": {
+        "type": "string"
+      },
+      "const": [
+        "/items",
+        "/questions"
+      ]
+    }
   },
   "$defs": {
     "item": {
       "type": "object",
-      "required": ["work_item", "approach", "interfaces", "tests", "controls", "surface", "risks"],
+      "required": [
+        "work_item",
+        "approach",
+        "interfaces",
+        "tests",
+        "controls",
+        "surface",
+        "risks"
+      ],
       "additionalProperties": false,
       "properties": {
-        "work_item": { "type": "string", "pattern": "^(STORY|REQ)-\\d+$", "description": "The work item this unit is named for, and one it covers. Its id everywhere downstream." },
+        "work_item": {
+          "type": "string",
+          "pattern": "^(STORY|REQ)-\\d+$",
+          "description": "The work item this unit is named for, and one it covers. Its id everywhere downstream."
+        },
         "covers": {
           "type": "array",
           "default": [],
-          "items": { "type": "string", "pattern": "^(STORY|REQ)-\\d+$" },
+          "items": {
+            "type": "string",
+            "pattern": "^(STORY|REQ)-\\d+$"
+          },
           "description": "Further work items this one unit builds, beyond the one it is named for. Stories are sliced by what a person values; a build is ordered by what depends on what, and the two do not always agree. When one story's test drives a control on another's screen, or two need each other, they are one buildable thing and belong in one unit. Every work item is covered exactly once across the set — merging changes who builds what, never what gets built."
         },
-        "approach": { "type": "string", "minLength": 1, "description": "How it gets built, in prose — the first place mechanism may be discussed. Say what is exercised and where state lives; do not restate the story." },
+        "approach": {
+          "type": "string",
+          "minLength": 1,
+          "description": "How it gets built, in prose — the first place mechanism may be discussed. Say what is exercised and where state lives; do not restate the story."
+        },
         "interfaces": {
           "type": "array",
           "description": "The contracts this item exposes or consumes: functions, routes, events, files. An interface two items share is named here by both, `signature` character for character — the arithmetic compares them verbatim, and a disagreement is a build discovering it. One the item consumes names the item that builds it in `from`: that is a dependency, and the build orders itself by it.",
           "items": {
             "type": "object",
-            "required": ["name", "signature", "shared"],
+            "required": [
+              "name",
+              "signature",
+              "shared"
+            ],
             "additionalProperties": false,
             "properties": {
-              "name": { "type": "string", "minLength": 1 },
-              "signature": { "type": "string", "minLength": 1 },
-              "shared": { "type": "boolean", "description": "True when another item names the same interface." },
-              "from": { "type": "string", "pattern": "^(STORY|REQ)-\\d+$", "description": "The item that builds this interface, when this item only calls it. Absent on the item that builds it. Arithmetic: the item exists and names the interface, and no ring of `from` closes." }
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "signature": {
+                "type": "string",
+                "minLength": 1
+              },
+              "shared": {
+                "type": "boolean",
+                "description": "True when another item names the same interface."
+              },
+              "from": {
+                "type": "string",
+                "pattern": "^(STORY|REQ)-\\d+$",
+                "description": "The item that builds this interface, when this item only calls it. Absent on the item that builds it. Arithmetic: the item exists and names the interface, and no ring of `from` closes."
+              }
             }
           }
         },
@@ -75,15 +182,60 @@
           "description": "One entry per thing the work item promises. Each names the criteria it proves by id — a join, so a criterion reworded later breaks nothing. `exercises` says what is run and `asserts` what is checked: a test that restates the criterion with a verb on the front names nothing to run and cannot come out either way.",
           "items": {
             "type": "object",
-            "required": ["id", "proves", "scenario", "level", "exercises", "asserts"],
+            "required": [
+              "id",
+              "proves",
+              "scenario",
+              "level",
+              "exercises",
+              "asserts"
+            ],
             "additionalProperties": false,
             "properties": {
-              "id": { "type": "string", "pattern": "^T-\\d+$" },
-              "proves": { "type": "array", "minItems": 1, "items": { "type": "string", "pattern": "^REQ-\\d+/AC-\\d+$" }, "description": "Criteria on this work item, by join id." },
-              "scenario": { "type": ["string", "null"], "description": "The compiled scenario this test implements (`STORY-n/m`), or null for a criterion no scenario carries." },
-              "level": { "enum": ["unit", "integration", "browser"], "description": "Browser for a surface criterion: QA drives the product against the signed design." },
-              "exercises": { "type": "string", "minLength": 1 },
-              "asserts": { "type": "string", "minLength": 1 }
+              "id": {
+                "type": "string",
+                "pattern": "^T-\\d+$"
+              },
+              "proves": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "string",
+                  "pattern": "^REQ-\\d+/AC-\\d+$"
+                },
+                "description": "Criteria on this work item, by join id."
+              },
+              "scenario": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "The compiled scenario this test implements (`STORY-n/m`), or null for a criterion no scenario carries."
+              },
+              "level": {
+                "enum": [
+                  "unit",
+                  "integration",
+                  "browser"
+                ],
+                "description": "Browser for a surface criterion: QA drives the product against the signed design."
+              },
+              "exercises": {
+                "type": "string",
+                "minLength": 1
+              },
+              "asserts": {
+                "type": "string",
+                "minLength": 1
+              },
+              "needs": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^[A-Z][A-Z0-9_]*$"
+                },
+                "description": "Environment names this test needs of the machine it runs on, when it cannot be walked without them — a device to power-cut, a card reader, a paid sandbox. Declared here because it is part of what the test IS, and because the seam is where a person can see that a promise will need a rig before anyone builds it. QA checks each name and does not take the claim on trust: a test whose needs are all present and still fails has failed, and the criterion behind it is undischarged in the ordinary way. Absent or empty means the test needs nothing but the checkout."
+              }
             }
           }
         },
@@ -92,16 +244,39 @@
           "description": "Every design control this item wires on its own screens, and every one its tests drive on another item's screen — by the id the signed design gave it, on the screen the design holds it. Controls ⊂ design is arithmetic: an id the design does not carry is an interface nobody decided. A control on a screen this item does not run on is a dependency on the item that runs there and binds it; none binding it is arithmetic too.",
           "items": {
             "type": "object",
-            "required": ["screen_ref", "control"],
+            "required": [
+              "screen_ref",
+              "control"
+            ],
             "additionalProperties": false,
             "properties": {
-              "screen_ref": { "type": "string", "pattern": "^SCREEN-\\d+$" },
-              "control": { "type": "string", "minLength": 1 }
+              "screen_ref": {
+                "type": "string",
+                "pattern": "^SCREEN-\\d+$"
+              },
+              "control": {
+                "type": "string",
+                "minLength": 1
+              }
             }
           }
         },
-        "surface": { "type": "array", "items": { "type": "string", "minLength": 1 }, "description": "The files this item expects to touch, as globs relative to the product repository. Overlap between items is expected and costs nothing; a surface that is wrong is what fails a build." },
-        "risks": { "type": "array", "items": { "type": "string", "minLength": 1 }, "description": "What could make this binding wrong — a story that is infeasible or bundled belongs here and in a question, never designed around." }
+        "surface": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": "The files this item expects to touch, as globs relative to the product repository. Overlap between items is expected and costs nothing; a surface that is wrong is what fails a build."
+        },
+        "risks": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": "What could make this binding wrong — a story that is infeasible or bundled belongs here and in a question, never designed around."
+        }
       }
     }
   }

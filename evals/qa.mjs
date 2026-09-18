@@ -5,7 +5,7 @@
 
 import { suite, withRoot, scripted } from "./_harness.mjs";
 import { seedBuild, builder, put, BUILT, CLEAN } from "./_fixture.mjs";
-import { checkRun, execute, round, SUITES, ARITHMETIC, COUNTER, IDENTITY, QA_FILE } from "../delivery/qa/index.mjs";
+import { checkRun, execute, round, unprovable, SUITES, ARITHMETIC, COUNTER, IDENTITY, QA_FILE } from "../delivery/qa/index.mjs";
 import { verdictFreshness } from "../shared/judge/index.mjs";
 import { validate } from "../shared/schema/index.mjs";
 import { runStage, reopen, advance, redoPlan } from "../delivery/run/index.mjs";
@@ -15,7 +15,7 @@ import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 
-const { check, done } = suite("qa — the proof: criteria discharged by what ran", 36);
+const { check, done } = suite("qa — the proof: criteria discharged by what ran", 40);
 
 const intake = {
   work_items: [
@@ -141,7 +141,7 @@ await withRoot({}, async (tmp) => {
 
   // The pin is load-bearing, not decorative: re-running the suites rewrites the executed
   // record, and the verdict must stop being evidence about it.
-  saveDoc(cold, QA_FILE, "qa", { id: "bakehouse", meta: {}, suites: [], tests: [], "x-drift-checked": ["/tests"] });
+  saveDoc(cold, QA_FILE, "qa", { id: "bakehouse", meta: {}, suites: [], tests: [], unprovable: [], "x-drift-checked": ["/tests", "/unprovable"] });
   const after = verdictFreshness(readDoc(cold, r.file), { root: cold });
   check("re-running the suites makes the standing verdict stale — the record it judged is not the record on disk",
     after.fresh === false && after.stale.some((s) => s.path === QA_FILE),
@@ -280,6 +280,37 @@ await withRoot({}, async (tmp) => {
     JSON.stringify({ status: r.status, verdict: r.verdict?.verdict, findings: r.verdict?.findings?.map((x) => x.rule) }));
 });
 
+// ── a promise nobody was equipped to ask is not a promise the product failed ──
+// A criterion can go undischarged two ways, and a reader of a manifest could not tell
+// them apart: the product fails it, or nobody running had the rig it is about. Bakehouse's
+// REQ-14/AC-1 is a power cut, and its test refuses to substitute a process kill because a
+// kill leaves the page cache up and a build that never flushed would pass. That refusal is
+// the discipline this architecture is for, and it was recorded as a failing test.
+const needsRig = { items: [{ work_item: "STORY-1", tests: [{ id: "T-1", proves: ["REQ-1/AC-1"], needs: ["BENCH_HOST_CDP", "BENCH_HOST_POWER_CUT"] }] }] };
+const oneCrit = { work_items: [{ id: "STORY-1", criteria: [{ id: "REQ-1/AC-1", statement: "every entry survives a forced restart." }], scenarios: [], screens: [] }] };
+const noRun = { suites: [{ id: "browser", command: "npx playwright test", ran: true, ok: false, tests: 1, out: "" }], tests: [] };
+
+check("the binding says what a test needs of its machine, and the runner checks rather than believes it",
+  unprovable(needsRig, {}).length === 1 && unprovable(needsRig, { BENCH_HOST_CDP: "x", BENCH_HOST_POWER_CUT: "y" }).length === 0 && unprovable(needsRig, { BENCH_HOST_CDP: "x" })[0].needs.join() === "BENCH_HOST_POWER_CUT",
+  JSON.stringify(unprovable(needsRig, { BENCH_HOST_CDP: "x" })));
+
+f = checkRun(oneCrit, needsRig, noRun, {});
+check("with the rig absent the criterion is unprovable, not failed — it still blocks, and the remedy names what the run was waiting on rather than blaming the product",
+  of(f, "criterion-unprovable").length === 1 && of(f, "criterion-unprovable")[0].severity === "high" && /BENCH_HOST_CDP/.test(of(f, "criterion-unprovable")[0].remedy) && /nobody asked it/.test(of(f, "criterion-unprovable")[0].remedy) && !of(f, "test-missing").length && !of(f, "criterion-unproved").length,
+  JSON.stringify(f.map((x) => `${x.rule}@${x.subject}`)));
+
+f = checkRun(oneCrit, needsRig, noRun, { BENCH_HOST_CDP: "x", BENCH_HOST_POWER_CUT: "y" });
+check("with the rig present the same absent test is an ordinary missing one — declaring a need buys a reason, never a pass",
+  !of(f, "criterion-unprovable").length && of(f, "test-missing").length === 1 && of(f, "criterion-unproved").length === 1,
+  JSON.stringify(f.map((x) => `${x.rule}@${x.subject}`)));
+
+// One test that could have run and did not pass makes it ordinary again: the escape is
+// only open when nothing bound to the criterion could be walked at all.
+const mixed = { items: [{ work_item: "STORY-1", tests: [{ id: "T-1", proves: ["REQ-1/AC-1"], needs: ["BENCH_HOST_CDP"] }, { id: "T-9", proves: ["REQ-1/AC-1"] }] }] };
+f = checkRun(oneCrit, mixed, { suites: noRun.suites, tests: [{ id: "T-9", suite: "browser", title: "T-9", passed: false }] }, {});
+check("a criterion with one test that could run and failed is undischarged in the ordinary way — a rig is not a way to make a failure unprovable",
+  !of(f, "criterion-unprovable").length && of(f, "criterion-unproved").length === 1 && of(f, "test-failed").length === 1,
+  JSON.stringify(f.map((x) => `${x.rule}@${x.subject}`)));
 check("every arithmetic rule is declared, and the counter-proposal is the oracle's alone",
   new Set(ARITHMETIC).size === ARITHMETIC.length && !ARITHMETIC.includes(COUNTER) && COUNTER === "counter-proposal");
 

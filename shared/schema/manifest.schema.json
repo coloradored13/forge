@@ -174,6 +174,13 @@
           "discharged": {
             "type": "boolean",
             "description": "True only when at least one bound test ran and passed. Never a judgement — read off the executed record."
+          },
+          "unprovable": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "When the criterion is undischarged because this machine could not walk its tests, the environment names they waited on. A reader of a shipped manifest could not otherwise tell a product that fails a promise from a promise nobody was equipped to ask about, and those are different things to know about a release."
           }
         }
       }
