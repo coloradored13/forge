@@ -4,7 +4,14 @@
   "title": "Gate verdict",
   "description": "The one shape every gate returns — arithmetic checks, Discovery reviewers and Delivery judges alike. One shape means one verdict rule, one renderer, one place severity policy lives. The model supplies findings, deferred, checked and skipped (the output contract is derived from here — never retyped); the runner supplies everything else.",
   "type": "object",
-  "required": ["gate", "verdict", "findings", "deferred", "checked", "skipped"],
+  "required": [
+    "gate",
+    "verdict",
+    "findings",
+    "deferred",
+    "checked",
+    "skipped"
+  ],
   "additionalProperties": false,
   "properties": {
     "gate": {
@@ -13,19 +20,27 @@
       "description": "Stable gate id: hash-integrity, story-reviewer, design-judge, sdd-judge, acceptance-oracle."
     },
     "verdict": {
-      "enum": ["pass", "block", "advise"],
+      "enum": [
+        "pass",
+        "block",
+        "advise"
+      ],
       "x-runner": true,
       "description": "Derived from the findings by shared/judge/verdict.mjs, never read from the model: certain + high blocks; any other finding advises; none passes."
     },
     "findings": {
       "type": "array",
       "description": "Every in-scope finding, ranked by severity × confidence (R7) — the PM disposes of each; none is withheld. Empty when clean, never null.",
-      "items": { "$ref": "#/$defs/finding" }
+      "items": {
+        "$ref": "#/$defs/finding"
+      }
     },
     "deferred": {
       "type": "array",
       "description": "What you noticed beyond the MVP line (R2). A deferral costs nothing now and seeds the next round; it is never a finding. Empty when there is none.",
-      "items": { "$ref": "#/$defs/deferral" }
+      "items": {
+        "$ref": "#/$defs/deferral"
+      }
     },
     "checked": {
       "type": "integer",
@@ -41,7 +56,9 @@
       "type": "array",
       "x-runner": true,
       "description": "The findings the runner removed as re-raises, kept whole. A count alone cannot be audited: it says something was dropped and never what.",
-      "items": { "$ref": "#/$defs/finding" }
+      "items": {
+        "$ref": "#/$defs/finding"
+      }
     },
     "reraised": {
       "type": "integer",
@@ -55,12 +72,23 @@
       "description": "What this verdict is ABOUT: the content hash of every artifact the judge saw, pinned at judging time. A verdict whose pins no longer match is superseded — presence is never evidence.",
       "items": {
         "type": "object",
-        "required": ["id", "path", "content_hash"],
+        "required": [
+          "id",
+          "path",
+          "content_hash"
+        ],
         "additionalProperties": false,
         "properties": {
-          "id": { "type": "string" },
-          "path": { "type": "string", "description": "Root-relative path of the artifact judged." },
-          "content_hash": { "type": "string" }
+          "id": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string",
+            "description": "Root-relative path of the artifact judged."
+          },
+          "content_hash": {
+            "type": "string"
+          }
         }
       }
     },
@@ -75,45 +103,130 @@
       "description": "When the gate judges item by item: each item's judgement, keyed by the hash of what its judge was given — model, system, input. The merged verdict above is derived from these by the rule one call uses. An entry marked `stands` was not judged this round: the same key was judged before and that judgement is copied forward at no cost — nothing changed, so nothing is asked again.",
       "items": {
         "type": "object",
-        "required": ["id", "key", "verdict", "findings", "deferred", "checked", "skipped", "reraised", "cost"],
+        "required": [
+          "id",
+          "key",
+          "verdict",
+          "findings",
+          "deferred",
+          "checked",
+          "skipped",
+          "reraised",
+          "cost",
+          "tools"
+        ],
         "additionalProperties": false,
         "properties": {
-          "id": { "type": "string" },
-          "key": { "type": "string", "pattern": "^[0-9a-f]{64}$", "description": "sha256 of the canonical { model, system, input } the judge was given. Same key, same question — the answer stands." },
-          "verdict": { "enum": ["pass", "block", "advise"] },
-          "findings": { "type": "array", "items": { "$ref": "#/$defs/finding" } },
-          "deferred": { "type": "array", "items": { "$ref": "#/$defs/deferral" } },
-          "checked": { "type": "integer", "minimum": 0 },
-          "skipped": { "type": "integer", "minimum": 0 },
-          "reraised": { "type": "integer", "minimum": 0 },
-          "cost": { "$ref": "#/$defs/cost", "description": "What this judgement cost when it was made — not what this round paid for it." },
-          "stands": { "const": true, "description": "Present only on a judgement copied forward: judged before on the same key, not asked again." }
+          "id": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "sha256 of the canonical { model, system, input } the judge was given. It names the PROMPT, not the whole question — a judge that read the repository asked more than this, which is why `tools` must be zero before the same key may stand in for a fresh judgement."
+          },
+          "verdict": {
+            "enum": [
+              "pass",
+              "block",
+              "advise"
+            ]
+          },
+          "findings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/finding"
+            }
+          },
+          "deferred": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/deferral"
+            }
+          },
+          "checked": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "skipped": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "reraised": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "cost": {
+            "$ref": "#/$defs/cost",
+            "description": "What this judgement cost when it was made — not what this round paid for it."
+          },
+          "stands": {
+            "const": true,
+            "description": "Present only on a judgement copied forward: judged before on the same key, not asked again."
+          },
+          "tools": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Tool uses by the judge that made this judgement. Zero is the condition for carrying it forward (R1): the key names the prompt, so only a judgement that looked at nothing else is fully described by it."
+          }
         }
       }
+    },
+    "tools": {
+      "type": "integer",
+      "minimum": 0,
+      "x-runner": true,
+      "description": "How many tools the judge used. A judgement made with none is a pure function of its prompt — which is what makes it safe to carry forward under the same key; one that read the repository is not, because the key describes the prompt and the repository is not in it."
     }
   },
   "$defs": {
     "cost": {
       "type": "object",
-      "required": ["model", "usd", "ms"],
+      "required": [
+        "model",
+        "usd",
+        "ms"
+      ],
       "additionalProperties": false,
       "properties": {
-        "model": { "type": "string" },
-        "usd": { "type": "number", "minimum": 0 },
-        "ms": { "type": "integer", "minimum": 0 }
+        "model": {
+          "type": "string"
+        },
+        "usd": {
+          "type": "number",
+          "minimum": 0
+        },
+        "ms": {
+          "type": "integer",
+          "minimum": 0
+        }
       }
     },
     "finding": {
       "type": "object",
-      "required": ["severity", "confidence", "rule", "subject", "summary", "evidence"],
+      "required": [
+        "severity",
+        "confidence",
+        "rule",
+        "subject",
+        "summary",
+        "evidence"
+      ],
       "additionalProperties": false,
       "properties": {
         "severity": {
-          "enum": ["high", "medium", "low"],
+          "enum": [
+            "high",
+            "medium",
+            "low"
+          ],
           "description": "high: the item fails a criterion or a rule outright. medium: it will fail one under conditions you can name. low: it is worse than it should be and still passes."
         },
         "confidence": {
-          "enum": ["certain", "likely"],
+          "enum": [
+            "certain",
+            "likely"
+          ],
           "description": "certain only when the evidence is literal and you can point at it. This decides authority: certain + high blocks, everything else advises. Do not inflate it to make a finding land harder."
         },
         "rule": {
@@ -130,10 +243,16 @@
           "description": "The id or path this is about — REQ-3, STORY-7, SCREEN-2, src/foo.ts:42 — so the finding is addressable."
         },
         "redo": {
-          "enum": ["sdd", "build"],
+          "enum": [
+            "sdd",
+            "build"
+          ],
           "description": "The stage whose work must be done again to clear this, named by the judge that found it. `sdd` when the binding is wrong — a test asserts something weaker or other than the criterion it is bound to, so the evidence must be re-bound before any code can satisfy it. `build` when the binding is right and the product does not do what it says. Omit when neither: an arithmetic consequence, an advisory, or a criterion that cannot be met as written — that last one is a `counter-proposal`, which is the human's to dispose of and never a stage's to redo. A judge that diagnoses a defect and cannot say whose it is has not finished the diagnosis; routing it by hand later means reading the reasoning back out of prose, which is what this field exists to stop."
         },
-        "summary": { "type": "string", "maxLength": 400 },
+        "summary": {
+          "type": "string",
+          "maxLength": 400
+        },
         "evidence": {
           "type": "string",
           "description": "Quote the line that fails and the criterion it fails. A human must be able to check it in ten seconds; an unfalsifiable finding is noise."
@@ -146,11 +265,21 @@
     },
     "deferral": {
       "type": "object",
-      "required": ["subject", "summary", "beyond"],
+      "required": [
+        "subject",
+        "summary",
+        "beyond"
+      ],
       "additionalProperties": false,
       "properties": {
-        "subject": { "type": "string", "description": "The id or path it concerns." },
-        "summary": { "type": "string", "maxLength": 400 },
+        "subject": {
+          "type": "string",
+          "description": "The id or path it concerns."
+        },
+        "summary": {
+          "type": "string",
+          "maxLength": 400
+        },
         "beyond": {
           "type": "string",
           "description": "Which line it sits past — the MVP line, a deferred surface, a ruled-out requirement — quoted from the scope you were given."
