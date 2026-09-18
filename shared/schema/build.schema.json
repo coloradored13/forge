@@ -4,58 +4,202 @@
   "title": "Build — the code, contained per work item, accounted from base",
   "description": "What build made of the binding (SPEC §5 build): one branch, the items in the binding's order, each built by one builder call from a base commit with its change set held to the binding's surface and committed — or blocked, violated or unbuilt, and why. No judge writes any of this: the verdict on it is arithmetic (containment, accounting, the builder's own word), and QA is the judge. Every field is the runner's; the builder's report per item is embedded from build-report. Hashed over the items, so a verdict pinned to it goes stale when an item is rebuilt.",
   "type": "object",
-  "required": ["id", "meta", "traces", "branch", "items", "x-drift-checked"],
+  "required": [
+    "id",
+    "meta",
+    "traces",
+    "branch",
+    "items",
+    "x-drift-checked"
+  ],
   "additionalProperties": false,
   "properties": {
-    "id": { "type": "string", "pattern": "^build-[a-z0-9-]+$", "x-runner": true },
-    "meta": { "type": "object", "x-runner": true, "description": "The stamp (shared/hash)." },
+    "id": {
+      "type": "string",
+      "pattern": "^build-[a-z0-9-]+$",
+      "x-runner": true
+    },
+    "meta": {
+      "type": "object",
+      "x-runner": true,
+      "description": "The stamp (shared/hash)."
+    },
     "traces": {
       "type": "object",
       "x-runner": true,
       "description": "What the build was built from, by hash: the pinned handoff, the intake record and the binding.",
-      "required": ["handoff", "intake", "sdd"],
+      "required": [
+        "handoff",
+        "intake",
+        "sdd"
+      ],
       "additionalProperties": false,
       "properties": {
-        "handoff": { "type": "object", "required": ["version", "content_hash"], "additionalProperties": false, "properties": { "version": { "type": "integer" }, "content_hash": { "type": "string" } } },
-        "intake": { "type": "object", "required": ["content_hash"], "additionalProperties": false, "properties": { "content_hash": { "type": "string" } } },
-        "sdd": { "type": "object", "required": ["content_hash"], "additionalProperties": false, "properties": { "content_hash": { "type": "string" } } }
+        "handoff": {
+          "type": "object",
+          "required": [
+            "version",
+            "content_hash"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "version": {
+              "type": "integer"
+            },
+            "content_hash": {
+              "type": "string"
+            }
+          }
+        },
+        "intake": {
+          "type": "object",
+          "required": [
+            "content_hash"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "content_hash": {
+              "type": "string"
+            }
+          }
+        },
+        "sdd": {
+          "type": "object",
+          "required": [
+            "content_hash"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "content_hash": {
+              "type": "string"
+            }
+          }
+        }
       }
     },
-    "branch": { "type": "string", "minLength": 1, "x-runner": true, "description": "The branch the build's commits are on, in a worktree beside the project's own checkout." },
+    "branch": {
+      "type": "string",
+      "minLength": 1,
+      "x-runner": true,
+      "description": "The branch the build's commits are on, in a worktree beside the project's own checkout."
+    },
     "items": {
       "type": "array",
       "x-runner": true,
       "description": "One entry per binding item, in the binding's order — the build order. An item is `built` (its change set committed), `blocked` (the builder stopped with a reason; nothing kept), `violated` (its change set left the surface or touched the record; nothing kept) or `unbuilt` (an item it depends on did not build this round; not attempted).",
-      "items": { "$ref": "#/$defs/item" }
+      "items": {
+        "$ref": "#/$defs/item"
+      }
     },
-    "x-drift-checked": { "type": "array", "x-runner": true, "items": { "type": "string" }, "const": ["/items", "/branch"] }
+    "x-drift-checked": {
+      "type": "array",
+      "x-runner": true,
+      "items": {
+        "type": "string"
+      },
+      "const": [
+        "/items",
+        "/branch"
+      ]
+    }
   },
   "$defs": {
     "item": {
       "type": "object",
-      "required": ["work_item", "status", "binding_hash", "reused", "base", "commit", "changed", "violations", "summary", "suggestions", "reason"],
+      "required": [
+        "work_item",
+        "status",
+        "binding_hash",
+        "reused",
+        "base",
+        "commit",
+        "changed",
+        "violations",
+        "summary",
+        "suggestions",
+        "reason"
+      ],
       "additionalProperties": false,
       "properties": {
-        "work_item": { "type": "string", "pattern": "^(STORY|REQ)-\\d+$" },
-        "status": { "type": "string", "enum": ["built", "blocked", "violated", "unbuilt"] },
-        "binding_hash": { "type": "string", "description": "The hash of the binding item this was built from (shared/hash itemHash). Manifest currency: an item whose binding hash and commit both stand is reused for $0; one whose binding moved is rebuilt." },
-        "reused": { "type": "boolean", "description": "True when this round kept a prior round's build of the item without a call — the binding unchanged, the commit on the branch." },
-        "base": { "type": ["string", "null"], "description": "The commit the builder started from; the change set is the diff from here. Null for an item no builder was called on." },
-        "commit": { "type": ["string", "null"], "description": "The commit the item's change set landed as, on the branch. Null unless built." },
-        "changed": { "type": "array", "items": { "type": "string" }, "description": "Every path the builder changed from base — modified, added or deleted — whoever committed. Empty unless a builder ran." },
+        "work_item": {
+          "type": "string",
+          "pattern": "^(STORY|REQ)-\\d+$"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "built",
+            "blocked",
+            "violated",
+            "unbuilt",
+            "stands"
+          ],
+          "description": " `stands`: the builder declared the item already satisfied at HEAD and the runner verified the claim — no commit of its own, and nothing downstream held back."
+        },
+        "binding_hash": {
+          "type": "string",
+          "description": "The hash of the binding item this was built from (shared/hash itemHash). Manifest currency: an item whose binding hash and commit both stand is reused for $0; one whose binding moved is rebuilt."
+        },
+        "reused": {
+          "type": "boolean",
+          "description": "True when this round kept a prior round's build of the item without a call — the binding unchanged, the commit on the branch."
+        },
+        "base": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The commit the builder started from; the change set is the diff from here. Null for an item no builder was called on."
+        },
+        "commit": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The commit the item's change set landed as, on the branch. Null unless built."
+        },
+        "changed": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Every path the builder changed from base — modified, added or deleted — whoever committed. Empty unless a builder ran."
+        },
         "violations": {
           "type": "array",
           "description": "Paths the change set was not allowed to hold. `record-write`: under the pipeline's own directories. `surface-escape`: outside the binding's surface. A violated item's change set is discarded, not kept.",
           "items": {
             "type": "object",
-            "required": ["path", "rule"],
+            "required": [
+              "path",
+              "rule"
+            ],
             "additionalProperties": false,
-            "properties": { "path": { "type": "string" }, "rule": { "type": "string", "enum": ["record-write", "surface-escape"] } }
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "rule": {
+                "type": "string",
+                "enum": [
+                  "record-write",
+                  "surface-escape"
+                ]
+              }
+            }
           }
         },
-        "summary": { "$ref": "build-report.schema.json#/properties/summary", "description": "The builder's report on the item, or the runner's word for an item no builder was called on." },
-        "suggestions": { "$ref": "build-report.schema.json#/properties/suggestions" },
-        "reason": { "$ref": "build-report.schema.json#/properties/reason", "description": "Blocked: the builder's reason. Violated or unbuilt: the runner's. Built: null." }
+        "summary": {
+          "$ref": "build-report.schema.json#/properties/summary",
+          "description": "The builder's report on the item, or the runner's word for an item no builder was called on."
+        },
+        "suggestions": {
+          "$ref": "build-report.schema.json#/properties/suggestions"
+        },
+        "reason": {
+          "$ref": "build-report.schema.json#/properties/reason",
+          "description": "Blocked: the builder's reason. Violated or unbuilt: the runner's. Built: null."
+        }
       }
     }
   }

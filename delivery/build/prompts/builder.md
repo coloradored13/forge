@@ -39,3 +39,9 @@ Do not expand scope. Adjacent improvements, cleanup in files you happened to ope
 ## The report
 
 Say what you did in the binding's terms: the interfaces exposed, the tests written by id, what you noticed that the binding or the design should say and does not. Blocked, say the one thing that stops the build and quote the binding or design line it turns on. The runner reads this beside the diff; QA reads it before running anything. Neither can ask you what you meant.
+
+**When the work is already done, say `stands`.** An item can reach you satisfied — built in an earlier round, or carried by work another item's binding covered. Look before you say it: the interfaces the binding names are exposed, every test it names is in the tree, the surface holds its files. Then report `stands` and change nothing.
+
+This is not a way out of work you could not see how to do. That is `blocked`, and it is an honest answer with a reason. `stands` says the opposite — that you looked and found nothing left to do — and the two go to different people.
+
+You are not taken at your word either way. The runner checks the tree for the tests the binding names and for your surface, and a claim it cannot bear out is recorded blocked with what was missing. What it does not check is whether those tests pass: that is QA's, and a build that graded its own output would be the one place here where the evidence and the work share an author.

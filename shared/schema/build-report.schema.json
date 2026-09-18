@@ -4,12 +4,43 @@
   "title": "Build report — one builder's word on one work item",
   "description": "What a builder returns for one work item (SPEC §5 build): built, or blocked with the reason. The code is not in here — it is in the worktree, accounted from base by the runner and held to the binding's surface; this is the builder's word on what it did and what it noticed, and the build record embeds it beside the change set. Blocked with a clear reason is a good outcome: a guess built past a gap would be invisible.",
   "type": "object",
-  "required": ["status", "summary", "suggestions", "reason"],
+  "required": [
+    "status",
+    "summary",
+    "suggestions",
+    "reason"
+  ],
   "additionalProperties": false,
   "properties": {
-    "status": { "type": "string", "enum": ["built", "blocked"], "description": "`built`: the item's code and tests are in place as the binding says. `blocked`: something the binding needs is missing, contradicts the design or is a question nobody answered — nothing was guessed; `reason` says what." },
-    "summary": { "type": "string", "minLength": 1, "maxLength": 400, "description": "What was done, in the binding's terms — the interfaces exposed, the tests written by id — or, blocked, what was not." },
-    "suggestions": { "type": "array", "items": { "type": "string", "minLength": 1 }, "description": "What the binding or the design should say and does not, or what the item would need past its surface — noticed and named, never done. Each rides to the PM." },
-    "reason": { "type": ["string", "null"], "description": "Blocked: the one thing that stops the build, quoting the binding or design line it turns on. Built: null." }
+    "status": {
+      "type": "string",
+      "enum": [
+        "built",
+        "blocked",
+        "stands"
+      ],
+      "description": "`built`: the item’s code and tests are in place as the binding says. `blocked`: something the binding needs is missing, contradicts the design or is a question nobody answered — nothing was guessed; `reason` says what. `stands`: the binding is already satisfied at HEAD and there is nothing to change — said only when you have looked and found the work done, never when you could not work out what to do. It is not taken on your word: the runner checks the tree for the tests the binding names and for the item’s surface, and a claim it cannot verify is recorded blocked with what was missing."
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 400,
+      "description": "What was done, in the binding's terms — the interfaces exposed, the tests written by id — or, blocked, what was not."
+    },
+    "suggestions": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "What the binding or the design should say and does not, or what the item would need past its surface — noticed and named, never done. Each rides to the PM."
+    },
+    "reason": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Blocked: the one thing that stops the build, quoting the binding or design line it turns on. Built: null."
+    }
   }
 }

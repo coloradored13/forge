@@ -123,10 +123,31 @@ async function buildAll(root, { run, handoff, intake, sdd, review, onEvent, _que
       onEvent?.(`${it.work_item} violated — ${violations.length} path(s) it may not change; discarded`);
       continue;
     }
+    // A builder that finds the work already done says so, and is checked rather than
+    // believed. Until now there was no way to say it: `built` with an empty change set read
+    // as a builder that did nothing, so an item already correct at HEAD blocked its stage
+    // and everything downstream. The diff is still the control — `stands` only sends the
+    // runner to look for the evidence in the tree instead of in the change set.
+    if (status === "stands" && !changed.length) {
+      const missing = standsOn(wt, it);
+      if (!missing.length) {
+        items.push(entry(it.work_item, { status: "stands", binding_hash, base, commit: base, changed, summary, suggestions }));
+        onEvent?.(`${it.work_item} stands — the binding is satisfied at ${String(base).slice(0, 7)}, checked`);
+        continue;
+      }
+      discard(wt);
+      down.set(it.work_item, "is blocked");
+      const why = `the builder said the item already stands and the tree does not bear it out: ${missing.join("; ")}`;
+      items.push(entry(it.work_item, { status: "blocked", binding_hash, base, changed, summary, suggestions, reason: why }));
+      onEvent?.(`${it.work_item} blocked — ${why}`);
+      continue;
+    }
     if (status === "blocked" || !changed.length) {
       discard(wt);
       down.set(it.work_item, "is blocked");
-      const why = status === "blocked" ? reason ?? "the builder gave no reason" : "the builder reported built and changed nothing";
+      const why = status === "blocked" ? reason ?? "the builder gave no reason"
+        : status === "stands" ? `the builder said the item already stands and then changed ${changed.length} path(s): ${changed.slice(0, 3).join(", ")}`
+          : "the builder reported built and changed nothing";
       items.push(entry(it.work_item, { status: "blocked", binding_hash, base, changed, summary, suggestions, reason: why }));
       onEvent?.(`${it.work_item} blocked — ${why}`);
       continue;
@@ -142,6 +163,38 @@ async function buildAll(root, { run, handoff, intake, sdd, review, onEvent, _que
     "x-drift-checked": ["/items", "/branch"],
   };
   return saveDoc(root, BUILD_FILE, "build", doc);
+}
+
+/**
+ * What the tree fails to bear out about a builder's claim that an item already stands.
+ * Empty means the claim holds and the item is recorded `stands`.
+ *
+ * Two things are checkable here without running anything, and they are the two an item
+ * cannot be satisfied without: every test the binding names for it is findable in the
+ * tree, and its surface holds a file. Whether those tests PASS is deliberately not asked —
+ * that is qa's whole job, and a build that started judging its own output would be the one
+ * place in the pipeline where the evidence and the thing it judges share an author.
+ *
+ * So this is not the runner trusting the builder, and not the runner re-doing qa. It is the
+ * runner refusing to call an item built on nothing at all.
+ */
+export function standsOn(wt, it) {
+  const missing = [];
+  const tracked = git(wt, ["ls-files"], { ok: false })?.split("\n").filter(Boolean) ?? [];
+
+  const globs = (it.surface ?? []).map(globToRegExp);
+  if (globs.length && !tracked.some((p) => globs.some((r) => r.test(p)))) {
+    missing.push(`its surface holds no file (${(it.surface ?? []).join(", ")})`);
+  }
+
+  const ids = (it.tests ?? []).map((t) => t.id);
+  if (ids.length) {
+    const text = tracked.filter((p) => /(^|\/)tests?\//.test(p))
+      .map((p) => { try { return readFileSync(join(wt, p), "utf8"); } catch { return ""; } }).join("\n");
+    const absent = ids.filter((id) => !new RegExp(`\\b${id}\\b`).test(text));
+    if (absent.length) missing.push(`no test in the tree carries ${absent.join(", ")}`);
+  }
+  return missing;
 }
 
 function entry(work_item, { status, binding_hash, base = null, commit = null, changed = [], violations = [], summary, suggestions = [], reason = null }) {

@@ -11,9 +11,9 @@
 // human's word on the record.
 
 import { join } from "node:path";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync } from "node:fs";
 import { suite, withRoot, scripted } from "./_harness.mjs";
-import { seedProject, seedPrototype, seedStories, seedDesign, DESIGN, seedDelivery, BINDING, seedBuild, builder, roundCtx, put, gitIn, BUILT, BLOCKED } from "./_fixture.mjs";
+import { seedProject, seedPrototype, seedStories, seedDesign, DESIGN, seedDelivery, BINDING, seedBuild, builder, roundCtx, put, gitIn, BUILT, BLOCKED, STANDS } from "./_fixture.mjs";
 import { skeleton, validate, outputContract, fieldsOf, partialContract } from "../shared/schema/index.mjs";
 import { mechanics, namedFields } from "../shared/prompt/index.mjs";
 import { verify, stamp } from "../shared/hash.mjs";
@@ -29,12 +29,12 @@ import { write, review, signoff, checkDesign, GATE as DESIGN_GATE, REVIEW_GATE a
 import { intake } from "../delivery/intake/index.mjs";
 import { checkBinding, covered, dependenciesOf, buildOrder, renderItem, ARITHMETIC as SDD_RULES, UNTESTED, GATE as SDD_GATE, SDD_FILE } from "../delivery/sdd/index.mjs";
 import { scopeOfRevision, carry, CARRIED } from "../delivery/sdd/revise.mjs";
-import { round as buildRound, contain, globToRegExp, loadBuild, checkBuild, ARITHMETIC as BUILD_RULES, BRANCH, WORKTREE, BUILD_FILE, VERDICT_FILE as BUILD_VERDICT } from "../delivery/build/index.mjs";
+import { round as buildRound, contain, globToRegExp, loadBuild, checkBuild, standsOn, ARITHMETIC as BUILD_RULES, BRANCH, WORKTREE, BUILD_FILE, VERDICT_FILE as BUILD_VERDICT } from "../delivery/build/index.mjs";
 import { INTAKE_FILE } from "../delivery/intake/index.mjs";
 import { identity } from "../shared/prompt/index.mjs";
 import { ROOT } from "./_harness.mjs";
 
-const { check, done } = suite("scope · R2 the line is a gate input, R12 shape before scope", 173);
+const { check, done } = suite("scope · R2 the line is a gate input, R12 shape before scope", 178);
 
 const same = (a, b) => a.length === b.length && [...a].sort().join(" ") === [...b].sort().join(" ");
 const REQ = (n, status = "committed") => ({ id: `REQ-${n}`, statement: `s${n}`, type: "functional", done_definition: "d", acceptance_criteria: [{ id: "AC-1", statement: "a" }], status, context: "", flags: [] });
@@ -670,6 +670,72 @@ await withRoot({}, async (tmp) => {
 
   // Round 2, with the findings: STORY-1 clean; STORY-2 blocks with a reason of its own; REQ-4 stands — no call.
   const again = builder([BUILT(), BLOCKED("the binding's `Delivery` type is in no interface — approach: \"renders one row per delivery\"")], { 0: (cwd) => put(cwd, "src/exceptions/store.js", "export const record = () => {};\n") });
+
+  // ── a builder may say the work is already done, and is checked rather than believed ──
+  // Until this existed there was no way to say it: `built` with an empty change set read as
+  // a builder that did nothing, so STORY-17 — already correct at HEAD, its four criteria all
+  // discharged when qa later ran them — blocked its stage and three dependents with it.
+  //
+  // A binding of its own, because the shared BINDING leaves tests out of every surface and
+  // every real one puts them in: all 28 of Bakehouse's name their spec files there, since a
+  // builder that may not write its tests cannot build the item.
+  await withRoot({}, async (tmp3) => {
+    const withTests = {
+      items: BINDING.items.map((it) => ({
+        ...it,
+        surface: [...it.surface, `tests/${it.work_item.toLowerCase()}.spec.js`],
+      })),
+      questions: [],
+    };
+    const { cold: c3 } = await seedBuild(tmp3, { slug: "hearth", binding: withTests, files: { "README.md": "# Hearth\n" } });
+    const spec = (it) => `tests/${it.toLowerCase()}.spec.js`;
+    const first = builder([BUILT(), BUILT("b"), BUILT("c")], {
+      0: (cwd) => { put(cwd, "src/exceptions/store.js", "x"); put(cwd, spec("STORY-1"), "// T-1\n// T-2\n"); },
+      1: (cwd) => { put(cwd, "src/deliveries/store.js", "b"); put(cwd, spec("STORY-2"), "// T-3\n"); },
+      2: (cwd) => { put(cwd, "src/queue/q.js", "c"); put(cwd, spec("REQ-4"), "// T-4\n"); },
+    });
+    const r0 = await buildRound(c3, { ...roundCtx(c3), _query: first.query });
+    check("the seeded round builds all three — a binding whose surface carries its own tests, as every real one does",
+      r0.doc.items.every((x) => x.status === "built"), JSON.stringify(r0.doc.items.map((x) => `${x.work_item}:${x.status}`)));
+
+    // Move STORY-1's binding so it cannot be reused — which is the real case: STORY-17's
+    // binding was regenerated while its code was already correct, so the builder was called
+    // and had nothing to do. An unmoved binding is reused and never reaches a builder at all.
+    const moved3 = readDoc(c3, SDD_FILE);
+    moved3.items.find((x) => x.work_item === "STORY-1").risks = ["the reason vocabulary is the design's three chips"];
+    saveDoc(c3, SDD_FILE, "sdd", moved3);
+
+    const again = builder([STANDS()]);
+    const r = await buildRound(c3, { ...roundCtx(c3), _query: again.query });
+    const one = r.doc.items.find((x) => x.work_item === "STORY-1");
+    check("only the moved item reaches a builder — the other two are reused on their commits, unasked and for nothing",
+      again.calls.length === 1 && r.doc.items.filter((x) => x.reused).length === 2,
+      JSON.stringify(r.doc.items.map((x) => `${x.work_item}:${x.status}${x.reused ? "(reused)" : ""}`)));
+    check("a builder that finds the work already done says stands, and the runner records it — not blocked, no commit of its own, and nothing downstream held back",
+      one.status === "stands" && one.changed.length === 0 && one.commit === one.base &&
+      r.verdict.verdict === "pass" && r.verdict.findings.length === 0,
+      JSON.stringify(r.doc.items.map((x) => `${x.work_item}:${x.status}`)));
+
+    // The claim is checked against the tree, not taken on the word.
+    const wt3 = join(c3, WORKTREE);
+    rmSync(join(wt3, "tests"), { recursive: true, force: true });
+    gitIn(wt3, ["add", "-A"]);
+    gitIn(wt3, ["commit", "-q", "-m", "drop the tests"]);
+    const moved4 = readDoc(c3, SDD_FILE);
+    moved4.items.find((x) => x.work_item === "STORY-1").risks = ["and again"];
+    saveDoc(c3, SDD_FILE, "sdd", moved4);
+    const lying = builder([STANDS()]);
+    const r2 = await buildRound(c3, { ...roundCtx(c3), _query: lying.query });
+    const bad = r2.doc.items.find((x) => x.work_item === "STORY-1");
+    check("the same report over a tree that cannot bear it out is blocked, naming what was missing — stands is a claim the runner checks, never one it believes",
+      bad.status === "blocked" && /does not bear it out/.test(bad.reason) && /no test in the tree carries/.test(bad.reason) && r2.verdict.verdict === "block",
+      JSON.stringify({ status: bad.status, reason: bad.reason }));
+
+    check("a stands claim whose surface holds no file is caught too — both halves of the binding must be there, not just its tests",
+      standsOn(wt3, { surface: ["src/nothing-here/**"], tests: [] }).join().includes("its surface holds no file"),
+      JSON.stringify(standsOn(wt3, { surface: ["src/nothing-here/**"], tests: [] })));
+  });
+
 
   // ── a builder that runs the suites has not left its surface ──
   // The binding asks builders to write tests; verifying them means running them, and a
