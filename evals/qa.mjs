@@ -15,7 +15,7 @@ import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 
-const { check, done } = suite("qa — the proof: criteria discharged by what ran", 33);
+const { check, done } = suite("qa — the proof: criteria discharged by what ran", 36);
 
 const intake = {
   work_items: [
@@ -249,6 +249,35 @@ await withRoot({}, async (tmp) => {
   } }).query });
   check("a counter-proposal routes to nobody — no stage can redo its way out of a criterion that cannot be met, so the plan is empty and the run stops at the human",
     redoPlan(cold, "qa") === null, JSON.stringify(redoPlan(cold, "qa")));
+});
+
+// A glob that matches nothing exits ZERO with no tests — the same misattribution as a
+// runner that cannot start, by a quieter route. Exit code alone could not see it.
+f = checkRun(intake, sdd, { suites: [{ id: "unit", command: "node --test tests/unit/*.spec.js", ran: true, ok: true, tests: 0, out: "" }], tests: [] });
+check("a suite that exits zero having run nothing, while the binding still names tests nothing ran, did not run — a glob that matches nothing is not a suite that passed",
+  of(f, "suite-failed").length === 1 && /exited zero and produced no test at all/.test(of(f, "suite-failed")[0].evidence) && /T-1/.test(of(f, "suite-failed")[0].evidence),
+  JSON.stringify(of(f, "suite-failed").map((x) => x.evidence)));
+
+f = checkRun({ work_items: [] }, { items: [] }, { suites: [{ id: "browser", command: "npx playwright test", ran: true, ok: true, tests: 0, out: "" }], tests: [] });
+check("a suite that holds nothing when the binding names nothing for it is not a finding — silence is only suspect when something is unaccounted",
+  of(f, "suite-failed").length === 0, JSON.stringify(f));
+
+// ── a qa round driven through the loop, which _exec could not reach before ──
+await withRoot({}, async (tmp) => {
+  const { cold } = await seedBuild(tmp, { files: { "README.md": "# Dock\n" } });
+  const b = builder([BUILT(), BUILT("b"), BUILT("c")],
+    { 0: (cwd) => put(cwd, "src/exceptions/store.js", "a"), 1: (cwd) => put(cwd, "src/deliveries/store.js", "b"), 2: (cwd) => put(cwd, "src/queue/q.js", "c") });
+  await runStage(cold, { stage: "build", _query: b.query });
+
+  const out = ["ok 1 - T-1 passes", "ok 2 - T-2 passes", "ok 3 - T-3 passes", "ok 4 - T-4 passes"].join("\n");
+  const r = await runStage(cold, {
+    stage: "qa",
+    _exec: async () => ({ ok: true, out }),
+    _query: scripted({ structured: { findings: [], deferred: [], checked: 1, skipped: 0 } }).query,
+  });
+  check("a qa round runs through the loop with its suites scripted — the seam reaches the stage, so the loop path is testable and not only round() called directly",
+    r.status === "approved" && r.verdict.verdict === "pass" && r.verdict.findings.length === 0,
+    JSON.stringify({ status: r.status, verdict: r.verdict?.verdict, findings: r.verdict?.findings?.map((x) => x.rule) }));
 });
 
 check("every arithmetic rule is declared, and the counter-proposal is the oracle's alone",

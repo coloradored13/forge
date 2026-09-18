@@ -94,11 +94,21 @@ export function checkRun(intake, sdd, results) {
   // after the path — one title, zero ids, `tests === 0` false, and the whole suite's tests
   // reported as `test-missing` against the product instead of `suite-failed` against the
   // runner. The join is what QA actually needs, so the join is what decides.
+  // A non-zero exit is not the only way a suite can fail to run. A glob that matches nothing
+  // exits ZERO with no tests — the same misattribution by a quieter route: every test the
+  // binding names reads as missing from the product when the runner simply looked in the
+  // wrong place. So the exit code is one trigger and unmatched binding tests are the other.
+  // A suite that legitimately holds nothing is only silent when the binding names nothing
+  // for it either, and then there is nothing left unmatched to blame it for.
+  const found = new Set(results.tests.map((t) => t.id));
+  const unmatched = (sdd.items ?? []).flatMap((it) => (it.tests ?? []).map((t) => t.id)).filter((id) => !found.has(id));
   for (const s of results.suites) {
     const joined = results.tests.filter((t) => t.suite === s.id).length;
-    if (s.ok === false && joined === 0) {
-      f("high", "suite-failed", s.id, `The ${s.id} suite did not run.`, `\`${s.command}\` exited non-zero and produced no test the binding names${s.tests ? ` (it printed ${s.tests} title(s), none carrying a test id)` : ""}. Output: ${s.out.slice(0, 400)}`, "A suite that cannot start proves nothing. Fix the runner, then judge — an unrun suite must never read as a passing one, and its tests must not be reported missing from the product.");
-    }
+    if (joined > 0 || (s.ok !== false && !unmatched.length)) continue;
+    const why = s.ok === false
+      ? `exited non-zero and produced no test the binding names${s.tests ? ` (it printed ${s.tests} title(s), none carrying a test id)` : ""}`
+      : `exited zero and produced no test at all, while the binding still names ${unmatched.length} that nothing ran: ${unmatched.slice(0, 6).join(", ")}${unmatched.length > 6 ? ` (+${unmatched.length - 6})` : ""}`;
+    f("high", "suite-failed", s.id, `The ${s.id} suite did not run.`, `\`${s.command}\` ${why}. Output: ${s.out.slice(0, 400)}`, "A suite that cannot start proves nothing. Fix the runner, then judge — an unrun suite must never read as a passing one, and its tests must not be reported missing from the product.");
   }
 
   const ran = new Map(results.tests.map((t) => [t.id, t]));
