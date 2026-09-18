@@ -27,7 +27,7 @@ import { validate } from "../shared/schema/index.mjs";
 import { setupProject } from "../discovery/setup/index.mjs";
 import { openPrd, quoteTurn, turn } from "../discovery/workshop/index.mjs";
 
-const { check, done } = suite("economics · R1 metering and budget, R7 ranked judges", 129);
+const { check, done } = suite("economics · R1 metering and budget, R7 ranked judges", 130);
 
 const IDENTITY = "# Story reviewer\n\nYou review stories at the PM's bar. A missing edge case is not a finding; an untestable Then is.\n";
 const FINDING = (severity, confidence, n) => ({ severity, confidence, rule: `r${n}`, subject: `STORY-${n}`, summary: `s${n}`, evidence: `e${n}` });
@@ -421,6 +421,15 @@ await withRoot({ "prompts/j.md": IDENTITY }, async (root) => {
       check("the same entry from a judge that used one tool is asked again, however unchanged the prompt — the key names the prompt, and the repository is not in it",
         looked.calls.length === 1 && !asked.items[0].stands,
         JSON.stringify({ calls: looked.calls.length, stands: Boolean(asked.items[0].stands) }));
+
+      // A judge asked about one item that examined none of it has returned an opinion
+      // about nothing. With no findings that reads as a clean item, which is the silent
+      // truncation the count exists to make visible, and which it was never held to.
+      const blind = scripted({ structured: { findings: [], deferred: [], checked: 0, skipped: 0 } });
+      const nothing = await runPerItemJudge({ gate: "sdd", items: [item], standing: [], ...shared, _query: blind.query });
+      check("a judge that returns a verdict having examined nothing is a finding, not a clean item — a count of zero is a judgement about nothing",
+        nothing.verdict.verdict === "block" && nothing.verdict.findings.some((f) => f.rule === "judge-checked-nothing" && f.subject === "STORY-9"),
+        JSON.stringify({ verdict: nothing.verdict.verdict, rules: nothing.verdict.findings.map((f) => f.rule) }));
     }
     check("the escalated round's writer saw the judge's finding it was bought to answer", /## The judge's findings on the previous binding/.test(script.calls[5].prompt) && /test-proves-nothing/.test(script.calls[5].prompt));
     check("the escalated round's writer saw the churn filed against it too, and the carry's finding did not open STORY-2 — STORY-1 to revise for T-2, STORY-2 still to carry",

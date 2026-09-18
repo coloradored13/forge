@@ -170,6 +170,20 @@ export async function runPerItemJudge({ gate, items, standing = [], onEvent, ...
         continue;
       }
       const v = await runJudge({ ...rest, gate, sections: item.sections, artifacts: item.artifacts ?? [], prepared, onEvent: (e) => onEvent?.(`${item.id} ${e}`) });
+      // `checked` is the judge's own count of what it examined. It was recorded and held to
+      // nothing. A judge asked about one item that reports none examined has returned an
+      // opinion about nothing — and with no findings that reads as a clean item, which is
+      // exactly the silent truncation the field exists to make visible (see the schema:
+      // a gate that judged 3 of 40 and returned pass is not a pass).
+      if (!(v.checked >= 1)) {
+        all.push({
+          severity: "high", confidence: "certain", rule: "judge-checked-nothing", subject: item.id,
+          summary: fit(`The ${gate} gate returned a verdict on ${item.id} having examined nothing.`),
+          evidence: `the judge was given ${item.id} on its own and reported checked ${v.checked ?? "(absent)"}, with ${v.findings.length} finding(s). A count of zero is not a clean item; it is a judgement about nothing.`,
+          remedy: "Re-run the gate. A verdict that examined nothing must never be the reason a stage approves.",
+        });
+        onEvent?.(`${item.id} checked nothing — a verdict about nothing is not a clean item`);
+      }
       take(entryOf(item.id, prepared.key, v));
       usd += v.cost.usd; ms += v.cost.ms; model ??= v.cost.model;
       judged.push(...v.judged);
