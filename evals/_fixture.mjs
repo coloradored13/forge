@@ -232,6 +232,8 @@ export const FORGE_GIT = { GIT_AUTHOR_NAME: "Forge", GIT_AUTHOR_EMAIL: "forge@fo
  */
 export const BUILT = (summary = "Built the item as bound: interfaces exposed, tests T-1 and T-2 written by criterion id.") => ({ status: "built", summary, suggestions: [], reason: null });
 export const BLOCKED = (reason) => ({ status: "blocked", summary: `Not built: ${reason}`, suggestions: [], reason });
+/** A builder that looked and found the work already done — checked by the runner, never believed. */
+export const STANDS = (summary = "The binding is already satisfied at HEAD: the interfaces are exposed and every test it names is in the tree. Nothing to change.") => ({ status: "stands", summary, suggestions: [], reason: null });
 
 /**
  * Discovery exported and a cold root that is a real repository — the handoffs and the run
