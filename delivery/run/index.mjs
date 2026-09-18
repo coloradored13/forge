@@ -102,7 +102,7 @@ export function estimateRun(root, { handoff, intake = null, models = {}, budget 
  * (`stage-running` while a live stage is alive). Returns `{ stage, status, round, run,
  * verdict, cost }` — cost from the ledger, for this stage of this half, all episodes.
  */
-export async function runStage(root, { stage, by = "runner", onEvent, _query, _sleep, _perResponse, _now = () => new Date(), _pulse_ms = PULSE_MS } = {}) {
+export async function runStage(root, { stage, by = "runner", onEvent, _query, _exec, _sleep, _perResponse, _now = () => new Date(), _pulse_ms = PULSE_MS } = {}) {
   const run = needRun(root);
   const authored = need(stage, run);
   const st = run.stages[stage];
@@ -125,15 +125,15 @@ export async function runStage(root, { stage, by = "runner", onEvent, _query, _s
     default: throw new Refused("no-transition", `${stage}: ${st.status} has no episode`);
   }
   if (mode !== "dispose") transition(root, { stage, event: mode, by, now });
-  return episode(root, { stage, authored, mode, by, onEvent, _query, _sleep, _perResponse, _now, _pulse_ms });
+  return episode(root, { stage, authored, mode, by, onEvent, _query, _exec, _sleep, _perResponse, _now, _pulse_ms });
 }
 
 /** The cap door a human opens: a round bought with a reason, on the record (R6), then run. */
-export async function escalate(root, { stage, by, reason, onEvent, _query, _sleep, _perResponse, _now = () => new Date(), _pulse_ms = PULSE_MS } = {}) {
+export async function escalate(root, { stage, by, reason, onEvent, _query, _exec, _sleep, _perResponse, _now = () => new Date(), _pulse_ms = PULSE_MS } = {}) {
   const run = needRun(root);
   const authored = need(stage, run);
   transition(root, { stage, event: "escalate", by, reason, now: _now() });
-  return episode(root, { stage, authored, mode: "start", by, onEvent, _query, _sleep, _perResponse, _now, _pulse_ms });
+  return episode(root, { stage, authored, mode: "start", by, onEvent, _query, _exec, _sleep, _perResponse, _now, _pulse_ms });
 }
 
 /**
@@ -147,7 +147,7 @@ export async function escalate(root, { stage, by, reason, onEvent, _query, _slee
  * regenerated; a later stage that is alive refuses the reopen first. Then the episode runs.
  * Refuses the table's own (`no-transition` when the stage is not approved, `reason-required`).
  */
-export async function reopen(root, { stage, by, reason, items = null, from = null, onEvent, _query, _sleep, _perResponse, _now = () => new Date(), _pulse_ms = PULSE_MS } = {}) {
+export async function reopen(root, { stage, by, reason, items = null, from = null, onEvent, _query, _exec, _sleep, _perResponse, _now = () => new Date(), _pulse_ms = PULSE_MS } = {}) {
   const run = needRun(root);
   const authored = need(stage, run);
   const now = _now();
@@ -169,7 +169,7 @@ export async function reopen(root, { stage, by, reason, items = null, from = nul
   }
   transition(root, { stage, event: "reopen", by, reason, items: items?.length ? [...new Set(items)] : undefined, from: from ?? undefined, now });
   for (const s of later) if (JUDGED.has(run.stages[s].status)) transition(root, { stage: s, event: "moved", by, reason: `${stage} reopened: ${reason}`, now });
-  return episode(root, { stage, authored, mode: "start", by, onEvent, _query, _sleep, _perResponse, _now, _pulse_ms });
+  return episode(root, { stage, authored, mode: "start", by, onEvent, _query, _exec, _sleep, _perResponse, _now, _pulse_ms });
 }
 
 /**
@@ -277,7 +277,7 @@ function redoFindings(root, { from, stage }) {
   return { ...verdict, findings, deferred: [], checked: findings.length };
 }
 
-async function episode(root, { stage, authored, mode, by, onEvent, _query, _sleep, _perResponse, _now, _pulse_ms }) {
+async function episode(root, { stage, authored, mode, by, onEvent, _query, _exec, _sleep, _perResponse, _now, _pulse_ms }) {
   let path = needRun(root).stages[stage].verdict;
   if (mode !== "dispose") {
     const rejudging = mode === "rejudge";
@@ -296,7 +296,7 @@ async function episode(root, { stage, authored, mode, by, onEvent, _query, _slee
     // model was paid to make is re-made by whoever composed it.
     const downstream = !rejudging && opened?.from ? redoFindings(root, { from: opened.from, stage }) : null;
     const review = downstream ?? (prior && (prior.verdict === "block" || reopened) ? prior : null);
-    path = await work(root, { stage, authored, rejudging, review, by, onEvent, _query, _sleep, _perResponse, _now, _pulse_ms });
+    path = await work(root, { stage, authored, rejudging, review, by, onEvent, _query, _exec, _sleep, _perResponse, _now, _pulse_ms });
     if (rejudging) {
       const doc = readDoc(root, path);
       const event = doc?.verdict === "block" ? "reblock" : "clear";
@@ -328,17 +328,19 @@ async function episode(root, { stage, authored, mode, by, onEvent, _query, _slee
     }
     transition(root, { stage, event: "regenerate", by, now: _now() });
     onEvent?.(`${stage} block · round ${run.stages[stage].round} of ${run.cap} — regenerating`);
-    path = await work(root, { stage, authored, rejudging: false, review: doc, by, onEvent, _query, _sleep, _perResponse, _now, _pulse_ms });
+    path = await work(root, { stage, authored, rejudging: false, review: doc, by, onEvent, _query, _exec, _sleep, _perResponse, _now, _pulse_ms });
     transition(root, { stage, event: "finish", by, verdict: path, now: _now() });
   }
 }
 
 /** The stage's own code, under the wrapper's pulse. A throw stops the stage with the error as the reason and is re-thrown. */
-async function work(root, { stage, authored, rejudging, review = null, by, onEvent, _query, _sleep, _perResponse, _now, _pulse_ms }) {
+async function work(root, { stage, authored, rejudging, review = null, by, onEvent, _query, _exec, _sleep, _perResponse, _now, _pulse_ms }) {
   const run = needRun(root);
   const pulse = setInterval(() => { try { heartbeat(root, stage, _now()); } catch { /* the stage moved under us; the next transition says how */ } }, _pulse_ms);
   try {
-    const ctx = { run, now: _now(), by, review, reopened: run.stages[stage].reopened ?? null, onEvent: (e) => onEvent?.(`${stage} ${e}`), _query, _sleep, _perResponse };
+    // `_exec` rides with `_query`: qa runs suites through it, so without this a qa round
+    // could not be driven through the loop at all and its evals had to call round()直接.
+    const ctx = { run, now: _now(), by, review, reopened: run.stages[stage].reopened ?? null, onEvent: (e) => onEvent?.(`${stage} ${e}`), _query, _exec, _sleep, _perResponse };
     if (authored.writer) {
       ctx.handoff = takePinned(root, run);
       ctx.intake = readDoc(root, INTAKE_FILE);
