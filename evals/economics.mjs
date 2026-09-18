@@ -12,10 +12,10 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { suite, withRoot, scripted } from "./_harness.mjs";
+import { suite, withRoot, scripted, ROOT as PIPELINE } from "./_harness.mjs";
 import { call, BudgetError, rows, quote, modelFor, TOOLS, totals, estimate, tally } from "../shared/agent-call/index.mjs";
 import { append as appendLedger } from "../shared/agent-call/ledger.mjs";
-import { runJudge, runPerItemJudge, rank, deriveVerdict, weight, renderFindingsForAgent } from "../shared/judge/index.mjs";
+import { runJudge, runPerItemJudge, prepare, rank, deriveVerdict, weight, renderFindingsForAgent } from "../shared/judge/index.mjs";
 import { apply, DEFAULTS, readRun, transition, rounds, LEDGER } from "../delivery/state/index.mjs";
 import { runStage, escalate, reopen, advance, estimateRun, AUTHORED, PULSE_MS } from "../delivery/run/index.mjs";
 import { SDD_FILE, VERDICT_FILE as SDD_VERDICT, loadSdd, PER_RESPONSE } from "../delivery/sdd/index.mjs";
@@ -27,7 +27,7 @@ import { validate } from "../shared/schema/index.mjs";
 import { setupProject } from "../discovery/setup/index.mjs";
 import { openPrd, quoteTurn, turn } from "../discovery/workshop/index.mjs";
 
-const { check, done } = suite("economics · R1 metering and budget, R7 ranked judges", 126);
+const { check, done } = suite("economics · R1 metering and budget, R7 ranked judges", 129);
 
 const IDENTITY = "# Story reviewer\n\nYou review stories at the PM's bar. A missing edge case is not a finding; an untestable Then is.\n";
 const FINDING = (severity, confidence, n) => ({ severity, confidence, rule: `r${n}`, subject: `STORY-${n}`, summary: `s${n}`, evidence: `e${n}` });
@@ -386,9 +386,42 @@ await withRoot({ "prompts/j.md": IDENTITY }, async (root) => {
     const before = readRun(cold).stages.sdd;
     const r2 = await escalate(cold, { stage: "sdd", by: "Brad", reason: "the assertion is checkable as written — one more round", ...opts });
     check("escalate with a reason buys one round: the writer answers the recorded block, the one judge whose item moved clears it — STORY-2 and REQ-4 stand on round 2's judgement for $0 — approved at round 3, and the flag names who and why",
-      r2.status === "approved" && r2.round === 3 && r2.verdict.verdict === "pass" && r2.run.flags.length === 1 && r2.run.flags[0].event === "escalate" && r2.run.flags[0].by === "Brad" && /one more round/.test(r2.run.flags[0].reason) && r2.verdict.items.map((i) => `${i.id}:${i.stands ? "stands" : "judged"}`).join() === "STORY-1:judged,STORY-2:stands,REQ-4:stands" && events.filter((e) => /stands/.test(e)).join(" | ") === "sdd STORY-2 stands — input unchanged since it was judged, $0 | sdd REQ-4 stands — input unchanged since it was judged, $0", `${JSON.stringify(r2.run.flags)} · ${JSON.stringify(r2.verdict.items?.map((i) => [i.id, i.stands]))} · ${events.filter((e) => /stands/.test(e)).join(" | ")}`);
+      r2.status === "approved" && r2.round === 3 && r2.verdict.verdict === "pass" && r2.run.flags.length === 1 && r2.run.flags[0].event === "escalate" && r2.run.flags[0].by === "Brad" && /one more round/.test(r2.run.flags[0].reason) && r2.verdict.items.map((i) => `${i.id}:${i.stands ? "stands" : "judged"}`).join() === "STORY-1:judged,STORY-2:stands,REQ-4:stands" && events.filter((e) => /stands/.test(e)).join(" | ") === "sdd STORY-2 stands — same prompt, and its judge read nothing else, $0 | sdd REQ-4 stands — same prompt, and its judge read nothing else, $0", `${JSON.stringify(r2.run.flags)} · ${JSON.stringify(r2.verdict.items?.map((i) => [i.id, i.stands]))} · ${events.filter((e) => /stands/.test(e)).join(" | ")}`);
     check("what stands is round 2's answer under round 2's key: STORY-2's and REQ-4's entries carry the key and the deferral the round-2 verdict filed; STORY-1's key moved with its test",
       ["STORY-2", "REQ-4"].every((id) => r2.verdict.items.find((i) => i.id === id).key === v1.items.find((i) => i.id === id).key && r2.verdict.items.find((i) => i.id === id).deferred[0].subject === id) && r2.verdict.items[0].key !== v1.items[0].key && r2.verdict.deferred.length === 3, JSON.stringify(r2.verdict.items.map((i) => [i.id, i.key.slice(0, 8)])));
+
+    // ── a judgement is only carried when its judge read nothing but the prompt ──
+    // Driven through runPerItemJudge itself, with a standing entry built to match. Asserting
+    // that carried entries happen to have tools: 0 proves nothing — the scripted judges use
+    // none, so it holds whether the condition exists or not. What has to be shown is that a
+    // standing judgement WITH a tool use is asked again, and the only way to show it is to
+    // count the calls the seam actually received.
+    check("every entry records what its judge did", readDoc(cold, SDD_VERDICT).items.every((i) => Number.isInteger(i.tools)),
+      JSON.stringify(readDoc(cold, SDD_VERDICT).items.map((i) => [i.id, i.tools, Boolean(i.stands)])));
+
+    {
+      const shared = {
+        half: "delivery", stage: "sdd", identity: join(PIPELINE, "delivery", "sdd", "prompts", "judge.md"),
+        scope: { line: "one door", inside: [], past: [] }, rulings: [], arithmetic: ["question"],
+        cwd: cold, ledger: join(cold, "forge", "delivery", "calls.jsonl"), budget: null, models: {},
+      };
+      const item = { id: "STORY-9", sections: [["The item", "one line of binding"]] };
+      const key = prepare({ ...shared, sections: item.sections }).key;
+      const answer = { findings: [], deferred: [], checked: 1, skipped: 0 };
+      const entry = (tools) => ({ id: "STORY-9", key, verdict: "pass", findings: [], deferred: [], checked: 1, skipped: 0, reraised: 0, tools, cost: { model: "m", usd: 0.4, ms: 10 } });
+
+      const quiet = scripted({ structured: answer });
+      const carried = await runPerItemJudge({ gate: "sdd", items: [item], standing: [entry(0)], ...shared, _query: quiet.query });
+      check("a standing judgement whose judge read nothing but its prompt is carried, and costs nothing",
+        quiet.calls.length === 0 && carried.items[0].stands === true && carried.verdict.cost.usd === 0,
+        JSON.stringify({ calls: quiet.calls.length, stands: carried.items[0].stands, usd: carried.verdict.cost.usd }));
+
+      const looked = scripted({ structured: answer });
+      const asked = await runPerItemJudge({ gate: "sdd", items: [item], standing: [entry(1)], ...shared, _query: looked.query });
+      check("the same entry from a judge that used one tool is asked again, however unchanged the prompt — the key names the prompt, and the repository is not in it",
+        looked.calls.length === 1 && !asked.items[0].stands,
+        JSON.stringify({ calls: looked.calls.length, stands: Boolean(asked.items[0].stands) }));
+    }
     check("the escalated round's writer saw the judge's finding it was bought to answer", /## The judge's findings on the previous binding/.test(script.calls[5].prompt) && /test-proves-nothing/.test(script.calls[5].prompt));
     check("the escalated round's writer saw the churn filed against it too, and the carry's finding did not open STORY-2 — STORY-1 to revise for T-2, STORY-2 still to carry",
       /item-carried/.test(script.calls[5].prompt) && /### STORY-1 — revise: T-2 \(test-proves-nothing\)/.test(script.calls[5].prompt) && /### STORY-2 — carry verbatim/.test(script.calls[5].prompt), script.calls[5].prompt.slice(script.calls[5].prompt.indexOf("## The previous binding"), script.calls[5].prompt.indexOf("## The previous binding") + 300));

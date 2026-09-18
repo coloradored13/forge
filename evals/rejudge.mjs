@@ -115,7 +115,7 @@ await withRoot({}, async (tmp) => {
   check("the model's contract does not carry the runner's items — a judge cannot claim its own carry", !("items" in (outputContract("finding").properties ?? {})));
   check("the re-judge's one judge saw the reworded story", /plan the dock before the first truck/.test(re.calls[0].prompt), re.calls[0].prompt.slice(0, 200));
   check("the wrapper said what happened: cleared, twice — and which items stood",
-    events.filter((e) => /re-judged: clear/.test(e)).join() === "intake re-judged: clear,sdd re-judged: clear" && events.filter((e) => /stands/.test(e)).join(" | ") === "sdd STORY-1 stands — input unchanged since it was judged, $0 | sdd REQ-4 stands — input unchanged since it was judged, $0", events.join(" | "));
+    events.filter((e) => /re-judged: clear/.test(e)).join() === "intake re-judged: clear,sdd re-judged: clear" && events.filter((e) => /stands/.test(e)).join(" | ") === "sdd STORY-1 stands — same prompt, and its judge read nothing else, $0 | sdd REQ-4 stands — same prompt, and its judge read nothing else, $0", events.join(" | "));
   // A re-judge files a verdict too, and overwrites the last one on the same path — so it is kept the same way,
   // at round 0 (R5: not a round), beside the binding it judged again (R8).
   const kept = rounds(cold, "sdd");

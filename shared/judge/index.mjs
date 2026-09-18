@@ -3,8 +3,9 @@
 // settled ruling, ranks the findings, derives the verdict, pins what was judged, and
 // validates the record before returning it. Three things are never the model's: the
 // verdict, the pins, and whether a ruling is open. Judged item by item, a judgement is
-// keyed by what the judge was given; the same key is not asked twice (R1) — the standing
-// answer is copied forward and says so.
+// keyed by what the judge was given; the same key is not asked twice (R1) — but only when
+// that judge read nothing but its prompt, because the key names the prompt and not the
+// repository. The standing answer is then copied forward and says so.
 
 import { call, modelFor } from "../agent-call/index.mjs";
 import { sha256 } from "../hash.mjs";
@@ -95,6 +96,9 @@ export async function runJudge({
     checked: r.structured.checked ?? 0,
     skipped: r.structured.skipped ?? 0,
     reraised: reraised.length,
+    // What this judge did besides read its prompt. Zero is what makes the key a complete
+    // description of the question, and so the condition for ever standing in for a re-judge.
+    tools: r.toolUses.length,
     // The findings themselves, not only how many. In Delivery nothing passes `funnel`, so
     // the count was the whole record of a removal: subject, rule and reasoning were gone
     // and nobody could tell whether what went was a re-litigation or a defect.
@@ -123,17 +127,19 @@ export function prepare({ half, role = JUDGE_ROLE[half], identity: identityPath,
 }
 
 /** The part of a per-item verdict that is kept on the record, under its key. */
-const entryOf = (id, key, v) => ({ id, key, verdict: v.verdict, findings: v.findings, deferred: v.deferred, checked: v.checked, skipped: v.skipped, reraised: v.reraised, cost: v.cost });
+const entryOf = (id, key, v) => ({ id, key, verdict: v.verdict, findings: v.findings, deferred: v.deferred, checked: v.checked, skipped: v.skipped, reraised: v.reraised, tools: v.tools ?? 0, cost: v.cost });
 
 /**
  * One judge call per item, merged into one stage verdict by the same rule one call
  * uses, so a stage cannot disagree with its own parts. An item whose judge failed is a
  * finding, not a silence: nothing about it has been checked. Per-item judgements ride on
  * the verdict as `items`, each under the key of what its judge was given — and an item
- * whose key a standing judgement already carries is not asked again (R1): the answer is
- * copied forward marked `stands`, at no cost, and the wrapper says so. What is not in the
- * key is not in the question — the judge's prompt is the whole of what it is asked; a
- * gate whose judge must see the repo puts the repo's state in a section.
+ * whose key a standing judgement already carries is not asked again (R1) — provided that
+ * judgement was made with no tools. The key names the prompt, and a judge that read the
+ * repository asked more than the key describes, so the same prompt over a moved tree is a
+ * different question and its old answer is not the one to file. The carried answer is
+ * marked `stands`, costs nothing, and the wrapper says so. A gate wanting the carry more
+ * often puts what its judge would go looking for into a section, where the key can see it.
  * @param standing  [{ id, key, ... }] — the per-item judgements on the record, newest first
  */
 export async function runPerItemJudge({ gate, items, standing = [], onEvent, ...rest }) {
@@ -152,10 +158,15 @@ export async function runPerItemJudge({ gate, items, standing = [], onEvent, ...
   for (const item of items) {
     try {
       const prepared = prepare({ ...rest, sections: item.sections });
-      const prior = standing.find((s) => s.id === item.id && s.key === prepared.key);
+      // The key names the prompt, and the prompt is the whole question only for a judge
+      // that looked at nothing else. One that read the repository asked more than the key
+      // describes: the same prompt over a moved tree is a different question, and carrying
+      // its answer forward would file a judgement about a repository that no longer exists.
+      // Measured on the cold review: 44% of judges use repo tools, so this is most of them.
+      const prior = standing.find((s) => s.id === item.id && s.key === prepared.key && s.tools === 0);
       if (prior) {
         take({ ...prior, stands: true });
-        onEvent?.(`${item.id} stands — input unchanged since it was judged, $0`);
+        onEvent?.(`${item.id} stands — same prompt, and its judge read nothing else, $0`);
         continue;
       }
       const v = await runJudge({ ...rest, gate, sections: item.sections, artifacts: item.artifacts ?? [], prepared, onEvent: (e) => onEvent?.(`${item.id} ${e}`) });
