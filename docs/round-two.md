@@ -51,8 +51,10 @@ Fourteen findings collapse to four roots. Fixing roots is what keeps this from b
 | **Doors compose in ways the rules do not intend** | B1 | The ceiling guards one transition and one episode, so two legal doors buy unlimited rounds. |
 | **The evals cannot fail on the property they name** | 6 of ~13 suites | Fixtures define away the tested case. This is why two prior fixes shipped without working. |
 
-Efficiency-only, cataloged per the standing directive: **B7** correlated models · cache-key
-economics · the judge/builder cost ratio, which **gets worse** once the carry is deleted.
+Efficiency-only, cataloged per the standing directive: cache-key economics · the judge/builder cost
+ratio, which **gets worse** once the carry is deleted.
+
+**B7 is no longer cataloged — its trigger has fired.** See *Model independence* below.
 
 ### Cost shape
 
@@ -412,7 +414,71 @@ Bakehouse's current release is **not trustworthy evidence**. Estimated spend $40
    (`assert.ok(true)` with a valid `T-n` over deliberately wrong behaviour), and confirm the fixed
    pipeline **blocks both** end to end with real calls. Scope to the stages that should catch them
    rather than a full rebuild. Passing evals prove the fixture; only this proves the pipeline.
+   **Run this twice — once with `delivery.judge` on the writer's model family, once on a different
+   one.** The seeded run is the only place where ground truth is known, which is what B7's
+   measurement has always lacked. See *Model independence* below for what that can and cannot show.
 4. **Round-3 cold review.** `tools/review-bundle.mjs` needs no change.
+
+---
+
+## Model independence — B7's trigger has fired
+
+Every agent role runs on the same model family. `shared/agent-call/models.json` pins all six —
+`discovery.workshop`, `discovery.writer`, `discovery.reviewer`, `delivery.writer`, `delivery.judge`,
+`delivery.builder` — to `claude-opus-5`.
+
+**The trigger was written down in round 1 and has now been met.** That disposition was *measure
+first, no rule*, with the stated condition for acting: *"misses concentrate where writer = judge →
+require a distinct judge model for QA only, one config line."* Round 1's reviewer raised it; round
+2 had **all three reviewers** reach it independently. One sharpened it past the model name: the
+oracle receives the SDD writer's own `exercises` prose rather than an independent observation, so
+the roles share an upstream *description* as well as weights.
+
+They were also fair about it — Forge caught exactly this class in Bakehouse, the durability
+criterion where killing a process is not a power cut. The mechanism is not inert. What it lacks is
+any axis that would *force* the distinction when writer, builder, test and oracle all choose the
+same wrong surrogate.
+
+### Why this is now cheap
+
+Two things changed that were not true when B7 was first cataloged:
+
+- **The config surface already exists.** `models.json` pins per `half.role` and its own note says
+  *"A run's setup overrides per role; an unknown role is refused, never defaulted."* Varying the
+  judge is a config line, not code. It takes full model-ID strings, so it can pin exact versions,
+  not just families.
+- **W1 removes the barrier.** A round-2 reviewer complained that baking `model` into the judge
+  cache key punishes switching models — every standing judgement invalidates at once. That was
+  **rejected as correct by design** (a different model *is* a different judge), but it was a real
+  practical cost. **Deleting the keyed carry (1.2) makes it moot.** After W1, switching judge models
+  costs nothing beyond the calls themselves.
+
+Cost also cuts the right way: a cheaper reviewer alongside an Opus one is *less* expensive than two
+Opus reviewers and *more* independent. That is the rare change that helps both B7 and the judge
+cost ratio.
+
+### The measurement, and its limits
+
+**Run it on W4's seeded-defect run.** That run injects one A1-shaped drop and one A2-shaped no-op
+test, so unlike every previous run **the ground truth is known** — which is exactly what judge-miss
+rate needs and has never had. Run it once with `delivery.judge` on the writer's family and once on a
+different one, and compare what each catches.
+
+**State the limit honestly: two seeded defects is a directional signal, not a calibration.** It
+cannot establish a miss rate. What it can do is show whether a differing judge catches something the
+same-family judge does not — and one such case is enough to promote B7 from *measured* to *ruled*.
+Do not report it as more than that.
+
+If it fires, the rule is the one round 1 already drafted: a distinct judge model for QA only, one
+config line, no new rail.
+
+### Sigma-side (not Forge, noted so it is not lost)
+
+The 33 agent definitions in `sigma-system-overview/agent-infrastructure/agents/` carry **no
+frontmatter at all** — they open directly on `# {Agent Name} Agent`. So every one inherits the
+global Claude Code default, which is why a single `settings.json` line moved all of them between
+model families at once. Per-agent `model:` frontmatter would let cheap models take the mechanical
+passes and Opus take the analytical ones. Separate repo, separate decision, same idea.
 
 ---
 
@@ -457,7 +523,9 @@ elsewhere. The cost is the user's time, not the ledger.
   `assert.ok(true)` test with a valid `T-n` title no longer discharges.
 - **W3:** the probe's finding list is the deliverable, not a passing run.
 - **W4:** Bakehouse reaches an *approved* release, manifest and verifier green in a fresh clone, the
-  seeded-defect run blocks both injected defects, and the round-3 bundle goes out unchanged.
+  seeded-defect run blocks both injected defects on both judge-model arms, and the round-3 bundle
+  goes out unchanged. Record what each arm caught — one case a differing judge catches and the
+  same-family judge does not is enough to promote B7 from measured to ruled.
 
 ---
 
