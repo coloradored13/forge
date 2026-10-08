@@ -118,6 +118,6 @@ Implement a complete small path through the loop before broad automation. Change
 
 Provide one README launch command using the existing runtime in DH1b, with authentication checked before setup writes anything and clean retries after failure. Do not build a launcher framework, a plugin system, a second-cycle portfolio manager, a bespoke mutation framework, or size-governance tooling as prerequisites. Agree session and code/eval size estimates before each future milestone; stop for review above a 50% overrun.
 
-The prototype builder gets no write access to the project; the runner validates staged output before publication. Browser isolation checks run separately from ordinary scripted evals. Earlier package reads use fresh agent sessions labelled **agent read**; use one cold human reading at DH4. The owner and Claude run live evaluations and the pilot separately; Codex makes no live model calls.
+The prototype builder gets no write access to the project; the runner validates staged output before publication. Browser isolation checks run separately from ordinary scripted evals. Earlier package reads use fresh agent sessions labelled **agent read**; use one cold human reading at DH4. The owner runs live evaluations and the pilot separately, with a Claude session other than the implementing one; the implementing session makes no live model calls.
 
 The first meaningful success is a PM who can correct an agent's interpretation through the prototype and receive a handoff that preserves that correction all the way into the backlog.

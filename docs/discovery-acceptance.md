@@ -1,6 +1,6 @@
 # Acceptance specification: Discovery through handoff
 
-Status: D01/D02 now have intentionally failing DH0 regressions in [the Discovery loop suite](../evals/discovery-loop.mjs); see [the DH0 evidence](discovery-m0-evidence.md). The remaining cases are proposed and unexecuted. These define pipeline success, not proof that a future built product satisfies its specification.
+Status: proposal. Which cases have executable tests, and their results, is recorded in dated evidence docs, starting with [the DH0 evidence](discovery-m0-evidence.md); D01/D02 live in [the Discovery loop suite](../evals/discovery-loop.mjs). These define pipeline success, not proof that a future built product satisfies its specification.
 
 See the [workflow summary](discovery-workflow.md) and [build plan](discovery-handoff-plan.md). Case IDs below are local references for this work, not additions to Forge's global rule registry.
 
@@ -11,7 +11,7 @@ Start with D01 and D02 as failing regressions through existing functions and mod
 - Seed a valid current project/prototype with a material blocking question, then call the existing story writer. Assert that the writer is not invoked while that question is unanswered. The current code checks for a scope line and prototype but does not enforce that blocker.
 - Seed a PM-ruled criterion, then run the existing extractor with a schema-valid response retaining the criterion's ID but changing its accepted meaning. Assert the accepted criterion is unchanged without a PM-approved change. ID preservation alone is insufficient.
 
-Stop after DH0's red tests for owner review. Only after implementation is authorized, implement the smallest protections, then introduce D03 through real functions in DH1a and console controls in DH1b. Tests for later milestones should precede those milestones' implementation, not delay the first user-visible slice.
+DH1a implements the smallest protections that turn D01/D02 green, then introduces D03 through real functions; DH1b adds console controls. Tests for later milestones should precede those milestones' implementation, not delay the first user-visible slice.
 
 ## Example product and fixture boundaries
 
@@ -36,11 +36,13 @@ Every D-case has a violating run the gate refuses and a passing run it allows. S
 
 **Given** the prototype raises whether cancellation is allowed after pickup, marked as a material product question, **when** final stories are requested, **then** no writer call starts and the PM sees the question and an action to resolve it. After a PM-approved answer and current agreement, story generation is allowed. The interviewer, a supplied document, or a generated signature cannot stand in for the PM's agreement.
 
-First regression: exercise the unanswered prototype-question branch using today's story writer. Add the agreement branch as the agreement checkpoint is implemented.
+First regression: exercise the unanswered prototype-question branch using today's story writer. Add the agreement branch as the agreement checkpoint is implemented. When the agreement checkpoint lands, both D01 runs record a current PM agreement; `blocking` stays the only difference between them.
 
 ### D02 — Later extraction cannot overwrite a PM decision
 
 **Given** the PM has ruled that cancellation is unavailable after pickup, **when** an extractor returns an older contrary rule with the same criterion ID, **then** the accepted meaning and its attribution remain unchanged. The contradictory text is rejected or presented as a proposal tied to its source. Accepting a legitimate new proposal changes the revision and preserves the prior decision in history.
+
+After the line is drawn, extraction still applies changes that do not touch a ruled criterion, including the ruled requirement's other criteria and context. Only ruled criteria are protected. A proposal means a pending amendment minted through the amend door, so R4's audit at mint runs. (Owner decision, 2026-10-08; the alternative, routing every post-line change through proposals, was declined.)
 
 ### D03 — A prototype reaction survives the entire pipeline
 
@@ -86,7 +88,7 @@ Deterministic tests cover identities, statuses and transitions; Q03/Q05 evaluate
 
 ### D13 — Prototype generation and display cannot modify trusted state
 
-**Builder containment:** the builder has no write access to the project. It writes HTML in an isolated staging area or returns it as structured output; the runner validates and then publishes to `discovery/prototype/`. Script an attempted builder Write to `discovery/prd.json`: the call is refused and the PRD is byte-identical afterward. An allowed HTML output passes validation and publishes successfully. A post-call wrong-file check alone fails this requirement. Exercise the real tool boundary with scripted output, not a mock that simply elects not to write.
+**Builder containment:** the builder has no write access to the project. It writes HTML in an isolated staging area or returns it as structured output; the runner validates and then publishes to `discovery/prototype/`. Assert on the options the builder call passes to `query()` (`scripted().calls[0].options`): either it has no Write, Edit or Bash tools (structured-output mode), or its cwd is a staging directory outside the project root and its permission rules deny writes under the project. This assertion must fail on `f8ad980`, where the builder runs in the project root with Write and Edit under `acceptEdits`. Keep "a scripted builder Write to `discovery/prd.json` is refused and the PRD is byte-identical afterward" as extra assertions; alone they already pass on `f8ad980`, because `scripted()` never executes tool uses. An allowed HTML output passes validation and publishes successfully. A post-call wrong-file check alone fails this requirement. A live check that the SDK actually denies such a write is separate live evidence.
 
 **Given** generated HTML tries to access parent state, submit an approval, navigate the parent, or contact an external endpoint, **when** it is displayed through the supported console path, **then** the browser isolation policy prevents those actions. The PM can still exercise intended local mock interactions and submit feedback through trusted console controls. Test in a real browser, not just by checking that an iframe attribute is present.
 
@@ -96,7 +98,7 @@ Deterministic tests cover identities, statuses and transitions; Q03/Q05 evaluate
 
 ## Real-model evaluations (opt-in)
 
-Ordinary `npm run evals` must stay deterministic and make no paid calls. Codex makes no live model calls; the owner and Claude run real-model evaluations and the pilot separately. Put live evaluation entry points outside the root-level `evals/*.mjs` auto-discovery path, for example a narrowly scoped tool under `tools/`. Use supported authentication, explicit per-run budgets, pinned inputs, and recorded model/prompt versions. Report credentials or access blockers without treating scripted substitutes as live success.
+Ordinary `npm run evals` must stay deterministic and make no paid calls. The implementing session makes no live model calls; the owner runs real-model evaluations and the pilot separately, with a Claude session other than the implementing one. Each run records its cost and outcome. Put live evaluation entry points outside the root-level `evals/*.mjs` auto-discovery path, for example a narrowly scoped tool under `tools/`. Use supported authentication, explicit per-run budgets, pinned inputs, and recorded model/prompt versions. Report credentials or access blockers without treating scripted substitutes as live success.
 
 | ID | Exercise | Evidence and pass condition |
 |---|---|---|
@@ -133,7 +135,7 @@ At DH4, perform Q04 on the same package. Compare the planning-only agent's inter
 ## Reporting and test hygiene
 
 - Report deterministic, live-model and human results separately, with passed, failed, skipped and unrun outcomes. Missing participants, model access, or a zero-test run are not passes.
-- Reuse `suite(expected)`, `scripted()` and `withRoot()` from `evals/_harness.mjs`; extend existing fixtures without making direct fixture construction substitute for the operation being tested.
+- Reuse `suite(name, expected)`, `scripted()` and `withRoot()` from `evals/_harness.mjs`; extend existing fixtures without making direct fixture construction substitute for the operation being tested.
 - Every D-case has a violating run the gate refuses and a passing run it allows. Seed only the inputs of the step under test. The state asserted on must come from running that step through its real function or route, with `scripted()` output. Assertions read persisted state, not just return values.
 - Use one focused new Discovery-loop suite and one package suite if existing files would become incoherent. The present runner automatically finds non-underscore root-level eval files.
 - Include negative assertions for each important readiness gate. Do not count a crash, missing executable or missing module as the intended behavioral failure.

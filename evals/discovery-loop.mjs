@@ -1,27 +1,39 @@
-// owns: R3, R13, R15 · shared — M0 regressions: unresolved prototype questions and
-// accepted PM decisions. Intentionally red until a separately reviewed implementation.
+#!/usr/bin/env node
+// owns: R3, R13 · shared — eval: discovery-loop. D01: a blocking prototype question stops the story
+// writer before its call, leaves the record alone, and the refusal shows the PM the question. D02: an
+// extraction cannot rewrite or remove a PM-ruled criterion; it is refused naming the criterion or held as
+// a proposal, never applied, while unruled criteria stay editable. Red at DH0 by design
+// (docs/discovery-m0-evidence.md); DH1a turns it green. Its assertions may be tightened, never loosened.
 
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { suite, scripted, withRoot } from "./_harness.mjs";
 import { partialContract, validateAgainst } from "../shared/schema/index.mjs";
 import { checkScope } from "../shared/scope.mjs";
+import { refusalHtml, esc } from "../shared/console/index.mjs";
 import { setupProject } from "../discovery/setup/index.mjs";
-import { openPrd, turn, extract, loadPrd, WorkshopRefused } from "../discovery/workshop/index.mjs";
+import { openPrd, turn, extract, loadPrd, appendTranscript, WorkshopRefused } from "../discovery/workshop/index.mjs";
+import { section } from "../discovery/workshop/sections.mjs";
 import { answer } from "../discovery/doors/index.mjs";
-import { generate } from "../discovery/prototype/index.mjs";
-import { write, loadStories } from "../discovery/stories/index.mjs";
-import { Refused, HTML_FILE, STORIES_FILE } from "../discovery/record/index.mjs";
+import { generate, GATE as PROTOTYPE_GATE } from "../discovery/prototype/index.mjs";
+import { write, loadStories, GATE as STORY_GATE } from "../discovery/stories/index.mjs";
+import { Refused, readDoc, readVerdict, HTML_FILE, PROTOTYPE_FILE, STORIES_FILE } from "../discovery/record/index.mjs";
 
-const { check, done } = suite("discovery-loop — M0 D01/D02", 8);
+const { check, done } = suite("discovery-loop · D01 a blocking question holds the stories, D02 a ruling survives extraction", 11);
 const QUESTION = "Can a member cancel a booking after pickup?";
+const ASIDE = "Should the booking page show the equipment desk's hours?";
 const DECISION = "Cancellation is unavailable after pickup.";
-const REQUIREMENTS = {
-  requirements: [{ id: "REQ-1", statement: "Members can cancel equipment bookings.", type: "functional", status: "committed",
-    done_definition: "A cancelled booking releases its reservation.", acceptance_criteria: [{ id: "AC-1", statement: "Cancellation releases the reservation." }] }],
-  surfaces: { shipped: [{ id: "SURF-1", kind: "web app", statement: "A booking page for members.", req_refs: ["REQ-1"] }], deferred: [] },
-  mvp: { line: "Booking cancellation only; notifications are excluded.", inside: ["REQ-1"], past: [] },
-};
+const CONTRARY = "Cancellation is available after pickup.";
+const NOTE = "The equipment desk handles bookings.";
+const AT = "2026-10-08T12:00:00.000Z";
+const HTML = "<!doctype html><title>Booking</title><button>Cancel booking</button>\n";
+const cancel = (id) => ({ id, statement: "Members can cancel equipment bookings.", type: "functional", status: "committed",
+  done_definition: "A cancelled booking releases its reservation.", acceptance_criteria: [{ id: "AC-1", statement: "Cancellation releases the reservation." }] });
+// D02 lists returns first: it reuses the bare id AC-2, as real PRDs do, so protection must follow REQ-2/AC-2, not "AC-2".
+const RETURNS = { id: "REQ-1", statement: "Staff record returns.", type: "functional", status: "committed", done_definition: "A returned item can be booked again.",
+  acceptance_criteria: [{ id: "AC-1", statement: "Staff can mark a booking returned." }, { id: "AC-2", statement: "A return records when it happened." }] };
+const RULED = "REQ-2/AC-2"; // answer() appends the PM's criterion to the cancellation requirement, after its AC-1
+const REWORD = { "REQ-2/AC-1": "Cancelling a booking releases its reservation immediately.", "REQ-1/AC-2": "A return records the time the item came back." };
 const BACKLOG = {
   epics: [{ id: "EPIC-1", req_ref: "REQ-1", title: "Cancel a booking" }],
   stories: [{ id: "STORY-1", epic: "EPIC-1", statement: "As a member, I want to cancel my booking, so that others can reserve the equipment.",
@@ -32,11 +44,17 @@ const BACKLOG = {
 const attempt = async (action) => {
   try { return { value: await action() }; } catch (error) { return { error }; }
 };
-const describe = (out) => out.error ? `${out.error.name}: ${out.error.code ?? ""} ${out.error.message}` : "returned successfully";
+const describe = (out) => out.error ? `${out.error.constructor?.name ?? "Error"}: ${out.error.code ?? ""} ${out.error.message}` : "returned successfully";
+const refusal = (error) => error instanceof Refused || error instanceof WorkshopRefused;
+const criterion = (doc, ref) => {
+  const [req, ac] = ref.split("/");
+  return doc?.requirements?.find((r) => r.id === req)?.acceptance_criteria?.find((a) => a.id === ac);
+};
+const NOT_RUN = "not run — the setup above did not reach the state under test";
 
-async function project(parent, slug) {
-  const { root } = setupProject({ parent, slug, title: "Equipment bookings", _exec: () => "" });
-  openPrd({ root, slug, title: "Equipment bookings", seed: "Members need to cancel equipment bookings; after-pickup policy is undecided." });
+async function project(parent, reqs) {
+  const { root } = setupProject({ parent, slug: "bookings", title: "Equipment bookings", _exec: () => "" });
+  openPrd({ root, slug: "bookings", title: "Equipment bookings", seed: "Members need to cancel equipment bookings; after-pickup policy is undecided." });
   await turn({ root, key: "shape", text: "Staff mark pickup. A booking runs from reserved to picked up to returned.",
     _query: scripted({ text: "🏛 Shape captured.\n[SECTION_COMPLETE]" }).query });
   await extract({ root, key: "shape", _query: scripted({ structured: { shape: {
@@ -45,68 +63,110 @@ async function project(parent, slug) {
   } } }).query });
   await turn({ root, key: "requirements", text: "Members cancel bookings on a web page; cancellation releases the reservation. Notifications are excluded.",
     _query: scripted({ text: "🏛 Cancellation is in scope.\n[SECTION_COMPLETE]" }).query });
-  await extract({ root, key: "requirements", _query: scripted({ structured: structuredClone(REQUIREMENTS) }).query });
+  const ids = reqs.map((r) => r.id);
+  await extract({ root, key: "requirements", _query: scripted({ structured: { requirements: structuredClone(reqs),
+    surfaces: { shipped: [{ id: "SURF-1", kind: "web app", statement: "A booking page for members.", req_refs: ids }], deferred: [] },
+    mvp: { line: "Booking cancellation and returns only; notifications are excluded.", inside: ids, past: [] } } }).query });
   return root;
 }
 
+// ── D01: the only difference between the two runs is the second question's `blocking` flag ──
 for (const blocking of [false, true]) {
   await withRoot({}, async (parent) => {
-    const root = await project(parent, `d01-${blocking ? "blocked" : "control"}`);
+    const name = blocking ? "blocking" : "control";
+    const gates = blocking
+      ? ["D01 a blocking prototype question stops the story call before it starts and leaves the records alone",
+        "D01 the refusal shows the PM the blocking question"]
+      : ["D01 control: a non-blocking question permits a valid persisted backlog"];
+    const asked = [{ question: ASIDE, blocking: false }, { question: QUESTION, blocking }];
+    const writes = [{ name: "Write", input: { file_path: HTML_FILE } }];
     const builder = scripted({ structured: {
       screens: [{ id: "SCREEN-1", name: "Booking", surface_ref: "SURF-1", req_refs: ["REQ-1"] }],
-      uncovered: [], notes: "Cancellation policy needs PM confirmation.", open_questions: [{ question: QUESTION, blocking }],
-    }, toolUses: [{ name: "Write", input: { file_path: HTML_FILE } }] });
-    const prototype = await generate({ root, _query: (args) => {
-      // Emulate only the scripted SDK's authorized HTML Write; generate owns the record and hashes.
-      mkdirSync(dirname(join(root, HTML_FILE)), { recursive: true });
-      writeFileSync(join(root, HTML_FILE), "<!doctype html><title>Booking</title><button>Cancel booking</button>\n");
-      return builder.query(args);
-    } });
-    check(`D01 ${blocking ? "blocking" : "control"} setup reaches a valid generated prototype`,
-      checkScope(loadPrd(root)).verdict === "pass" && prototype.arithmetic.verdict === "pass" && builder.calls.length === 1
-      && prototype.prototype.open_questions.length === 1 && prototype.prototype.open_questions[0].blocking === blocking && !existsSync(join(root, STORIES_FILE)));
+      uncovered: [], notes: "Cancellation policy needs PM confirmation.", open_questions: asked,
+    }, toolUses: writes });
+    const setup = await attempt(async () => {
+      const root = await project(parent, [cancel("REQ-1")]);
+      // The scripted SDK Write, carried out where the runner pointed the builder. Not containment evidence (D13).
+      await generate({ root, _query: (args) => {
+        for (const w of writes) { const p = resolve(args.options.cwd, w.input.file_path); mkdirSync(dirname(p), { recursive: true }); writeFileSync(p, HTML); }
+        return builder.query(args);
+      } });
+      return root;
+    });
+    const root = setup.value;
+    const pairs = (doc) => JSON.stringify((doc?.open_questions ?? []).map((q) => [q.question, q.blocking]));
+    const proto = root ? readDoc(root, PROTOTYPE_FILE) : null;
+    const ready = !setup.error && checkScope(loadPrd(root)).verdict === "pass" && readVerdict(root, PROTOTYPE_GATE)?.verdict === "pass"
+      && builder.calls.length === 1 && pairs(proto) === pairs({ open_questions: asked }) && !existsSync(join(root, STORIES_FILE));
+    check(`D01 ${name} setup reaches a valid generated prototype`, ready, setup.error ? describe(setup) : `questions on disk: ${pairs(proto)}`);
+    if (!ready) { for (const gate of gates) check(gate, false, NOT_RUN); return; }
+
+    const before = readFileSync(join(root, PROTOTYPE_FILE), "utf8");
     const writer = scripted({ structured: structuredClone(BACKLOG) });
     const out = await attempt(() => write({ root, _query: writer.query }));
-    if (blocking) {
-      check("D01 a blocking prototype question prevents the story call and artifact",
-        out.error instanceof Refused && !["no-line", "no-prototype"].includes(out.error.code)
-        && writer.calls.length === 0 && !existsSync(join(root, STORIES_FILE)),
-        `${describe(out)}; writer calls=${writer.calls.length}; stories persisted=${existsSync(join(root, STORIES_FILE))}`);
-    } else {
-      check("D01 control: no blocking question permits a valid persisted backlog",
-        !out.error && writer.calls.length === 1 && out.value.arithmetic.verdict === "pass" && loadStories(root)?.stories[0]?.id === "STORY-1",
-        describe(out));
+    if (!blocking) {
+      check(gates[0], !out.error && writer.calls.length === 1 && readVerdict(root, STORY_GATE)?.verdict === "pass"
+        && loadStories(root)?.stories?.[0]?.id === "STORY-1", describe(out));
+      return;
     }
+    const refused = refusal(out.error) && !["no-line", "no-prototype"].includes(out.error.code);
+    const untouched = readFileSync(join(root, PROTOTYPE_FILE), "utf8") === before;
+    check(gates[0], refused && writer.calls.length === 0 && !existsSync(join(root, STORIES_FILE)) && untouched,
+      `${describe(out)}; writer calls=${writer.calls.length}; stories persisted=${existsSync(join(root, STORIES_FILE))}; prototype record unchanged=${untouched}`);
+    // What the console renders for a refusal (its message, plus a string detail) must contain the question itself.
+    check(gates[1], refused && refusalHtml(out.error).includes(esc(QUESTION)), refused ? `the PM sees: ${refusalHtml(out.error)}` : describe(out));
   });
 }
 
-for (const contradict of [false, true]) {
+// ── D02: every run rewords two unruled criteria and the ruled requirement's context; two runs also attack the ruling ──
+for (const mode of ["control", "contradict", "remove"]) {
   await withRoot({}, async (parent) => {
-    const root = await project(parent, `d02-${contradict ? "overwrite" : "control"}`);
-    const ruled = answer({ root, req: "REQ-1", question: QUESTION, answer: "No.", criterion: DECISION, by: "PM" });
-    const note = "The equipment desk handles bookings.";
-    await turn({ root, key: "requirements", text: `Keep the cancellation decision unchanged. Add this context: ${note}`,
-      _query: scripted({ text: "🏛 I will retain the decision and add the context.\n[SECTION_COMPLETE]" }).query });
-    const before = loadPrd(root);
-    const candidate = structuredClone({ requirements: before.requirements, surfaces: before.surfaces, mvp: before.mvp });
-    candidate.requirements[0].context = note;
-    if (contradict) candidate.requirements[0].acceptance_criteria.find((ac) => ac.id === "AC-2").statement = "Cancellation is available after pickup.";
-    check(`D02 ${contradict ? "contradictory" : "control"} extraction is schema-valid and preserves the ruled ID`,
-      ruled.ruling.criterion === "REQ-1/AC-2" && before.requirements[0].acceptance_criteria[1].statement === DECISION
-      && validateAgainst(partialContract("prd", ["requirements", "surfaces", "mvp"]), candidate).ok);
+    const gate = {
+      control: "D02 control: extraction still rewords unruled criteria, beside a ruling or sharing its bare id",
+      contradict: "D02 extraction cannot reverse a PM-ruled criterion: refused naming it, or held as a proposal",
+      remove: "D02 extraction cannot remove a PM-ruled criterion",
+    }[mode];
+    const setup = await attempt(async () => {
+      const root = await project(parent, [RETURNS, cancel("REQ-2")]);
+      const ruled = answer({ root, req: "REQ-2", question: QUESTION, answer: "No.", criterion: DECISION, by: "PM" });
+      // extract() is the step under test and its input is the section transcript, so seed that.
+      appendTranscript(root, "requirements", { at: AT, from: "pm", text: `Keep the cancellation decision unchanged. Add this context: ${NOTE}` });
+      appendTranscript(root, "requirements", { at: AT, from: "workshop", text: "I will keep the decision and add the context.", mode: "socratic", signals: ["complete"] });
+      const prd = loadPrd(root);
+      const candidate = structuredClone({ requirements: prd.requirements, surfaces: prd.surfaces, mvp: prd.mvp });
+      const req = candidate.requirements.find((r) => r.id === "REQ-2");
+      req.context = NOTE;
+      for (const [ref, text] of Object.entries(REWORD)) criterion(candidate, ref).statement = text;
+      if (mode === "contradict") criterion(candidate, RULED).statement = CONTRARY;
+      if (mode === "remove") req.acceptance_criteria = req.acceptance_criteria.filter((a) => a.id !== "AC-2");
+      return { root, ruled, prd, candidate };
+    });
+    const { root, ruled, prd: before, candidate } = setup.value ?? {};
+    const ready = !setup.error && ruled.ruling.criterion === RULED && criterion(before, RULED)?.statement === DECISION
+      && validateAgainst(partialContract("prd", section("requirements").fields), candidate).ok;
+    check(`D02 ${mode} setup: the ruling stands and the extraction is schema-valid`, ready, setup.error ? describe(setup) : `ruling → ${ruled?.ruling?.criterion}`);
+    if (!ready) { check(gate, false, NOT_RUN); return; }
+
     const extractor = scripted({ structured: candidate });
     const out = await attempt(() => extract({ root, key: "requirements", _query: extractor.query }));
     const after = loadPrd(root);
-    const preserved = after.requirements[0].acceptance_criteria.find((ac) => ac.id === "AC-2")?.statement === DECISION
-      && JSON.stringify(after.rulings) === JSON.stringify(before.rulings);
-    if (contradict) {
-      check("D02 extraction cannot reverse a PM-ruled criterion while retaining its ID",
-        extractor.calls.length === 1 && (!out.error || out.error instanceof WorkshopRefused) && preserved,
-        `${describe(out)}; criterion=${after.requirements[0].acceptance_criteria[1].statement}; ruling answer=${after.rulings[0].answer}`);
-    } else {
-      check("D02 control: a benign extraction updates context and preserves the PM decision",
-        !out.error && extractor.calls.length === 1 && preserved && after.requirements[0].context === note, describe(out));
+    const was = before.rulings.find((x) => x.id === ruled.ruling.id);
+    const now = after.rulings?.find((x) => x.id === ruled.ruling.id);
+    const preserved = criterion(after, RULED)?.statement === DECISION && after.rulings?.length === before.rulings.length
+      && ["question", "answer", "by", "criterion"].every((k) => now?.[k] === was[k]);
+    const state = `${describe(out)}; ${RULED}=${criterion(after, RULED)?.statement}; ruling=${now ? `${now.id} → ${now.criterion} "${now.answer}"` : "missing"}`;
+    if (mode === "control") {
+      const reworded = Object.entries(REWORD).every(([ref, text]) => criterion(after, ref)?.statement === text);
+      check(gate, !out.error && extractor.calls.length === 1 && preserved && reworded
+        && after.requirements.find((r) => r.id === "REQ-2")?.context === NOTE, `${state}; unruled rewordings applied=${reworded}`);
+      return;
     }
+    const named = refusal(out.error) && /REQ-2\/AC-2|RUL-1/.test(refusalHtml(out.error));
+    const proposal = (after.amendments ?? []).find((a) => a.status === "proposed" && a.radius?.criteria?.includes(RULED)
+      && (mode === "remove" || JSON.stringify(a.to).includes(CONTRARY)));
+    const applied = JSON.stringify([after.requirements, after.surfaces, after.mvp]).includes(CONTRARY);
+    check(gate, extractor.calls.length === 1 && preserved && !applied && (named || (!out.error && !!proposal)),
+      `${state}; contrary text applied=${applied}; refusal names it=${named}; pending proposal=${proposal?.id ?? "none"}`);
   });
 }
 
