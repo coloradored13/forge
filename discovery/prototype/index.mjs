@@ -71,6 +71,7 @@ export async function generate({ root, notes, onEvent, _query, _sleep }) {
   if (!v.ok) throw new Refused("prototype-invalid", `prototype: the record does not fit the contract — ${v.errors.slice(0, 5).join("; ")}`, v.errors);
 
   const doc = { ...skeleton("prototype"), id: `proto-${prd.meta.slug}`, traces: traceOf(prd), file: HTML_FILE, file_hash: fileHash(root), ...res.structured };
+  doc.open_questions = questionsOf(doc.open_questions, prior?.open_questions ?? [], prd.rulings ?? []);
   const kept = new Set(doc.screens.map((s) => s.id));
   const dropped = priorIds.filter((p) => !kept.has(p.id));
   if (dropped.length) throw new Refused("ids-dropped", `prototype: the rebuild dropped ${dropped.map((p) => p.id).join(", ")} — screen ids are sticky; a screen that went away keeps its id with no requirements`, dropped);
@@ -79,6 +80,25 @@ export async function generate({ root, notes, onEvent, _query, _sleep }) {
   const arithmetic = { ...checkPrototype(prd, doc), judged: [pin({ id: prd.id, path: PRD_FILE, doc: prd }), pin({ id: doc.id, path: PROTOTYPE_FILE, doc })] };
   saveVerdict(root, arithmetic);
   return { prototype: doc, arithmetic, model: res.model, usd: res.usd };
+}
+
+/**
+ * The runner's half of each question the builder asks. A question a ruling settled is
+ * answered, whatever the builder thinks (R3); otherwise the same question keeps its id
+ * and status from the last build. A new question takes the next id that no build and no
+ * ruling has used, so a ruling's `pq` always names one question.
+ */
+export function questionsOf(asked, prior, rulings) {
+  const key = (q) => String(q ?? "").toLowerCase().replace(/\s+/g, " ").trim();
+  const num = (id) => Number(String(id ?? "").split("-")[1]) || 0;
+  let n = Math.max(0, ...prior.map((q) => num(q.id)), ...rulings.map((r) => num(r.pq)));
+  const once = asked.filter((q, i) => asked.findIndex((x) => key(x.question) === key(q.question)) === i);
+  return once.map(({ question, blocking }) => {
+    const was = prior.find((p) => key(p.question) === key(question));
+    const ruled = rulings.find((r) => (was && r.pq === was.id) || key(r.question) === key(question));
+    const id = was?.id ?? ruled?.pq ?? `PQ-${++n}`;
+    return ruled ? { id, question, blocking, status: "answered", ruling: ruled.id } : { id, question, blocking, status: "open" };
+  });
 }
 
 /**

@@ -15,7 +15,7 @@ import { generate } from "../discovery/prototype/index.mjs";
 import { write, loadStories } from "../discovery/stories/index.mjs";
 import { Refused, readDoc, readVerdict, rulingsOf, HTML_FILE, PRD_FILE, PROTOTYPE_FILE, STORIES_FILE } from "../discovery/record/index.mjs";
 
-const { check, done } = suite("discovery-decisions · questions, agreement and rulings stories wait on", 16);
+const { check, done } = suite("discovery-decisions · questions, agreement and rulings stories wait on", 17);
 const ASIDE = { question: "Should the run sheet show each vendor's phone number?", blocking: false };
 const BLOCKER = { question: "Can a dock lead record an exception after the truck has left?", blocking: true };
 const LATER = { question: "Does a photo of the damage travel with the exception?", blocking: true };
@@ -38,8 +38,8 @@ const door = (name, args) => attempt(() => {
 const asked = (root) => (readDoc(root, PROTOTYPE_FILE)?.open_questions ?? []).map((q) => `${q.id}:${q.status}:${q.question.slice(0, 18)}`).join(" | ");
 
 /** A real build: the scripted builder writes the HTML where the runner points it and returns these questions. */
-async function build(root, open_questions) {
-  const builder = scripted({ structured: { screens: SCREENS, uncovered: ["REQ-4"], notes: "Start on the run sheet.", open_questions }, toolUses: [{ name: "Write", input: { file_path: HTML_FILE } }] });
+async function build(root, open_questions, uncovered = ["REQ-4"]) {
+  const builder = scripted({ structured: { screens: SCREENS, uncovered, notes: "Start on the run sheet.", open_questions }, toolUses: [{ name: "Write", input: { file_path: HTML_FILE } }] });
   return attempt(() => generate({ root, _query: (args) => {
     const p = resolve(args.options.cwd, HTML_FILE);
     mkdirSync(dirname(p), { recursive: true });
@@ -125,6 +125,11 @@ await withRoot({}, async (parent) => {
   const again = await door("agree", { root, by });
   const second = await stories(root);
   check("rebuilt and agreed again, the writer runs and the backlog is rewritten", !again.error && !second.out.error && second.calls === 1, `${said(again)}; ${said(second.out)}`);
+
+  await build(root, [ASIDE], []); // the PRD is unchanged; what the prototype shows is not
+  const reshaped = await stories(root);
+  check("a rebuild that changes what the prototype shows voids the agreement too: stories are refused until the PM agrees to it",
+    refused(reshaped.out, "agreement-stale") && reshaped.out.error.message.includes("prototype") && reshaped.calls === 0, said(reshaped.out));
 
   // The rewrite run: a rebuild that raises a blocking question holds the rewrite, even with the agreement still current.
   const rebuilt = await build(root, [ASIDE, LATER]);

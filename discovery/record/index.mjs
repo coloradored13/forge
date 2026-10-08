@@ -58,9 +58,35 @@ export function bumpVersion(v, part) {
   return part === "minor" ? `${ma}.${mi + 1}.0` : `${ma}.${mi}.${pa + 1}`;
 }
 
-/** The PRD's rulings as every writer, reviewer and judge after the answer door receives them (R3). */
+/** A criterion by its join id, REQ-n/AC-m, with where it sits — or null. */
+export function criterionAt(prd, ref) {
+  const [req, id] = String(ref).split("/");
+  const i = (prd.requirements ?? []).findIndex((r) => r.id === req);
+  const j = i < 0 ? -1 : (prd.requirements[i].acceptance_criteria ?? []).findIndex((ac) => ac.id === id);
+  return j < 0 ? null : { i, j, ac: prd.requirements[i].acceptance_criteria[j] };
+}
+
+/**
+ * The PRD's rulings as every writer, reviewer and judge after the answer door receives
+ * them (R3). A ruling an approved amendment has since superseded still settles its
+ * question, and says what the criterion holds now.
+ */
 export function rulingsOf(prd) {
-  return (prd.rulings ?? []).map(({ id, oq, question, answer, criterion }) => ({ id, ...(oq ? { oq } : {}), question, answer, criterion }));
+  return (prd.rulings ?? []).map(({ id, oq, question, answer, criterion, superseded_by }) => ({ id, ...(oq ? { oq } : {}), question,
+    answer: superseded_by ? `${answer} — superseded by ${superseded_by}: ${criterion} now reads "${criterionAt(prd, criterion)?.ac.statement ?? "(removed)"}"` : answer, criterion }));
+}
+
+/** The rulings and approved amendments that landed after a PRD version. */
+export function changedSince(prd, version) {
+  return [
+    ...(prd.rulings ?? []).filter((r) => cmpVersion(r.version, version) > 0).map((r) => r.id),
+    ...(prd.amendments ?? []).filter((a) => a.status === "approved" && cmpVersion(a.resulting_version, version) > 0).map((a) => a.id),
+  ];
+}
+
+/** The PM's agreement that covers the record as it stands — this PRD and this prototype — or null. */
+export function currentAgreement(prd, proto) {
+  return (prd.agreements ?? []).findLast((a) => a.prd_hash === prd.meta.content_hash && a.prototype_hash === proto?.meta?.content_hash) ?? null;
 }
 
 /**
@@ -75,10 +101,7 @@ export function staleness(root) {
   const proto = readDoc(root, PROTOTYPE_FILE);
   const stories = readDoc(root, STORIES_FILE);
   const design = readDoc(root, DESIGN_FILE);
-  const since = (version) => [
-    ...(prd.rulings ?? []).filter((r) => cmpVersion(r.version, version) > 0).map((r) => r.id),
-    ...(prd.amendments ?? []).filter((a) => a.status === "approved" && cmpVersion(a.resulting_version, version) > 0).map((a) => a.id),
-  ];
+  const since = (version) => changedSince(prd, version);
   const moved = (traced, current) => !current || traced.content_hash !== current.meta.content_hash;
   const badge = (doc, extra = {}) => {
     const traced = doc.traces.prd;

@@ -20,7 +20,7 @@ import { loadPrd, savePrd } from "../discovery/workshop/index.mjs";
 import { ledgerPath } from "../discovery/setup/index.mjs";
 import { rows as calls } from "../shared/agent-call/ledger.mjs";
 import { Refused, readDoc, readVerdict, freshVerdict, staleness, PROTOTYPE_FILE, STORIES_FILE, HTML_FILE, REVIEWS } from "../discovery/record/index.mjs";
-import { answer } from "../discovery/doors/index.mjs";
+import { answer, agree } from "../discovery/doors/index.mjs";
 import { generate, checkPrototype, GATE as PROTO_GATE, ARITHMETIC as PROTO_RULES } from "../discovery/prototype/index.mjs";
 import { write, review, checkStories, gherkinShape, GATE as STORY_GATE, REVIEW_GATE, ARITHMETIC as STORY_RULES } from "../discovery/stories/index.mjs";
 import { ask, slice, QUESTION_BUDGET } from "../delivery/intake/index.mjs";
@@ -165,8 +165,9 @@ await withRoot({}, async (parent) => {
   check("no prototype, no stories; no stories, no review — both refused before any call", noProto?.code === "no-prototype" && noStories?.code === "no-stories" && none.calls.length === 0, `${noProto?.code} ${noStories?.code}`);
 
   const root = seedProject(parent);
-  const proto = seedPrototype(root);
   answer({ root, req: "REQ-1", oq: "OQ-1", answer: "No — the door closes the record when the truck leaves.", criterion: "An exception cannot be recorded against a delivery marked departed.", by: "Brad" });
+  const proto = seedPrototype(root); // built after the ruling, and agreed: stories are written from an agreed revision
+  agree({ root, by: "Brad" });
   const prd = loadPrd(root);
   const backlog = { epics: EPICS, stories: STORIES, notes: "", open_questions: [] };
 
@@ -229,6 +230,8 @@ await withRoot({}, async (parent) => {
     /## The reviewer's findings on the previous backlog\n\nThe story-reviewer gate returned BLOCK on the previous version/.test(q3.calls[0].prompt) && /1\. \[high\/certain\] imperative-step — STORY-1/.test(q3.calls[0].prompt) && /LIKELY — a judgement call/.test(q3.calls[0].prompt) && !/OQ-1/.test(q3.calls[0].prompt.split("## The reviewer's findings")[1]));
   answer({ root, req: "REQ-2", oq: "OQ-2", answer: "The receiving lead.", by: "Brad" });
   check("the ruling moved the PRD: the backlog wears the badge naming RUL-2", staleness(root).stories.prd_moved && staleness(root).stories.since.join() === "RUL-2" && existsSync(join(root, REVIEWS, `${REVIEW_GATE}.json`)));
+  seedPrototype(root); // rebuilt from the moved PRD and agreed again before the rewrite
+  agree({ root, by: "Brad" });
   const q4 = scripted({ structured: backlog });
   await write({ root, _query: q4.query });
   check("a verdict whose PRD pin no longer matches does not ride in — the pin is checked, never the file", !/## The reviewer's findings/.test(q4.calls[0].prompt) && /RUL-2/.test(q4.calls[0].options.systemPrompt) && !staleness(root).stories.prd_moved);

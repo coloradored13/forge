@@ -1,18 +1,20 @@
-// owns: R3, R4 · discovery — the PM's two doors into a PRD after the workshop. `answer`:
-// a human's answer becomes a criterion in one operation — attributed, pinned, versioned
-// — and the ruling rides into every agent after it; nothing re-raises it (R3). `propose`
-// / `approve` / `reject`: an amendment computes its blast radius — every criterion,
-// story and screen that references what changes — and the vocabulary it introduces, at
-// mint; the PM approves the radius, not just the edit (R4). Both doors are the only way
-// the PRD moves after the line is drawn; neither edits a hash by hand.
+// owns: R3, R4 · discovery — the PM's doors into a PRD after the workshop. `answer`: a
+// human's answer becomes a criterion in one operation — attributed, pinned, versioned —
+// and the ruling rides into every agent after it; nothing re-raises it, and no extraction
+// rewrites it (R3). `propose` / `approve` / `reject`: an amendment computes its blast
+// radius — every criterion, story and screen that references what changes — and the
+// vocabulary it introduces, at mint; the PM approves the radius, not just the edit (R4).
+// `agree`: the PM's agreement names the exact PRD and prototype stories are written from.
+// After the line is drawn a ruled criterion moves only through these doors; extraction
+// may still change unruled content. No door edits a hash by hand.
 
 import { join } from "node:path";
-import { load } from "../../shared/schema/index.mjs";
+import { load, validate } from "../../shared/schema/index.mjs";
 import { canonicalize, resolve, stamp } from "../../shared/hash.mjs";
 import { deriveVerdict, pin, fit } from "../../shared/judge/index.mjs";
 import { record as recordSignal, funnelPath } from "../../shared/funnel.mjs";
 import { loadPrd, savePrd, PRD_FILE } from "../workshop/index.mjs";
-import { Refused, readDoc, saveVerdict, PROTOTYPE_FILE, STORIES_FILE, bumpVersion } from "../record/index.mjs";
+import { Refused, readDoc, saveDoc, saveVerdict, criterionAt, PROTOTYPE_FILE, STORIES_FILE, bumpVersion } from "../record/index.mjs";
 
 export const AUDIT_GATE = "amendment-audit";
 
@@ -24,14 +26,16 @@ const norm = (s) => String(s ?? "").toLowerCase().replace(/\s+/g, " ").trim();
 /**
  * @param req        the requirement the answer becomes a criterion of
  * @param oq         the open question it answers, if one — closed on the record
- * @param question   the question, when there is no OQ (or to override its wording)
+ * @param pq         the prototype question it answers, if one — marked answered on the prototype's record
+ * @param question   the question, when there is no OQ or PQ (or to override its wording)
  * @param answer     the PM's answer, as given
  * @param criterion  the criterion's wording, when the answer is not already one
  * @param by         who ruled — a ruling without a name is not a ruling
  */
-export function answer({ root, req, oq, question, answer: text, criterion, by, _now = () => new Date() }) {
+export function answer({ root, req, oq, pq, question, answer: text, criterion, by, _now = () => new Date() }) {
   if (!by?.trim()) throw new Refused("no-author", "answer: a ruling is attributed — say who answered");
   if (!text?.trim()) throw new Refused("no-answer", "answer: an answer is required");
+  if (oq && pq) throw new Refused("two-questions", "answer: one answer settles one question — name the PRD's open question or the prototype's, not both");
   const prd = loadPrd(root);
   const r = (prd.requirements ?? []).find((x) => x.id === req);
   if (!r) throw new Refused("unknown-req", `answer: ${req} is not a requirement in the PRD`);
@@ -44,6 +48,15 @@ export function answer({ root, req, oq, question, answer: text, criterion, by, _
     if (open.status !== "open") throw new Refused("already-ruled", `answer: ${oq} is ${open.status} — a settled question is not re-answered; amend the criterion it became`);
     q ||= open.question;
   }
+  let proto = null;
+  let asked = null;
+  if (pq) {
+    proto = readDoc(root, PROTOTYPE_FILE);
+    asked = (proto?.open_questions ?? []).find((x) => x.id === pq);
+    if (!asked) throw new Refused("unknown-question", `answer: ${pq} is not a question the prototype asks`);
+    if (asked.status !== "open") throw new Refused("already-ruled", `answer: ${pq} is ${asked.status}${asked.ruling ? ` by ${asked.ruling}` : ""} — a settled question is not re-answered; amend the criterion it became`);
+    q ||= asked.question;
+  }
   if (!q) throw new Refused("no-question", "answer: name the open question this answers, or state the question");
   const dup = (prd.rulings ?? []).find((x) => norm(x.question) === norm(q));
   if (dup) throw new Refused("already-ruled", `answer: ${dup.id} already ruled on "${q}" → ${dup.answer} (${dup.criterion}); amend that criterion instead`);
@@ -54,13 +67,48 @@ export function answer({ root, req, oq, question, answer: text, criterion, by, _
   if (open) open.status = "answered";
   prd.meta.version = bumpVersion(prd.meta.version, "minor");
 
-  const ruling = { id: nextId(prd.rulings ?? [], "RUL"), ...(oq ? { oq } : {}), question: q, answer: text.trim(), by: by.trim(), at, criterion: `${r.id}/${ac.id}`, version: prd.meta.version, prd_hash: "" };
+  const ruling = { id: nextId(prd.rulings ?? [], "RUL"), ...(oq ? { oq } : {}), ...(pq ? { pq } : {}), question: q, answer: text.trim(), by: by.trim(), at, criterion: `${r.id}/${ac.id}`, version: prd.meta.version, prd_hash: "" };
   prd.rulings = [...(prd.rulings ?? []), ruling];
   prd.flags.push({ at, section: "requirements", kind: "note", note: `${ruling.id} by ${ruling.by}: "${q}" → ${ruling.answer} · became ${ruling.criterion}` });
   stamp(prd);
   ruling.prd_hash = prd.meta.content_hash;
+  if (asked) {
+    Object.assign(asked, { status: "answered", ruling: ruling.id });
+    const v = validate("prototype", proto); // checked before either record moves
+    if (!v.ok) throw new Refused("prototype-invalid", `answer: the prototype's record does not fit its schema — ${v.errors.slice(0, 5).join("; ")}`, v.errors);
+  }
   savePrd(root, prd);
+  if (asked) saveDoc(root, PROTOTYPE_FILE, "prototype", proto);
   return { ruling, requirement: r.id, criterion: ac, prd };
+}
+
+/**
+ * What an extraction may do to a criterion a ruling made (R3): nothing. A removal is
+ * refused, naming it. A rewording is put back and held as a proposal through the amend
+ * door, minted against the extraction's own result so the PM can approve it as it
+ * stands. Returns the minted amendments and audits, for the caller to file once the PRD
+ * is written.
+ */
+export function holdRulings({ prd, next, root, key, at }) {
+  const removed = [];
+  const reworded = [];
+  for (const r of prd.rulings ?? []) {
+    const was = criterionAt(prd, r.criterion);
+    const now = criterionAt(next, r.criterion);
+    if (!was) continue;
+    if (!now) removed.push(r);
+    else if (now.ac.statement !== was.ac.statement) {
+      reworded.push({ r, target: `/requirements/${now.i}/acceptance_criteria/${now.j}/statement`, to: now.ac.statement });
+      now.ac.statement = was.ac.statement;
+    }
+  }
+  if (removed.length) throw new Refused("ruled-criterion", `workshop: the extraction for ${key} removes ${removed.map((r) => `${r.criterion}, which ${r.id} settled`).join("; ")} — a ruled criterion changes only through the amend door`, removed);
+  if (!reworded.length) return [];
+  stamp(next);
+  const proto = readDoc(root, PROTOTYPE_FILE);
+  const stories = readDoc(root, STORIES_FILE);
+  return reworded.map(({ r, target, to }) => mint({ prd: next, proto, stories, target, to, at, by: "workshop", origin: "workshop",
+    rationale: `The ${key} extraction reworded ${r.criterion}, which ${r.id} settled ("${r.question}" → ${r.answer}). Held for the PM.` }));
 }
 
 // ── R4 · amend ──
@@ -162,9 +210,8 @@ export function auditOf(amendment) {
 const material = (prd, target) => prd["x-drift-checked"].some((p) => target === p || target.startsWith(`${p}/`) || p.startsWith(`${target}/`));
 
 /**
- * Mint an amendment: resolve the target (or where it will be added), compute the
- * radius and the vocabulary it introduces, audit it, and put it on the record as
- * proposed. Nothing in the PRD's content moves here.
+ * Propose an amendment: put it on the record as proposed, its audit filed beside it.
+ * Nothing in the PRD's content moves here.
  */
 export function propose({ root, target, to, rationale, by, origin = "pm", _now = () => new Date() }) {
   if (!by?.trim()) throw new Refused("no-author", "propose: an amendment is attributed — say who proposes it");
@@ -172,6 +219,20 @@ export function propose({ root, target, to, rationale, by, origin = "pm", _now =
   if (typeof target !== "string" || !target.startsWith("/") || target === "/") throw new Refused("no-target", "propose: target is a JSON pointer into the PRD's content");
   if (to === undefined) throw new Refused("no-change", "propose: say what the target will hold");
   const prd = loadPrd(root);
+  const { amendment, audit } = mint({ prd, proto: readDoc(root, PROTOTYPE_FILE), stories: readDoc(root, STORIES_FILE), target, to, rationale, by, origin, at: _now().toISOString() });
+  saveVerdict(root, audit, join(AUDIT_GATE, amendment.id));
+  savePrd(root, prd);
+  if (origin === "delivery") recordSignal(funnelPath(root), { signal: "delivery-amendment", id: amendment.id, target: amendment.target, material: amendment.material }, _now);
+  return { amendment, audit };
+}
+
+/**
+ * Mint an amendment on a PRD in hand: resolve the target (or where it will be added),
+ * compute the radius and the vocabulary it introduces, audit it, and append it as
+ * proposed against the PRD as it stands. The caller has checked the arguments, and saves
+ * the PRD and files the audit.
+ */
+export function mint({ prd, proto, stories, target, to, rationale, by, origin, at }) {
   const top = `/${target.split("/")[1]}`;
   if (forbiddenTargets().includes(top)) throw new Refused("forbidden-target", `propose: ${top} is the runner's record, not the PRD's content — it is written by the doors, never amended`);
 
@@ -187,9 +248,6 @@ export function propose({ root, target, to, rationale, by, origin = "pm", _now =
     adds = true;
   }
 
-  const proto = readDoc(root, PROTOTYPE_FILE);
-  const stories = readDoc(root, STORIES_FILE);
-  const at = _now().toISOString();
   const amendment = {
     id: nextId(prd.amendments ?? [], "AMD"), target: pointer, adds, ...(adds ? {} : { from }), to, rationale: rationale.trim(), by: by.trim(), at, origin,
     material: material(prd, pointer),
@@ -198,10 +256,7 @@ export function propose({ root, target, to, rationale, by, origin = "pm", _now =
     status: "proposed", against_version: prd.meta.version, against_hash: prd.meta.content_hash,
   };
   const audit = { ...auditOf(amendment), judged: [pin({ id: prd.id, path: PRD_FILE, doc: prd })] };
-  saveVerdict(root, audit, join(AUDIT_GATE, amendment.id));
   prd.amendments = [...(prd.amendments ?? []), amendment];
-  savePrd(root, prd);
-  if (origin === "delivery") recordSignal(funnelPath(root), { signal: "delivery-amendment", id: amendment.id, target: pointer, material: amendment.material }, _now);
   return { amendment, audit };
 }
 
@@ -234,15 +289,40 @@ export function approve({ root, id, by, radius, _now = () => new Date() }) {
   if (audit.verdict === "block") throw new Refused("audit-blocked", `approve: the audit blocks ${id} — ${audit.findings.map((f) => f.rule).join(", ")}`, audit);
 
   const at = _now().toISOString();
+  const ruled = (prd.rulings ?? []).filter((r) => !r.superseded_by).map((r) => [r, criterionAt(prd, r.criterion)?.ac.statement]);
   const parentPtr = a.target.replace(/\/[^/]*$/, "");
   const parent = resolve(prd, parentPtr);
   const last = a.target.slice(parentPtr.length + 1);
   if (Array.isArray(parent)) parent[Number(last)] = structuredClone(a.to); else parent[last] = structuredClone(a.to);
+  // A ruling whose criterion this changes stays on the record as history, superseded by it (R3).
+  const superseded = ruled.filter(([r, was]) => criterionAt(prd, r.criterion)?.ac.statement !== was).map(([r]) => Object.assign(r, { superseded_by: a.id }).id);
   prd.meta.version = bumpVersion(prd.meta.version, a.material ? "minor" : "patch");
   Object.assign(a, { status: "approved", radius: now, resulting_version: prd.meta.version, decided: { by: by.trim(), at } });
-  prd.flags.push({ at, section: parentPtr.split("/")[1] ?? "prd", kind: "note", note: `${a.id} approved by ${by.trim()} → ${prd.meta.version}: ${a.rationale}${expected.length ? ` · radius ${expected.join(", ")}` : ""}` });
+  prd.flags.push({ at, section: parentPtr.split("/")[1] ?? "prd", kind: "note", note: `${a.id} approved by ${by.trim()} → ${prd.meta.version}: ${a.rationale}${expected.length ? ` · radius ${expected.join(", ")}` : ""}${superseded.length ? ` · supersedes ${superseded.join(", ")}` : ""}` });
   savePrd(root, prd);
   return { amendment: a, prd };
+}
+
+// ── agree ──
+
+/**
+ * The PM agrees to the record as it stands: this PRD and the prototype built from it.
+ * Refused without a prototype, or with one built from an older PRD — the PM agrees to
+ * what they have seen. Stories are written only under a current agreement; a later
+ * change to either record voids it.
+ */
+export function agree({ root, by, _now = () => new Date() }) {
+  if (!by?.trim()) throw new Refused("no-author", "agree: an agreement is attributed — say who agrees");
+  const prd = loadPrd(root);
+  const proto = readDoc(root, PROTOTYPE_FILE);
+  if (!proto) throw new Refused("no-prototype", "agree: there is no prototype — the PM agrees to what they have seen, so build it first");
+  if (proto.traces.prd.content_hash !== prd.meta.content_hash) throw new Refused("prototype-stale", `agree: the prototype was built from PRD ${proto.traces.prd.version}, and the PRD is ${prd.meta.version} — rebuild it, then agree to what it shows`);
+  const at = _now().toISOString();
+  const agreement = { id: nextId(prd.agreements ?? [], "AGR"), by: by.trim(), at, prd_version: prd.meta.version, prd_hash: prd.meta.content_hash, prototype_hash: proto.meta.content_hash };
+  prd.agreements = [...(prd.agreements ?? []), agreement];
+  prd.flags.push({ at, section: "prd", kind: "note", note: `${agreement.id} by ${agreement.by}: agreed PRD ${prd.meta.version} and the prototype built from it` });
+  savePrd(root, prd);
+  return { agreement, prd };
 }
 
 export function reject({ root, id, by, reason, _now = () => new Date() }) {

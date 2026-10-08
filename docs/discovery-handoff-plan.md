@@ -55,6 +55,8 @@ Milestones are sequential and independently reviewable. They are scope units, no
 
 **Merge order:** PR #58 never merges by itself. DH1a branches from #58's head. DH1a counts as green only when the full `npm run evals` passes, including `discovery-loop`. D01/D02 assertions may be tightened, never loosened; the DH1a PR lists every test edit as old → new. Close #58 with a pointer when DH1a's PR opens.
 
+**Split (owner decision, 2026-10-08):** DH1a ships as two PRs, each with its own agreed estimate. DH1a.1 covers D01, D02 and the agreement checkpoint, and carries #58 to `main`. DH1a.2 covers D03 and D05 and stacks on it. Estimates and results are in [the DH1a evidence](discovery-dh1a-evidence.md).
+
 ### DH1a — Core reaction-to-agreement logic with scripted tests
 
 **Deliver:** domain logic for feedback, proposed changes, approval, agreement and story prerequisites, exercised through real functions with scripted model responses. This is the first implementation milestone after the DH0 red-test review.
