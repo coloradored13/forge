@@ -1,4 +1,4 @@
-# M0: D01 and D02 red-test evidence
+# DH0 (originally M0): D01 and D02 red-test evidence
 
 Review boundary: tests and documentation only. No application, schema, dependency, runner or existing helper changes. No live pipeline model calls. `docs/round-two.md` is superseded and was not used.
 
@@ -67,8 +67,14 @@ cp evals/discovery-loop.mjs "$baseline/evals/discovery-loop.mjs"
 
 ## Plan review status
 
-The plan incorporates the unambiguous owner revisions: move launch/setup recovery into M1; split M1 into scripted core logic and then console/package/isolation; agree size caps before each milestone; stop above a 50% overrun.
+The [handoff plan](discovery-handoff-plan.md) incorporates the owner's requested revisions using the complete feedback supplied in `brief-for-astra.md`: launch/setup recovery in DH1b, separate core and console PRs, agreed estimates and review stops, staged prototype output with no builder project-write access, real-step positive/negative tests, one Discovery flow, limited legacy export retention, hidden tracker export, separately invoked browser checks, and one cold human read at DH4. Milestone labels now use DH to distinguish earlier Forge milestones; branch/test filenames retain their original M0 names.
 
-The owner said they would supply corrections to the truncated text for revisions d–h. Those interpretations remain pending. They must be resolved in the plan before later implementation; this M0 does not implement staging, launch, browser suites, export changes, or agent/human evaluation changes.
+The attachment is review feedback, not blanket authorization for additional implementation. Its detailed DH0 fixture prescription differs from the already completed suite:
 
-Stop here for owner review. No fixes are part of this PR's M0 authorization. Live-model evaluation is scheduled separately.
+- The current suite uses one cancellation requirement and real setup/workshop/prototype functions. It does not add `seedBooking()`, change shared fixtures, or add unused vague/refined constants. The broader four-requirement fixture remains future acceptance work.
+- D01 combines refusal, zero writer calls and no persisted story artifact in one check. It does not yet assert that the refusal names the blocking question, which the feedback explicitly requests. That assertion remains a test-strengthening item for review; the current red result establishes the missing gate, not the eventual quality of its explanation.
+- D02's passing control changes an unrelated context field, not a different unruled criterion. It proves benign extraction remains possible but does not establish the feedback's stronger criterion-edit control. The violating case does preserve the ruled criterion ID and inspect the persisted decision and ruling after real extraction.
+
+No tests were changed in response to the attachment, and no new test run is claimed for these documentation revisions. The evidence above remains the recorded result for the unchanged suite. This DH0 does not implement staging, launch, browser suites, export changes, or agent/human evaluation changes.
+
+Stop here for owner review. No fixes are part of this PR's DH0 authorization. Live-model evaluation is scheduled separately.
