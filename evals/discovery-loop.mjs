@@ -14,10 +14,10 @@ import { refusalHtml, esc } from "../shared/console/index.mjs";
 import { setupProject } from "../discovery/setup/index.mjs";
 import { openPrd, turn, extract, loadPrd, appendTranscript, WorkshopRefused } from "../discovery/workshop/index.mjs";
 import { section } from "../discovery/workshop/sections.mjs";
-import { answer } from "../discovery/doors/index.mjs";
+import * as doors from "../discovery/doors/index.mjs";
 import { generate, GATE as PROTOTYPE_GATE } from "../discovery/prototype/index.mjs";
 import { write, loadStories, GATE as STORY_GATE } from "../discovery/stories/index.mjs";
-import { Refused, readDoc, readVerdict, HTML_FILE, PROTOTYPE_FILE, STORIES_FILE } from "../discovery/record/index.mjs";
+import { Refused, readDoc, readVerdict, HTML_FILE, PRD_FILE, PROTOTYPE_FILE, STORIES_FILE } from "../discovery/record/index.mjs";
 
 const { check, done } = suite("discovery-loop · D01 a blocking question holds the stories, D02 a ruling survives extraction", 11);
 const QUESTION = "Can a member cancel a booking after pickup?";
@@ -91,6 +91,7 @@ for (const blocking of [false, true]) {
         for (const w of writes) { const p = resolve(args.options.cwd, w.input.file_path); mkdirSync(dirname(p), { recursive: true }); writeFileSync(p, HTML); }
         return builder.query(args);
       } });
+      doors.agree({ root, by: "PM" }); // both runs agree the revision; `blocking` stays the only difference
       return root;
     });
     const root = setup.value;
@@ -109,7 +110,7 @@ for (const blocking of [false, true]) {
         && loadStories(root)?.stories?.[0]?.id === "STORY-1", describe(out));
       return;
     }
-    const refused = refusal(out.error) && !["no-line", "no-prototype"].includes(out.error.code);
+    const refused = refusal(out.error) && !["no-line", "no-prototype", "no-agreement", "agreement-stale"].includes(out.error.code);
     const untouched = readFileSync(join(root, PROTOTYPE_FILE), "utf8") === before;
     check(gates[0], refused && writer.calls.length === 0 && !existsSync(join(root, STORIES_FILE)) && untouched,
       `${describe(out)}; writer calls=${writer.calls.length}; stories persisted=${existsSync(join(root, STORIES_FILE))}; prototype record unchanged=${untouched}`);
@@ -128,7 +129,7 @@ for (const mode of ["control", "contradict", "remove"]) {
     }[mode];
     const setup = await attempt(async () => {
       const root = await project(parent, [RETURNS, cancel("REQ-2")]);
-      const ruled = answer({ root, req: "REQ-2", question: QUESTION, answer: "No.", criterion: DECISION, by: "PM" });
+      const ruled = doors.answer({ root, req: "REQ-2", question: QUESTION, answer: "No.", criterion: DECISION, by: "PM" });
       // extract() is the step under test and its input is the section transcript, so seed that.
       appendTranscript(root, "requirements", { at: AT, from: "pm", text: `Keep the cancellation decision unchanged. Add this context: ${NOTE}` });
       appendTranscript(root, "requirements", { at: AT, from: "workshop", text: "I will keep the decision and add the context.", mode: "socratic", signals: ["complete"] });
@@ -148,7 +149,9 @@ for (const mode of ["control", "contradict", "remove"]) {
     if (!ready) { check(gate, false, NOT_RUN); return; }
 
     const extractor = scripted({ structured: candidate });
+    const prdBefore = readFileSync(join(root, PRD_FILE), "utf8");
     const out = await attempt(() => extract({ root, key: "requirements", _query: extractor.query }));
+    const untouched = readFileSync(join(root, PRD_FILE), "utf8") === prdBefore;
     const after = loadPrd(root);
     const was = before.rulings.find((x) => x.id === ruled.ruling.id);
     const now = after.rulings?.find((x) => x.id === ruled.ruling.id);
@@ -165,8 +168,8 @@ for (const mode of ["control", "contradict", "remove"]) {
     const proposal = (after.amendments ?? []).find((a) => a.status === "proposed" && a.radius?.criteria?.includes(RULED)
       && (mode === "remove" || JSON.stringify(a.to).includes(CONTRARY)));
     const applied = JSON.stringify([after.requirements, after.surfaces, after.mvp]).includes(CONTRARY);
-    check(gate, extractor.calls.length === 1 && preserved && !applied && (named || (!out.error && !!proposal)),
-      `${state}; contrary text applied=${applied}; refusal names it=${named}; pending proposal=${proposal?.id ?? "none"}`);
+    check(gate, extractor.calls.length === 1 && preserved && !applied && ((named && untouched) || (!out.error && !!proposal)),
+      `${state}; contrary text applied=${applied}; refusal names it=${named}; record unchanged=${untouched}; pending proposal=${proposal?.id ?? "none"}`);
   });
 }
 
