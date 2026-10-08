@@ -41,17 +41,17 @@ Milestones are sequential and independently reviewable. They are scope units, no
 
 **Current authorization:** commit this revised plan on a fresh branch from `main`, add only D01/D02 using `scripted()` and existing functions, show assertion failures against unchanged `f8ad980`, and stop for review. Do not fix the defects, add browser tests, change schemas, or make live model calls. Real-model evaluation is scheduled separately. Truncated plan instructions remain pending clarification and are not inferred as authorization.
 
-**Deliver:** concrete acceptance examples, two input variants for one small product, and a short description of the handoff's authority. The acceptance document supplies the initial cases and proposed pilot targets; these targets must be fixed before evaluating the pilot.
+**Deliver:** only D01/D02 failing regressions, their passing controls, and the evidence needed for review. The wider acceptance document remains a proposal; vague/refined paired-input and full-pilot fixtures are deferred to their later milestones.
 
 **Work:**
 - Read the current code at the recorded revision and run `npm run evals` once before implementation. Preserve existing user work.
-- Use a shared-equipment booking example: users reserve an item; staff mark pickup; cancellation is initially ambiguous. Keep three product requirements plus one durability criterion. Prepare a vague seed and a detailed seed that can reach the same PM-approved behavior.
+- Use the smallest shared-equipment cancellation fixture needed to expose D01/D02. Build its state through the real setup, workshop, extraction, prototype and ruling functions with `scripted()`; do not seed the final product records directly.
 - Record the desired learning moment: the PM sees cancellation after pickup, rejects it, and chooses cancellation only before pickup. Do not treat this desired outcome as instructions every real PM must choose.
 - Express the critical tests through existing public routes/functions and scripted model seams. Add no external account or paid model requirement to ordinary CI.
 
-**Touches:** existing `evals/_harness.mjs`, reusable fixture helpers, and a new focused `evals/discovery-loop.mjs` when implementation starts. Use the current test runner's explicit expected-check counts.
+**Touches:** add only `evals/discovery-loop.mjs`, reusing existing `suite()`, `scripted()` and `withRoot()` without changing the harness, runner, schemas or application. Use explicit expected-check counts. Each property has a passing control and a violating example; the root-level suite intentionally makes ordinary evals red until a separately reviewed fix.
 
-**Exit:** D01/D02 demonstrate the missing behavior through assertion failures on the existing flow; unrelated baseline failures are identified separately. Fixture expectations distinguish product decisions from incidental wording. No claim of successful user experience yet.
+**Exit:** D01/D02 demonstrate the missing behavior through assertion failures on unchanged main at `f8ad980`; unrelated baseline failures are identified separately. Record results in [the M0 evidence](discovery-m0-evidence.md), commit the tests, and stop for review. Fix nothing and make no live model calls. Fixture expectations distinguish product decisions from incidental wording. No claim of successful user experience yet.
 
 ### M1a — Core reaction-to-agreement logic with scripted tests
 

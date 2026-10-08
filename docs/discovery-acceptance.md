@@ -1,6 +1,6 @@
 # Acceptance specification: Discovery through handoff
 
-Status: proposed tests and pilot rubric. These cases have not yet been implemented or executed. They define pipeline success, not proof that a future built product satisfies its specification.
+Status: D01/D02 now have intentionally failing M0 regressions in [the Discovery loop suite](../evals/discovery-loop.mjs); see [the M0 evidence](discovery-m0-evidence.md). The remaining cases are proposed and unexecuted. These define pipeline success, not proof that a future built product satisfies its specification.
 
 See the [workflow summary](discovery-workflow.md) and [build plan](discovery-build-plan.md). Case IDs below are local references for this work, not additions to Forge's global rule registry.
 
