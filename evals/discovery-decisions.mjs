@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 // owns: R3, R4, R13 · shared — eval: discovery-decisions. The decisions stories wait on:
-// a prototype question carries a runner-owned id and status and is answered only through
-// the answer door; stories need the PM's agreement on the exact revision, and a change
-// that moves the PRD or the prototype voids it; a ruled criterion the PM's own words
-// contradict is held as a proposal, and approving it supersedes the ruling on the record.
+// a prototype question carries a runner-owned id, issued once, and a status, and is
+// answered only through the answer door; a rebuild can neither drop nor downgrade a
+// blocker; stories need the PM's agreement on the exact revision, and a change that moves
+// the PRD or the prototype voids it; a ruled criterion the PM's own words contradict is
+// held as a proposal, and approving it supersedes the ruling on the record.
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -13,10 +14,13 @@ import { loadPrd, extract, appendTranscript, WorkshopRefused } from "../discover
 import * as doors from "../discovery/doors/index.mjs";
 import { generate } from "../discovery/prototype/index.mjs";
 import { write, loadStories } from "../discovery/stories/index.mjs";
+import { splitReraised } from "../shared/judge/index.mjs";
 import { Refused, readDoc, readVerdict, rulingsOf, HTML_FILE, PRD_FILE, PROTOTYPE_FILE, STORIES_FILE } from "../discovery/record/index.mjs";
 
-const { check, done } = suite("discovery-decisions · questions, agreement and rulings stories wait on", 17);
+const { check, done } = suite("discovery-decisions · questions, agreement and rulings stories wait on", 22);
 const ASIDE = { question: "Should the run sheet show each vendor's phone number?", blocking: false };
+const GROUPED = { question: "Should the run sheet group deliveries by vendor?", blocking: false };
+const PALLETS = { question: "Should the run sheet show the expected pallet count?", blocking: false };
 const BLOCKER = { question: "Can a dock lead record an exception after the truck has left?", blocking: true };
 const LATER = { question: "Does a photo of the damage travel with the exception?", blocking: true };
 const DECISION = "An exception cannot be recorded after the truck has left.";
@@ -78,7 +82,12 @@ await withRoot({}, async (parent) => {
     !ruled.error && ruled.value.ruling.pq === "PQ-2" && ruled.value.ruling.question === BLOCKER.question && ruled.value.ruling.criterion === "REQ-1/AC-3"
       && pq2?.status === "answered" && pq2?.ruling === ruled.value.ruling.id, `${said(ruled)}; ${asked(root)}`);
 
-  const again = { prd: bytes(root, PRD_FILE), out: await attempt(() => doors.answer({ root, pq: "PQ-2", req: "REQ-1", answer: "Yes.", by })) };
+  const finding = (subject, evidence) => ({ severity: "high", confidence: "certain", rule: "x", subject, summary: `about ${subject}`, evidence, remedy: "r" });
+  const split = splitReraised([finding("PQ-2", "still unanswered"), finding("REQ-1/AC-3", "the run sheet still records it; see PQ-2")], rulingsOf(loadPrd(root)));
+  check("a judge finding about the answered prototype question re-raises its ruling; one about the criterion it became stands, whatever it cites",
+    split.reraised.map((f) => `${f.subject}:${f.ruling}`).join() === `PQ-2:${ruled.value?.ruling?.id}` && split.kept.map((f) => f.subject).join() === "REQ-1/AC-3", JSON.stringify(split));
+
+  const again ={ prd: bytes(root, PRD_FILE), out: await attempt(() => doors.answer({ root, pq: "PQ-2", req: "REQ-1", answer: "Yes.", by })) };
   check("a prototype question already answered is not answered again, and the PRD is byte-identical",
     refused(again.out, "already-ruled") && bytes(root, PRD_FILE) === again.prd, said(again.out));
 
@@ -87,6 +96,43 @@ await withRoot({}, async (parent) => {
   const kept = readDoc(root, PROTOTYPE_FILE)?.open_questions ?? [];
   check("a settled question asked again keeps its id and stays answered, even after a rebuild dropped it; a new question never takes an id a ruling names",
     kept[0]?.id === "PQ-1" && kept[1]?.id === "PQ-2" && kept[1]?.status === "answered" && kept[1]?.ruling === "RUL-1" && kept[2]?.id === "PQ-3" && kept[2]?.status === "open", asked(root));
+});
+
+// ── an id is issued once: a question that went away does not lend its id to the next ──
+await withRoot({}, async (parent) => {
+  const root = seedProject(parent);
+  await build(root, [ASIDE, GROUPED]);
+  await build(root, [ASIDE]);
+  await build(root, [ASIDE, PALLETS]);
+  const before = { prd: bytes(root, PRD_FILE), proto: bytes(root, PROTOTYPE_FILE) };
+  const pallets = readDoc(root, PROTOTYPE_FILE)?.open_questions?.find((q) => q.question === PALLETS.question);
+  const stale = await attempt(() => doors.answer({ root, pq: "PQ-2", req: "REQ-1", answer: "Yes — group them by vendor.", by }));
+  check("no id is issued twice: after [A, B] → [A] → [A, C], C takes a new id, and a stale answer to B's is refused with both records byte-identical",
+    pallets?.id === "PQ-3" && stale.error instanceof Refused && bytes(root, PRD_FILE) === before.prd && bytes(root, PROTOTYPE_FILE) === before.proto, `${said(stale)}; ${asked(root)}`);
+});
+
+// ── a blocker is the PM's to settle: a rebuild can neither drop it nor downgrade it ──
+for (const [what, rebuild] of [["no longer asks an unanswered blocker", []], ["asks an unanswered blocker again as non-blocking", [{ ...BLOCKER, blocking: false }]]]) {
+  await withRoot({}, async (parent) => {
+    const root = seedProject(parent);
+    await build(root, [BLOCKER]);
+    await build(root, rebuild);
+    await door("agree", { root, by });
+    const out = await stories(root);
+    check(`a rebuild that ${what} does not settle it: stories are refused naming it, before the writer runs`,
+      refused(out.out, "blocking-question") && out.out.error.message.includes(BLOCKER.question) && out.calls === 0 && !existsSync(join(root, STORIES_FILE)), `${said(out.out)}; ${asked(root)}`);
+  });
+}
+await withRoot({}, async (parent) => {
+  const root = seedProject(parent);
+  await build(root, [BLOCKER]);
+  await build(root, []);
+  await attempt(() => doors.answer({ root, req: "REQ-1", question: BLOCKER.question, answer: "No.", criterion: DECISION, by })); // by its wording, not its id
+  await build(root, []);
+  await door("agree", { root, by });
+  const out = await stories(root, [RULED_SCENARIO]);
+  check("an answer settles a blocker the rebuild kept, even one given by its wording rather than its id: rebuilt and agreed, the writer runs once",
+    !out.out.error && out.calls === 1 && loadStories(root)?.stories?.length === 2, `${said(out.out)}; ${asked(root)}`);
 });
 
 // ── the agreement: stories are written from the revision the PM agreed, and nothing else ──
