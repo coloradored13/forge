@@ -72,7 +72,7 @@ export function criterionAt(prd, ref) {
  * question, and says what the criterion holds now.
  */
 export function rulingsOf(prd) {
-  return (prd.rulings ?? []).map(({ id, oq, question, answer, criterion, superseded_by }) => ({ id, ...(oq ? { oq } : {}), question,
+  return (prd.rulings ?? []).map(({ id, oq, pq, question, answer, criterion, superseded_by }) => ({ id, ...(oq ? { oq } : {}), ...(pq ? { pq } : {}), question,
     answer: superseded_by ? `${answer} — superseded by ${superseded_by}: ${criterion} now reads "${criterionAt(prd, criterion)?.ac.statement ?? "(removed)"}"` : answer, criterion }));
 }
 

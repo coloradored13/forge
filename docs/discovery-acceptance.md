@@ -34,7 +34,7 @@ Every D-case has a violating run the gate refuses and a passing run it allows. S
 
 ### D01 — Unresolved product choices block final stories
 
-**Given** the prototype raises whether cancellation is allowed after pickup, marked as a material product question, **when** final stories are requested, **then** no writer call starts and the PM sees the question and an action to resolve it. After a PM-approved answer and current agreement, story generation is allowed. The interviewer, a supplied document, or a generated signature cannot stand in for the PM's agreement.
+**Given** the prototype raises whether cancellation is allowed after pickup, marked as a material product question, **when** final stories are requested, **then** no writer call starts and the PM sees the question and an action to resolve it. After a PM-approved answer and current agreement, story generation is allowed. The interviewer, a supplied document, or a generated signature cannot stand in for the PM's agreement. Nor can a rebuild settle the question: one that no longer asks it, or asks it as non-blocking, leaves it blocking until the PM answers it.
 
 First regression: exercise the unanswered prototype-question branch using today's story writer. Add the agreement branch as the agreement checkpoint is implemented. When the agreement checkpoint lands, both D01 runs record a current PM agreement; `blocking` stays the only difference between them.
 

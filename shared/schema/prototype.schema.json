@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://forge.local/schema/prototype.schema.json",
   "title": "Prototype",
-  "description": "The PRD made tangible enough that a PM can find what is wrong with it: one self-contained HTML file a person clicks through, plus this record of what it shows. Every shipped surface inside the MVP line has a screen; every functional requirement inside the line is on a screen or listed as uncovered — a non-functional requirement or a constraint is not a screen's to show. The builder writes the file and this record's screens, uncovered, notes and open questions; the runner owns identity, traces, the hashes, and each question's id and status.",
+  "description": "The PRD made tangible enough that a PM can find what is wrong with it: one self-contained HTML file a person clicks through, plus this record of what it shows. Every shipped surface inside the MVP line has a screen; every functional requirement inside the line is on a screen or listed as uncovered — a non-functional requirement or a constraint is not a screen's to show. The builder writes the file and this record's screens, uncovered, notes and open questions; the runner owns identity, traces, the hashes, and each question's id and status, and keeps a blocker on the record until the PM answers it.",
   "type": "object",
   "required": ["id", "meta", "traces", "file", "file_hash", "screens", "uncovered", "notes", "open_questions", "x-drift-checked"],
   "additionalProperties": false,
@@ -63,14 +63,15 @@
         "required": ["id", "question", "blocking", "status"],
         "additionalProperties": false,
         "properties": {
-          "id": { "type": "string", "pattern": "^PQ-\\d+$", "x-runner": true, "description": "Minted by the runner. The same question keeps its PQ-n across rebuilds, and an id a ruling names is never reused." },
+          "id": { "type": "string", "pattern": "^PQ-\\d+$", "x-runner": true, "description": "Minted by the runner and never issued twice. The same question keeps its PQ-n from build to build; one a ruling settled keeps the ruling's." },
           "question": { "type": "string" },
-          "blocking": { "type": "boolean", "description": "True if stories cannot be written until this is answered." },
+          "blocking": { "type": "boolean", "description": "True if stories cannot be written until the PM answers this. A blocker stays one until answered: a rebuild that asks it as non-blocking, or no longer asks it, does not settle it." },
           "status": { "enum": ["open", "answered"], "x-runner": true, "description": "Open until the PM answers it through the answer door." },
           "ruling": { "type": "string", "pattern": "^RUL-\\d+$", "x-runner": true, "description": "The ruling that answered it." }
         }
       }
     },
+    "questions_issued": { "type": "integer", "minimum": 0, "x-runner": true, "description": "The highest PQ number issued so far; a new question takes the next, so no id ever names a second question." },
     "x-drift-checked": {
       "type": "array",
       "x-runner": true,

@@ -40,7 +40,7 @@ export const JUDGE_ROLE = { discovery: "reviewer", delivery: "judge" };
 export function splitReraised(findings, rulings = []) {
   const kept = [], reraised = [];
   for (const f of findings) {
-    const hit = rulings.find((r) => f.subject === r.id || (r.oq && f.subject === r.oq));
+    const hit = rulings.find((r) => f.subject === r.id || (r.oq && f.subject === r.oq) || (r.pq && f.subject === r.pq));
     if (hit) reraised.push({ ...f, ruling: hit.id }); else kept.push(f);
   }
   return { kept, reraised };
