@@ -121,6 +121,7 @@ export function boardView(root) {
     artifacts, gates: artifacts.flatMap((a) => a.gates),
     requirements: (prd.requirements ?? []).map((r) => ({ id: r.id, statement: r.statement, status: r.status, inside: (prd.mvp?.inside ?? []).includes(r.id), criteria: r.acceptance_criteria ?? [] })),
     open_questions: prd.open_questions ?? [],
+    prototype_questions: (docs.prototype?.open_questions ?? []).filter((q) => q.id && q.status === "open"),
     rulings: rulingsOf(prd),
     // A proposal shows the radius as it stands now — what approving it acknowledges — never the one minted then.
     amendments: (prd.amendments ?? []).map((a) => ({ ...a, radius_now: a.status === "proposed" ? radiusOf({ prd, proto: docs.prototype, stories: docs.stories, target: a.target, from: a.adds ? undefined : a.from }) : null })),

@@ -308,13 +308,15 @@
         "properties": {
           "id": { "type": "string", "pattern": "^RUL-\\d+$" },
           "oq": { "type": "string", "pattern": "^OQ-\\d+$", "description": "The open question this answers, when it answers one." },
+          "pq": { "type": "string", "pattern": "^PQ-\\d+$", "description": "The prototype question this answers, when it answers one." },
           "question": { "type": "string" },
           "answer": { "type": "string" },
           "by": { "type": "string" },
           "at": { "type": "string" },
           "criterion": { "type": "string", "pattern": "^REQ-\\d+/AC-\\d+$", "description": "The acceptance criterion the answer became." },
           "version": { "type": "string", "description": "The PRD version the ruling landed in." },
-          "prd_hash": { "type": "string", "description": "The PRD content hash after the ruling landed." }
+          "prd_hash": { "type": "string", "description": "The PRD content hash after the ruling landed." },
+          "superseded_by": { "type": "string", "pattern": "^AMD-\\d+$", "description": "The approved amendment that has since changed the criterion. The ruling stays on the record as history." }
         }
       }
     },
@@ -335,7 +337,7 @@
           "rationale": { "type": "string" },
           "by": { "type": "string" },
           "at": { "type": "string" },
-          "origin": { "enum": ["pm", "reviewer", "delivery"], "description": "Where the need came from. Amendments Delivery sends back are the funnel's leak (R8)." },
+          "origin": { "enum": ["pm", "reviewer", "delivery", "workshop"], "description": "Where the need came from. Amendments Delivery sends back are the funnel's leak (R8). A workshop amendment is an extraction that contradicted a ruled criterion, held for the PM." },
           "material": { "type": "boolean", "description": "True when the target is under a drift-checked pointer: approving it moves the hash and bumps the minor version." },
           "radius": {
             "type": "object",
@@ -360,6 +362,24 @@
             "additionalProperties": false,
             "properties": { "by": { "type": "string" }, "at": { "type": "string" }, "note": { "type": "string" } }
           }
+        }
+      }
+    },
+    "agreements": {
+      "type": "array",
+      "x-runner": true,
+      "description": "The PM's agreement to an exact revision — the PRD and the prototype built from it — that stories are written from. A later change to either voids it. Append-only; written by the agree door.",
+      "items": {
+        "type": "object",
+        "required": ["id", "by", "at", "prd_version", "prd_hash", "prototype_hash"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string", "pattern": "^AGR-\\d+$" },
+          "by": { "type": "string" },
+          "at": { "type": "string" },
+          "prd_version": { "type": "string" },
+          "prd_hash": { "type": "string", "description": "The PRD content hash the PM agreed to." },
+          "prototype_hash": { "type": "string", "description": "The prototype content hash the PM agreed to." }
         }
       }
     },

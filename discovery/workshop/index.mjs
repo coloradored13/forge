@@ -17,6 +17,8 @@ import { scopeOf, lineDrawn } from "../../shared/scope.mjs";
 import { loadProject, ledgerPath } from "../setup/index.mjs";
 import { SECTIONS, LINE_SECTION, section, indexOf } from "./sections.mjs";
 import { repoBrief } from "./brief.mjs";
+import { holdRulings, AUDIT_GATE } from "../doors/index.mjs";
+import { saveVerdict } from "../record/index.mjs";
 
 export const PRD_FILE = join("discovery", "prd.json");
 export const TRANSCRIPTS = join("discovery", "workshop");
@@ -277,15 +279,19 @@ export async function extract({ root, key, onEvent, _query, _sleep, _now = () =>
 
   const next = structuredClone(prd);
   for (const f of s.fields) if (f in res.structured) next[f] = res.structured[f];
+  const at = _now().toISOString();
+  // A ruled criterion is the PM's (R3): removing one is refused by name, rewording one is held as a proposal.
+  const held = holdRulings({ prd, next, root, key: s.key, at });
   const kept = new Set(existingIds(next, s.fields).map((p) => p.id));
   const dropped = prior.filter((p) => !kept.has(p.id));
   if (dropped.length) {
     throw new WorkshopRefused("ids-dropped", `workshop: the extraction for ${s.key} dropped ${dropped.map((p) => p.id).join(", ")} — ids are sticky; deferred and cut items keep theirs`, dropped);
   }
 
-  next.sections[s.key].extracted_at = _now().toISOString();
+  next.sections[s.key].extracted_at = at;
   savePrd(root, next);
-  return { section: s.key, fields: s.fields, prd: next, model: res.model, usd: res.usd };
+  for (const { amendment, audit } of held) saveVerdict(root, audit, join(AUDIT_GATE, amendment.id));
+  return { section: s.key, fields: s.fields, prd: next, held: held.map((h) => h.amendment), model: res.model, usd: res.usd };
 }
 
 /** Where the workshop stands: each section's state, and whether the line is drawn. */

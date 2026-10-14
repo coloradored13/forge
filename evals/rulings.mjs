@@ -4,6 +4,7 @@
 // into every writer and reviewer after it; a finding that re-raises it is removed and
 // counted, never shown. Both directions: the door refuses what is not a ruling, and a
 // judge run on a scripted model has its re-raises cut while its real findings stand.
+// An extraction cannot remove a ruled criterion, and its rewording is held for the PM.
 
 import { join } from "node:path";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
@@ -14,13 +15,13 @@ import { verify } from "../shared/hash.mjs";
 import { mechanics } from "../shared/prompt/index.mjs";
 import { runJudge, splitReraised } from "../shared/judge/index.mjs";
 import { rows, funnelPath } from "../shared/funnel.mjs";
-import { loadPrd } from "../discovery/workshop/index.mjs";
+import { loadPrd, extract, appendTranscript } from "../discovery/workshop/index.mjs";
 import { ledgerPath } from "../discovery/setup/index.mjs";
 import { rows as calls } from "../shared/agent-call/ledger.mjs";
 import { Refused, rulingsOf, staleness, PRD_FILE } from "../discovery/record/index.mjs";
 import { answer } from "../discovery/doors/index.mjs";
 
-const { check, done } = suite("rulings · R3 answers are spec", 31);
+const { check, done } = suite("rulings · R3 answers are spec", 33);
 
 const refusal = (fn) => { try { fn(); return null; } catch (e) { return e; } };
 
@@ -114,6 +115,25 @@ await withRoot({}, async (parent) => {
   const v2 = await runJudge({ gate: "story-reviewer", half: "discovery", stage: "stories", identity, sections: [], artifacts: [], rulings: [], funnel: funnelPath(root), cwd: root, ledger: ledgerPath(root), _query: clean.query });
   check("with no rulings a judge run records nothing and removes nothing", v2.reraised === 0 && v2.removed.length === 0 && v2.findings.length === 1 && rows(funnelPath(root)).length === 2);
   check("no model was reached: every call went through the script, and the ledger holds them", q.calls.length === 1 && clean.calls.length === 1 && existsSync(ledgerPath(root)) && calls(ledgerPath(root)).length === 2);
+});
+
+// ── the ruled-criterion guard: an extraction cannot take a ruling back ──
+await withRoot({}, async (parent) => {
+  const root = seedProject(parent);
+  answer({ root, req: "REQ-1", oq: "OQ-1", answer: "No.", criterion: "An exception cannot be recorded against a delivery marked departed.", by: "Brad" });
+  appendTranscript(root, "requirements", { at: "2026-09-04T11:00:00.000Z", from: "pm", text: "Tidy the criteria's wording." });
+  const prd = loadPrd(root);
+  const cut = (edit) => { const c = structuredClone({ requirements: prd.requirements, surfaces: prd.surfaces, mvp: prd.mvp }); edit(c.requirements[0].acceptance_criteria); return scripted({ structured: c }).query; };
+  const before = readFileSync(join(root, PRD_FILE), "utf8");
+  let gone = null;
+  try { await extract({ root, key: "requirements", _query: cut((acs) => acs.splice(2, 1)) }); } catch (e) { gone = e; }
+  check("an extraction that removes a ruled criterion is refused naming it and its ruling, and the PRD is byte-identical",
+    gone instanceof Refused && gone.code === "ruled-criterion" && /REQ-1\/AC-3/.test(gone.message) && /RUL-1/.test(gone.message) && readFileSync(join(root, PRD_FILE), "utf8") === before, gone?.message);
+  const out = await extract({ root, key: "requirements", _query: cut((acs) => { acs[2].statement = "Exceptions may be recorded after departure."; }) });
+  const after = loadPrd(root);
+  check("one that rewords it keeps the PM's words and holds the new ones as a workshop proposal on that criterion",
+    after.requirements[0].acceptance_criteria[2].statement === prd.requirements[0].acceptance_criteria[2].statement && out.held.length === 1
+      && after.amendments[0].origin === "workshop" && after.amendments[0].target === "/requirements/0/acceptance_criteria/2/statement" && after.amendments[0].to === "Exceptions may be recorded after departure.", JSON.stringify(after.amendments));
 });
 
 done();

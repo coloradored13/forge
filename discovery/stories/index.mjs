@@ -15,7 +15,7 @@ import { funnelPath } from "../../shared/funnel.mjs";
 import { scopeOf } from "../../shared/scope.mjs";
 import { loadProject, ledgerPath } from "../setup/index.mjs";
 import { loadPrd, existingIds, PRD_FILE } from "../workshop/index.mjs";
-import { Refused, readDoc, saveDoc, saveVerdict, freshVerdict, traceOf, rulingsOf, insideRequirements, renderRequirement, renderPrd, renderPrototype, renderStories, PROTOTYPE_FILE, STORIES_FILE } from "../record/index.mjs";
+import { Refused, readDoc, saveDoc, saveVerdict, freshVerdict, traceOf, rulingsOf, currentAgreement, changedSince, insideRequirements, renderRequirement, renderPrd, renderPrototype, renderStories, PROTOTYPE_FILE, STORIES_FILE } from "../record/index.mjs";
 
 const PROMPTS = join(dirname(fileURLToPath(import.meta.url)), "prompts");
 export const GATE = "story-arithmetic";
@@ -28,10 +28,12 @@ export function loadStories(root) { return readDoc(root, STORIES_FILE); }
 
 /**
  * Write or rewrite the backlog. Refused before the line is drawn and before a prototype
- * exists — the stories claim screens, so there must be screens to claim. The composer
- * has no write surface; what it returns is validated, its ids must survive from the
- * previous backlog, and the arithmetic is checked and filed beside it. A fresh
- * reviewer verdict on the previous backlog rides into the prompt (R13).
+ * exists — the stories claim screens, so there must be screens to claim. Refused, before
+ * any call, while the prototype asks a blocking question the PM has not answered, and
+ * without the PM's agreement to this exact PRD and prototype. The composer has no write
+ * surface; what it returns is validated, its ids must survive from the previous backlog,
+ * and the arithmetic is checked and filed beside it. A fresh reviewer verdict on the
+ * previous backlog rides into the prompt (R13).
  */
 export async function write({ root, notes, onEvent, _query, _sleep }) {
   const project = loadProject(root);
@@ -40,6 +42,15 @@ export async function write({ root, notes, onEvent, _query, _sleep }) {
   if (!scope) throw new Refused("no-line", "stories: the MVP line is not drawn — a backlog is what is inside it");
   const proto = readDoc(root, PROTOTYPE_FILE);
   if (!proto) throw new Refused("no-prototype", "stories: there is no prototype — stories claim the screens they happen on, so build it first");
+  const asked = (proto.open_questions ?? []).filter((q) => q.blocking && q.status !== "answered");
+  if (asked.length) throw new Refused("blocking-question", `stories: the prototype asks what the PM must decide first — ${asked.map((q) => `${q.id ?? "(no id; rebuild the prototype)"} "${q.question}"`).join("; ")}. Answer it through the answer door, then agree the revision.`, asked);
+  if (!currentAgreement(prd, proto)) {
+    const last = prd.agreements?.at(-1);
+    if (!last) throw new Refused("no-agreement", "stories: the PM has not agreed this revision — review the PRD and the prototype, then agree to them");
+    const moved = changedSince(prd, last.prd_version);
+    const what = last.prd_hash !== prd.meta.content_hash ? `the PRD has moved from ${last.prd_version} to ${prd.meta.version}${moved.length ? ` (${moved.join(", ")})` : ""}` : "the prototype has been rebuilt";
+    throw new Refused("agreement-stale", `stories: ${last.id} agreed to a revision that is no longer on the record — ${what}. Agree again before the backlog is written.`);
+  }
   const prior = loadStories(root);
   const priorIds = prior ? existingIds(prior, ["epics", "stories"]) : [];
   const review = freshVerdict(root, REVIEW_GATE);

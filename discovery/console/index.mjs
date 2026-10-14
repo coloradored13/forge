@@ -12,7 +12,7 @@ import { openPrd, turn, extract } from "../workshop/index.mjs";
 import { generate } from "../prototype/index.mjs";
 import { write as writeStories, review as reviewStories } from "../stories/index.mjs";
 import { write as writeDesign, review as reviewDesign, signoff } from "../design/index.mjs";
-import { answer, propose, approve, reject } from "../doors/index.mjs";
+import { answer, propose, approve, reject, agree } from "../doors/index.mjs";
 import { exportHandoff } from "../export/index.mjs";
 import { readDoc, renderPrd, renderPrototype, renderStories, renderDesign, HTML_FILE } from "../record/index.mjs";
 import { VIEWS, ARTIFACTS, setupView, workshopView, boardView, exportView } from "./views.mjs";
@@ -100,7 +100,7 @@ function boardPage(v) {
   const present = Object.fromEntries(v.artifacts.map((a) => [a.kind, a.present]));
   const doors = `<div class="cols">`
     + `<section><h3>Prototype</h3>${w}${form({ action: "/prototype/generate", submit: present.prototype ? "Regenerate" : "Generate", fields: [{ name: "notes", label: "notes to the writer", type: "textarea", rows: 2 }] })}</section>`
-    + `<section><h3>Stories</h3>${w}${form({ action: "/stories/write", submit: present.stories ? "Rewrite" : "Write", fields: [{ name: "notes", label: "notes to the writer", type: "textarea", rows: 2 }] })}${r}${form({ action: "/stories/review", submit: "Review" })}</section>`
+    + `<section><h3>Stories</h3>${w}${form({ action: "/doors/agree", submit: "Agree", fields: [by], note: "Agree to this PRD and the prototype built from it. Stories are written only from the revision the PM agreed." })}${form({ action: "/stories/write", submit: present.stories ? "Rewrite" : "Write", fields: [{ name: "notes", label: "notes to the writer", type: "textarea", rows: 2 }] })}${r}${form({ action: "/stories/review", submit: "Review" })}</section>`
     + `<section><h3>Design</h3>${w}${form({ action: "/design/write", submit: present.design ? "Rewrite" : "Write", fields: [{ name: "notes", label: "notes to the writer", type: "textarea", rows: 2 }] })}${r}${form({ action: "/design/review", submit: "Review" })}`
     + form({ action: "/design/signoff", submit: "Sign", fields: [by, { name: "note", label: "note" }, { name: "override_reason", label: "override a BLOCK — reason on the record", value: "" }], note: "Signing needs a fresh reviewer verdict on this exact design. Over a BLOCK, the reason is the record." }) + `</section></div>`;
 
@@ -110,6 +110,7 @@ function boardPage(v) {
     action: "/doors/answer", submit: "Answer",
     fields: [
       { name: "oq", label: "open question", type: "select", options: [["", "— state a question instead —"], ...open.map((q) => [q.id, `${q.id} ${q.question}`])] },
+      { name: "pq", label: "or a question the prototype asks", type: "select", options: [["", "—"], ...v.prototype_questions.map((q) => [q.id, `${q.id}${q.blocking ? " (blocks stories)" : ""} ${q.question}`])] },
       { name: "question", label: "the question, if not one of those" },
       { name: "req", label: "the requirement it becomes a criterion of", type: "select", required: true, options: v.requirements.map((q) => [q.id, `${q.id}${q.inside ? "" : " (past the line)"} ${q.statement}`]) },
       { name: "answer", label: "answer", type: "textarea", rows: 2, required: true },
@@ -219,9 +220,10 @@ export function routes({ root, _query, _sleep, _exec, _fetch, _env } = {}) {
     { method: "POST", path: "/design/write", handler: ({ form: f }) => work("Design", "/board", async (onEvent) => { await writeDesign({ root, notes: blank(f.notes), onEvent, ...seams }); return "/board"; }) },
     { method: "POST", path: "/design/review", handler: () => work("Design review", "/board", async (onEvent) => { await reviewDesign({ root, onEvent, ...seams }); return "/board"; }) },
     { method: "POST", path: "/design/signoff", handler: ({ form: f }) => { signoff(root, { by: f.by, note: blank(f.note), ...(blank(f.override_reason) ? { override: { reason: f.override_reason.trim() } } : {}) }); return { redirect: "/board" }; } },
-    { method: "POST", path: "/doors/answer", handler: ({ form: f }) => { answer({ root, req: f.req, oq: blank(f.oq), question: blank(f.question), answer: f.answer, criterion: blank(f.criterion), by: f.by }); return { redirect: "/board" }; } },
+    { method: "POST", path: "/doors/answer", handler: ({ form: f }) => { answer({ root, req: f.req, oq: blank(f.oq), pq: blank(f.pq), question: blank(f.question), answer: f.answer, criterion: blank(f.criterion), by: f.by }); return { redirect: "/board" }; } },
     { method: "POST", path: "/doors/propose", handler: ({ form: f }) => { propose({ root, target: f.target?.trim(), to: f.to === undefined ? undefined : jsonOrText(f.to), rationale: f.rationale, by: f.by }); return { redirect: "/board" }; } },
     { method: "POST", path: "/doors/approve", handler: ({ form: f }) => { approve({ root, id: f.id, by: f.by, radius: [].concat(f.radius ?? []) }); return { redirect: "/board" }; } },
+    { method: "POST", path: "/doors/agree", handler: ({ form: f }) => { agree({ root, by: f.by }); return { redirect: "/board" }; } },
     { method: "POST", path: "/doors/reject", handler: ({ form: f }) => { reject({ root, id: f.id, by: f.by, reason: f.reason }); return { redirect: "/board" }; } },
     { method: "GET", path: "/export", handler: () => exportPage(exportView(root)) },
     { method: "POST", path: "/export", handler: async ({ form: f }) => { await exportHandoff({ root, exit: f.exit, by: f.by, tracker: trackerOf(f), ...exportSeams }); return { redirect: "/export" }; } },
