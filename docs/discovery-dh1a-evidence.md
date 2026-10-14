@@ -41,9 +41,9 @@ Tests came first: commit `f3bfb58` added the new suite and the `discovery-loop` 
 | `rulings` | 31/31 | 33/33 |
 | `amendment-audit` | 51/51 | 52/52 |
 | `funnel` | 70/70 | 70/70 |
-| `npm run evals` | 15/16 suites | 17/17 suites at `d32fa8a` (CI); see below |
+| `npm run evals` | 15/16 suites | 17/17 suites |
 
-With the review fixes, 16 of the 17 suites pass locally. `coherence` passes the 154 checks it reaches, then stops at its first console check: this machine could not open a local socket (`EADDRNOTAVAIL`), a fault outside the change. CI is the full run.
+With the review fixes, all 17 suites pass, `coherence` 202/202. A first local run stopped `coherence` at its console checks because the machine could not open a local socket (`EADDRNOTAVAIL`, a macOS fault outside the change); after a restart it passed in full.
 
 Test edits, old → new:
 
