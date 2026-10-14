@@ -69,7 +69,7 @@ The PM reacts in plain language to the prototype they are looking at. A specific
 | `reaction-invalid` | the output doesn't fit the contract, or names a criterion or requirement that doesn't exist or sits past the line |
 | mint's own codes | passed through unchanged |
 | `prd-changed` | the guard fired |
-| `revision-moved` | the prototype record's bytes no longer match what `react` read before the call. This covers a rebuild, and an answer to the linked PQ, made while the editor was working |
+| `revision-moved` | the prototype record's bytes no longer match what `react` read before the call. This covers a rebuild, and an answer to the linked PQ, made while the editor was working. It includes a rebuild that changed only notes or questions, which leaves the content hash unchanged |
 
 **The proposal.**
 - **For a reword,** the runner mints `/requirements/i/acceptance_criteria/j/statement`.
@@ -174,6 +174,7 @@ The PM's objection cannot be bypassed by writing stories on the old meaning.
 - an added criterion keeps a model-supplied or duplicate id;
 - the ruling points at the old criterion;
 - `react` runs the model before refusing;
+- `react`'s check after the call compares only the prototype's content hash. A rebuild during the paused call that changes only notes or questions must still be refused, with the PRD bytes and the prototype content hash unchanged (from ChatGPT's review of revision 3);
 - a refusal after the call leaves an audit file or changes `prd.json`;
 - stories are written while a reaction is pending;
 - readiness ignores the prototype hash, accepts unchanged ids as current, or blocks the team exit on a stale design;
