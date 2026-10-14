@@ -91,12 +91,21 @@ The mutation check was rerun on the 18 earlier wrong versions plus nine new ones
 
 26 of the 27 are rejected by an assertion. The earlier "new ids ignore the ids rulings name" now survives: the high-water mark gives the same ids in every state the tests reach. The two differ only if `prototype.json` is deleted by hand, so the term stays as a guard for that case. `coherence` was left out of this run: this machine's ephemeral ports were exhausted (`EADDRNOTAVAIL`), so its console checks could not open a local socket and would have failed every mutant for that reason.
 
+## Review round 2 (ChatGPT, 2026-10-14, at `90c7b52`)
+
+ChatGPT retested the head independently and confirmed all three fixes, including the variant where B is a blocker: it is kept, and `PQ-2` still answers it. It answered the packet questions the first round left open:
+
+- **Q2 holds for sequential extraction but fails as an unqualified claim.** An extraction that reads the PRD, waits on the model, and saves after an answer has landed overwrites that answer. Claude reproduced this on this branch and on `81d7316`: after the answer the PRD was at v0.2.0 with RUL-1 and REQ-1/AC-3; after the delayed extraction it was back at v0.1.0, with no ruling and no AC-3. The defect predates DH1a.1. The ruled-criterion guard compares the extraction with the PRD it read, so it cannot see a ruling made after that read. See Known limits.
+- **Q4 holds.** No existing assertion was loosened.
+- **Q5 holds as acceptance wording.** It does not show that containment exists; that is DH1b's work.
+
 ## Known limits
 
 - Questions are matched by normalized wording. A builder that rewords a settled question raises a new open one; DH2's decision view is where that belongs. The same applies to a kept blocker: reworded, it is asked twice.
-- **A blocker settled outside the answer door stays open.** Only a ruling settles a prototype question. If the PM settles it another way, through an approved amendment or through the workshop and an extraction, it blocks until it is answered through the door, and that answer adds a criterion that may restate one already there. DH1a.2's D03 journey settles a reaction through an amendment, so its approval must settle the question it answers.
+- **A blocker settled outside the answer door stays open.** Only a ruling settles a prototype question. If the PM settles it another way, through an approved amendment or through the workshop and an extraction, it blocks until it is answered through the door, and that answer adds a criterion that may restate one already there. DH1a.2's D03 journey settles a reaction through an amendment, so its approval must settle the question it answers. It should name that question on the record, and it should not infer settlement from similar wording (agreed with ChatGPT in review round 2).
 - **No retire or downgrade.** For now the PM settles a blocker only by answering it. Retiring a question, or delegating it, belongs to DH2, which gives each question an owner, scope and readiness impact and holds delegation to D06's conditions.
 - The `ids-dropped` check still compares bare ids for unruled content. That is pre-existing; ruled criteria are now covered by the guard.
+- **A late extraction can overwrite a ruling (D09).** Extraction saves its result over the PRD it read at the start. An answer, approval or agreement that lands while the model is working is lost: the ruling, its criterion and the version bump all go. This predates DH1a.1. The plan puts concurrent writes in DH4, and on 2026-10-14 the owner moved a basic guard to the start of DH1a.2: extraction refuses to save over a PRD that changed after it read it. Until that lands, the ruled-criterion guard protects ruled criteria only when actions run one after another.
 - Answering a prototype question writes the PRD, then the prototype record. A crash between the two writes is DH4's interrupted-persistence case.
 - The console controls are minimal; DH1b replaces them.
 - SPEC.md is at 3,499 of its 3,500-word budget, so DH1a.2 can only add claims by tightening others.
