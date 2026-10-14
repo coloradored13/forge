@@ -1,6 +1,6 @@
 # DH1a.2 design: a reaction becomes an approved change, and stale work cannot be handed off
 
-Status: for ChatGPT's review, as PR 1 of DH1a.2, before any tests or code. Base: `main` at `e752411` (DH0 and DH1a.1 merged). Revision 2: three independent critics and a verifier checked revision 1 against the code; their confirmed findings are folded in below.
+Status: for ChatGPT's review, as PR 1 of DH1a.2, before any tests or code. Base: `main` at `e752411` (DH0 and DH1a.1 merged). Revision 3. Three independent critics and a verifier checked revision 1 against the code, and their confirmed findings went into revision 2. Revision 3 answers ChatGPT's review of revision 2 on PR #60.
 
 **Scope.** The extraction guard the owner moved here, D03 at the level of domain functions, and D05. The browser run of D03 is DH1b's.
 
@@ -69,6 +69,7 @@ The PM reacts in plain language to the prototype they are looking at. A specific
 | `reaction-invalid` | the output doesn't fit the contract, or names a criterion or requirement that doesn't exist or sits past the line |
 | mint's own codes | passed through unchanged |
 | `prd-changed` | the guard fired |
+| `revision-moved` | the prototype record's bytes no longer match what `react` read before the call. This covers a rebuild, and an answer to the linked PQ, made while the editor was working |
 
 **The proposal.**
 - **For a reword,** the runner mints `/requirements/i/acceptance_criteria/j/statement`.
@@ -136,11 +137,17 @@ The PM's objection cannot be bypassed by writing stories on the old meaning.
 | `no-agreement` / `agreement-stale` | `prd.id` | a prototype exists and no agreement covers this PRD and prototype | rebuild the prototype if it traces an older PRD, then agree | every exit |
 | `stories-stale` | `stories.id` | the stories trace another PRD or prototype | write the stories again under the current agreement | every exit |
 | `reaction-pending` | `prd.id` | a reaction's proposal is undecided | approve or reject it | every exit |
-| `design-stale` | `design.id` | the design traces other stories, prototype or PRD | regenerate the design | only `delivery` and `both`; a team takes the design as it stands |
+| `design-stale` | `design.id` | the design traces other stories, prototype or PRD | regenerate the design | only `delivery` and `both`; a team takes a stale design as it stands |
 
+- **A stale design must still match, even for a team.** The design checks (`checkDesign`) still apply to every exit, as they do on `main`. So a team export whose design misses a current screen is refused with `screen-undesigned`, and the remedy is to regenerate the design. A team gives up only freshness and sign-off.
+  - **Call sequence for the tests:** move the PRD without touching screens or stories' structure, then refresh the prototype, the agreement and the stories. The team export is allowed and carries the design marked stale, while `delivery` is refused `design-stale`.
+  - Then add SCREEN-3 and refresh again, keeping the old design. Every exit is now refused with `screen-undesigned`.
 - **Which agreement finding.** It uses the same rule as `write()`: `no-agreement` when none was ever recorded, otherwise `agreement-stale`. The one check is shared between the two.
 - **Staleness compares content hashes only.** Matching ids or labels never make an artifact current.
-- **History.** Before `generate`, `write` or the design writer overwrites its record, the outgoing JSON (and the prototype HTML) is copied to `discovery/history/<kind>-<first 12 of content_hash>.json`. After a D05 refresh, the old stories are still readable there. *(Owner decision, 2026-10-14: a history copy, rather than narrowing the clause to exported handoffs.)*
+- **History.** Before `write` or the design writer overwrites its record, the outgoing file is copied to `discovery/history/<kind>-<first 12 of the sha256 of the saved file's bytes>.json`.
+  - The key is the whole file, not the content hash: the content hash leaves out traces, sign-offs and workflow state, so two different records could share one key.
+  - For the prototype, the outgoing JSON and HTML are copied as a pair before the builder call, because the builder overwrites the HTML during that call.
+  - Tests: after a D05 refresh, the old stories can still be read from history; two refreshes with equal content but different traces or sign-offs keep both copies; and the archived HTML matches the old record's `file_hash`. *(Owner decision, 2026-10-14: a history copy, rather than narrowing the clause to exported handoffs.)*
 - **SPEC (owner decision, 2026-10-14):** "staleness | a badge and a diff; the PM decides" is reworded word-neutrally to say that a stale agreement or backlog blocks export. The record module's "never enforced" comment changes to match.
 
 ## 6. Not in DH1a.2
@@ -153,7 +160,7 @@ The PM's objection cannot be bypassed by writing stories on the old meaning.
 ## 7. For the test author
 
 **Edits to existing suites.** Each is listed old → new in the tests-first commit, and none loosens an assertion:
-- **`_fixture.mjs`:** `seedDelivery` records an agreement after seeding the prototype. A `refresh()` helper rebuilds, agrees, rewrites the design, reviews and signs off. The bookings setup moves here.
+- **`_fixture.mjs`:** `seedDelivery` records an agreement after seeding the prototype. A `refresh()` helper rebuilds the prototype, agrees, writes the stories again, then regenerates the design, reviews it and signs off. The bookings setup moves here.
 - **seam, rejudge, transition-table, coherence:** each re-export after a PRD move calls `refresh()` first. The verifier found 8 suites affected before the narrowing; it put the remaining cost at about 40–45 lines.
 - **Derived counts:**
   - `amendment-audit` goes from 52 to 53, for the new runner-owned field;
@@ -189,6 +196,6 @@ The PM's objection cannot be bypassed by writing stories on the old meaning.
 2. Reactions name criteria by join id, and the runner builds pointers and assigns ids.
 3. A pending reaction holds stories and export.
 4. Approval writes a ruling only when a question is linked.
-5. Design staleness blocks only the Delivery exits.
-6. A history copy on overwrite (owner-decided).
-7. The guard refuses for extract and react, and re-applies for turn.
+5. Design staleness blocks only the Delivery exits. The design checks still block every exit (revised in revision 3).
+6. A history copy on overwrite, owner-decided, keyed by the whole saved file and taken before the builder call (revised in revision 3).
+7. The guard refuses for extract and react, and re-applies for turn. `react` also re-checks the prototype after its call (revised in revision 3).
