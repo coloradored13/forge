@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// owns: R15 · shared — DH1a.2 §1 tests first: intentionally red until the PRD guard lands.
+// owns: R3 · discovery — DH1a.2 §1: late workshop writes preserve newer PM decisions.
 // All interleavings run inside scripted queries, after the workshop read and before
 // the result. No timers, live providers, or later reaction/history behavior.
 import assert from "node:assert/strict";
@@ -12,7 +12,7 @@ import * as workshop from "../discovery/workshop/index.mjs";
 import { agree, answer, AUDIT_GATE } from "../discovery/doors/index.mjs";
 import { Refused, REVIEWS } from "../discovery/record/index.mjs";
 
-const { check, done } = suite("Discovery · PRD write guard (tests first)", 11);
+const { check, done } = suite("Discovery · PRD write guard", 11);
 const _now = () => new Date("2026-10-14T12:00:00Z");
 const bytes = (root) => readFileSync(workshop.prdPath(root));
 // Independent oracle also lets save/extract/turn cases run when prdStamp is absent.
@@ -80,7 +80,7 @@ await test("base remains optional; matching base still validates invalid content
 });
 
 // A ruled rewording makes extract prepare an audit: refusal must not file it.
-for (const move of ["none", "agreement", "content"]) {
+for (const move of ["none", "agreement", "answer"]) {
   await test(`extract ${move === "none" ? "allows unchanged PRD and files held audit" : `refuses ${move} move with no PRD write or audit`}`, async (root) => {
     answer({ root, req: "REQ-1", oq: "OQ-1", answer: "Late exceptions remain recorded.", by: "Brad", _now });
     seedPrototype(root);
@@ -89,13 +89,16 @@ for (const move of ["none", "agreement", "content"]) {
     structured.requirements[0].acceptance_criteria.at(-1).statement = "Late exceptions are rejected.";
     workshop.appendTranscript(root, "requirements", { at: _now().toISOString(), from: "pm", text: "Review late exceptions." });
     const q = scripted({ structured });
-    let saved;
+    let saved, answered;
     const _query = (args) => {
       if (move === "agreement") agree({ root, by: "Brad", _now });
-      if (move === "content") {
+      if (move === "answer") {
+        answered = answer({ root, req: "REQ-1", oq: "OQ-2", answer: "The dock lead names the vendor.", by: "Brad", _now });
         const fresh = workshop.loadPrd(root);
-        fresh.problem.problem = "A newer PM edit during extraction.";
-        workshop.savePrd(root, fresh);
+        assert.notEqual(fresh.meta.version, initial.meta.version);
+        assert.notEqual(fresh.meta.content_hash, initial.meta.content_hash);
+        assert.equal(answered.ruling.oq, "OQ-2");
+        assert.equal(answered.ruling.criterion, `REQ-1/${answered.criterion.id}`);
       }
       saved = bytes(root);
       if (move === "agreement") {
@@ -121,6 +124,11 @@ for (const move of ["none", "agreement", "content"]) {
       assert.ok(changed(error), `expected shared Refused(prd-changed), got ${error?.code ?? "success"}`);
       assert.deepEqual(bytes(root), saved);
       assert.equal(existsSync(auditDir), false);
+      if (move === "answer") {
+        const prd = workshop.loadPrd(root);
+        assert.deepEqual(prd.rulings.find((r) => r.id === answered.ruling.id), answered.ruling);
+        assert.deepEqual(prd.requirements[0].acceptance_criteria.find((ac) => ac.id === answered.criterion.id), answered.criterion);
+      }
     }
   });
 }
