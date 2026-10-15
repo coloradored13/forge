@@ -1,0 +1,621 @@
+[
+ {
+  "id": "A01",
+  "source": "design \u00a77 'readiness ignores the prototype hash'",
+  "wrong_behavior": "readiness counts an agreement to this PRD's hash as current whatever prototype it agreed to",
+  "patches": [
+   [
+    "discovery/export/index.mjs",
+    "  const gap = agreementGap(prd, proto);\n",
+    "  const gap = (prd.agreements ?? []).some((a) => a.prd_hash === prd.meta.content_hash) ? null : agreementGap(prd, proto);\n"
+   ]
+  ]
+ },
+ {
+  "id": "A02",
+  "source": "design \u00a75 table (stories-stale: 'trace another PRD or prototype'); task list",
+  "wrong_behavior": "stories-stale compares only the PRD hash; a rebuilt prototype does not stale the stories",
+  "patches": [
+   [
+    "discovery/export/index.mjs",
+    "if (badge.stories?.stale) f(\"stories-stale\"",
+    "if (badge.stories?.prd_moved) f(\"stories-stale\""
+   ]
+  ]
+ },
+ {
+  "id": "A20",
+  "source": "design \u00a75 table (stories-stale: 'trace another PRD or prototype')",
+  "wrong_behavior": "stories-stale compares only the prototype hash; a moved PRD does not stale the stories",
+  "patches": [
+   [
+    "discovery/export/index.mjs",
+    "if (badge.stories?.stale) f(\"stories-stale\"",
+    "if (badge.stories?.prototype_moved) f(\"stories-stale\""
+   ]
+  ]
+ },
+ {
+  "id": "A21",
+  "source": "design \u00a75 table (design-stale: 'traces other stories, prototype or PRD')",
+  "wrong_behavior": "design-stale ignores the PRD trace (prototype and stories only)",
+  "patches": [
+   [
+    "discovery/export/index.mjs",
+    "if (badge.design?.stale && exit !== \"team\") f(\"design-stale\"",
+    "if ((badge.design?.prototype_moved || badge.design?.stories_moved) && exit !== \"team\") f(\"design-stale\""
+   ]
+  ]
+ },
+ {
+  "id": "A03",
+  "source": "design \u00a75 table (design-stale: 'traces other stories, prototype or PRD')",
+  "wrong_behavior": "design-stale ignores the stories trace (PRD and prototype only)",
+  "patches": [
+   [
+    "discovery/export/index.mjs",
+    "if (badge.design?.stale && exit !== \"team\") f(\"design-stale\"",
+    "if ((badge.design?.prd_moved || badge.design?.prototype_moved) && exit !== \"team\") f(\"design-stale\""
+   ]
+  ]
+ },
+ {
+  "id": "A04",
+  "source": "design \u00a75 table (design-stale)",
+  "wrong_behavior": "design-stale ignores the prototype trace (PRD and stories only)",
+  "patches": [
+   [
+    "discovery/export/index.mjs",
+    "if (badge.design?.stale && exit !== \"team\") f(\"design-stale\"",
+    "if ((badge.design?.prd_moved || badge.design?.stories_moved) && exit !== \"team\") f(\"design-stale\""
+   ]
+  ]
+ },
+ {
+  "id": "A05",
+  "source": "design \u00a75 'Staleness compares content hashes only'; design \u00a77 'accepts unchanged ids as current'",
+  "wrong_behavior": "stories/design freshness by version label: current while traces.prd.version equals the PRD's version",
+  "patches": [
+   [
+    "discovery/export/index.mjs",
+    "if (badge.stories?.stale) f(\"stories-stale\"",
+    "if (stories && stories.traces.prd.version !== prd.meta.version) f(\"stories-stale\""
+   ],
+   [
+    "discovery/export/index.mjs",
+    "if (badge.design?.stale && exit !== \"team\") f(\"design-stale\"",
+    "if (design && design.traces.prd.version !== prd.meta.version && exit !== \"team\") f(\"design-stale\""
+   ]
+  ]
+ },
+ {
+  "id": "A06",
+  "source": "design \u00a75 'Matching ids or labels never make an artifact current'",
+  "wrong_behavior": "readiness matches an agreement by PRD version label instead of the PRD and prototype hashes",
+  "patches": [
+   [
+    "discovery/export/index.mjs",
+    "  const gap = agreementGap(prd, proto);\n",
+    "  const gap = (prd.agreements ?? []).some((a) => a.prd_version === prd.meta.version) ? null : agreementGap(prd, proto);\n"
+   ]
+  ]
+ },
+ {
+  "id": "A07",
+  "source": "design \u00a77 'blocks the team exit on a stale design'",
+  "wrong_behavior": "design-stale is reported for every exit, so a team cannot take a stale design",
+  "patches": [
+   [
+    "discovery/export/index.mjs",
+    "if (badge.design?.stale && exit !== \"team\") f(\"design-stale\"",
+    "if (badge.design?.stale) f(\"design-stale\""
+   ]
+  ]
+ },
+ {
+  "id": "A08",
+  "source": "design \u00a75 table ('only delivery and both')",
+  "wrong_behavior": "design-stale blocks only delivery; the 'both' exit lets a stale design through",
+  "patches": [
+   [
+    "discovery/export/index.mjs",
+    "if (badge.design?.stale && exit !== \"team\") f(\"design-stale\"",
+    "if (badge.design?.stale && exit !== \"team\" && exit !== \"both\") f(\"design-stale\""
+   ]
+  ]
+ },
+ {
+  "id": "A09",
+  "source": "design \u00a75 table (Blocks column) \u2014 wiring",
+  "wrong_behavior": "exportHandoff does not pass the exit to readinessOf, so a team is judged as Delivery",
+  "patches": [
+   [
+    "discovery/export/index.mjs",
+    "  const verdict = readinessOf({ prd, proto, stories, design, exit });",
+    "  const verdict = readinessOf({ prd, proto, stories, design });"
+   ]
+  ]
+ },
+ {
+  "id": "A10",
+  "source": "reference observation 1 (readiness with no exit is unspecified by the design)",
+  "wrong_behavior": "readiness(root) with no exit reads as the team's gate and omits design-stale",
+  "patches": [
+   [
+    "discovery/export/index.mjs",
+    "if (badge.design?.stale && exit !== \"team\") f(\"design-stale\"",
+    "if (badge.design?.stale && exit && exit !== \"team\") f(\"design-stale\""
+   ]
+  ]
+ },
+ {
+  "id": "A11",
+  "source": "design \u00a75 'A stale design must still match, even for a team'",
+  "wrong_behavior": "checkDesign is skipped for the team exit, so screen-undesigned no longer blocks a team",
+  "patches": [
+   [
+    "discovery/export/index.mjs",
+    "  if (proto && stories && design) joins.push(checkDesign(proto, stories, design));",
+    "  if (proto && stories && design && exit !== \"team\") joins.push(checkDesign(proto, stories, design));"
+   ]
+  ]
+ },
+ {
+  "id": "A12",
+  "source": "design \u00a75 'Which agreement finding. It uses the same rule as write()'",
+  "wrong_behavior": "readiness picks no-agreement whenever no agreement names this PRD hash (write() says agreement-stale)",
+  "patches": [
+   [
+    "discovery/export/index.mjs",
+    "  if (gap) f(gap.rule, prd.id,",
+    "  if (gap) f((prd.agreements ?? []).some((a) => a.prd_hash === prd.meta.content_hash) ? \"agreement-stale\" : \"no-agreement\", prd.id,"
+   ]
+  ]
+ },
+ {
+  "id": "A13",
+  "source": "design \u00a75 'Each is high and certain'",
+  "wrong_behavior": "freshness findings are medium severity (the verdict advises instead of blocking)",
+  "patches": [
+   [
+    "discovery/export/index.mjs",
+    "const f = (rule, subject, summary, evidence, remedy) => findings.push({ severity: \"high\", confidence: \"certain\", rule, subject, summary, evidence, remedy });",
+    "const f = (rule, subject, summary, evidence, remedy) => findings.push({ severity: \"medium\", confidence: \"certain\", rule, subject, summary, evidence, remedy });"
+   ]
+  ]
+ },
+ {
+  "id": "A14",
+  "source": "design \u00a75 'Each is high and certain'",
+  "wrong_behavior": "freshness findings are high but only 'likely' (the verdict advises instead of blocking)",
+  "patches": [
+   [
+    "discovery/export/index.mjs",
+    "const f = (rule, subject, summary, evidence, remedy) => findings.push({ severity: \"high\", confidence: \"certain\", rule, subject, summary, evidence, remedy });",
+    "const f = (rule, subject, summary, evidence, remedy) => findings.push({ severity: \"high\", confidence: \"likely\", rule, subject, summary, evidence, remedy });"
+   ]
+  ]
+ },
+ {
+  "id": "A15",
+  "source": "design \u00a75 'its remedy names the next step'",
+  "wrong_behavior": "every freshness remedy restates the problem (the summary) and names no next step",
+  "patches": [
+   [
+    "discovery/export/index.mjs",
+    "const f = (rule, subject, summary, evidence, remedy) => findings.push({ severity: \"high\", confidence: \"certain\", rule, subject, summary, evidence, remedy });",
+    "const f = (rule, subject, summary, evidence, remedy) => findings.push({ severity: \"high\", confidence: \"certain\", rule, subject, summary, evidence, remedy: summary });"
+   ]
+  ]
+ },
+ {
+  "id": "A16",
+  "source": "design \u00a75 table (remedy: 'rebuild the prototype if it traces an older PRD, then agree')",
+  "wrong_behavior": "agreement remedy drops the rebuild step: 'Agree to the PRD and the prototype.'",
+  "patches": [
+   [
+    "discovery/export/index.mjs",
+    "\"Rebuild the prototype if it traces an older PRD, then agree to the PRD and the prototype.\"",
+    "\"Agree to the PRD and the prototype.\""
+   ]
+  ]
+ },
+ {
+  "id": "A17",
+  "source": "design \u00a75 table (When: 'a prototype exists and no agreement covers ...')",
+  "wrong_behavior": "the agreement finding is raised only once stories exist; a prototype with no agreement and no stories reads as ready",
+  "patches": [
+   [
+    "discovery/export/index.mjs",
+    "  if (gap) f(gap.rule, prd.id,",
+    "  if (gap && stories) f(gap.rule, prd.id,"
+   ]
+  ]
+ },
+ {
+  "id": "A18",
+  "source": "design \u00a75 'The one check is shared between the two'; design \u00a77 'ignores the prototype hash'",
+  "wrong_behavior": "the shared agreement rule ignores the prototype hash (write() and readiness both accept an agreement to an older prototype)",
+  "patches": [
+   [
+    "discovery/record/index.mjs",
+    "a.prd_hash === prd.meta.content_hash && a.prototype_hash === proto?.meta?.content_hash",
+    "a.prd_hash === prd.meta.content_hash"
+   ]
+  ]
+ },
+ {
+  "id": "A19",
+  "source": "design \u00a75 table (agreement and stories rows block 'every exit')",
+  "wrong_behavior": "a team exit skips the agreement and stories-stale checks too (team takes everything as it stands)",
+  "patches": [
+   [
+    "discovery/export/index.mjs",
+    "  const gap = agreementGap(prd, proto);\n",
+    "  const gap = exit === \"team\" ? null : agreementGap(prd, proto);\n"
+   ],
+   [
+    "discovery/export/index.mjs",
+    "if (badge.stories?.stale) f(\"stories-stale\"",
+    "if (badge.stories?.stale && exit !== \"team\") f(\"stories-stale\""
+   ]
+  ]
+ },
+ {
+  "id": "A22",
+  "source": "design \u00a77 'accepts unchanged ids as current'; design \u00a75 'Matching ids or labels never make an artifact current'",
+  "wrong_behavior": "stories/design count as current while every screen id they reference still exists in the prototype (id joins, not hashes)",
+  "patches": [
+   [
+    "discovery/export/index.mjs",
+    "if (badge.stories?.stale) f(\"stories-stale\"",
+    "if (badge.stories?.stale && stories.stories.some((s) => (s.screen_refs ?? []).some((r) => !proto.screens.some((p) => p.id === r)))) f(\"stories-stale\""
+   ],
+   [
+    "discovery/export/index.mjs",
+    "if (badge.design?.stale && exit !== \"team\") f(\"design-stale\"",
+    "if (badge.design?.stale && design.screens.some((s) => !proto.screens.some((p) => p.id === s.screen_ref)) && exit !== \"team\") f(\"design-stale\""
+   ]
+  ]
+ },
+ {
+  "id": "A23",
+  "source": "design \u00a75 'Which agreement finding. It uses the same rule as write()'",
+  "wrong_behavior": "readiness reports one code, agreement-stale, for every agreement gap (write() still says no-agreement when none was recorded)",
+  "patches": [
+   [
+    "discovery/export/index.mjs",
+    "  if (gap) f(gap.rule, prd.id,",
+    "  if (gap) f(\"agreement-stale\", prd.id,"
+   ]
+  ]
+ },
+ {
+  "id": "A24",
+  "source": "design \u00a75 'The one check is shared between the two' (write() side)",
+  "wrong_behavior": "write() refuses agreement-stale for every gap, so the stories door and readiness disagree when no agreement was ever recorded",
+  "patches": [
+   [
+    "discovery/stories/index.mjs",
+    "if (gap?.rule === \"no-agreement\") throw new Refused(gap.rule,",
+    "if (gap?.rule === \"no-agreement\") throw new Refused(\"agreement-stale\","
+   ]
+  ]
+ },
+ {
+  "id": "A25",
+  "source": "design \u00a75 'carries the design marked stale'; 'a team takes a stale design as it stands'",
+  "wrong_behavior": "a team export re-stamps the stale design's traces to the current record inside the handoff, hiding that it is stale",
+  "patches": [
+   [
+    "discovery/export/index.mjs",
+    "contract: compile(prd), prototype: proto, stories, design, items: [],",
+    "contract: compile(prd), prototype: proto, stories, design: design && exit === \"team\" ? { ...design, traces: { prd: { version: prd.meta.version, content_hash: prd.meta.content_hash }, prototype: { content_hash: proto.meta.content_hash }, stories: { content_hash: stories.meta.content_hash } } } : design, items: [],"
+   ]
+  ]
+ },
+ {
+  "id": "A26",
+  "source": "design \u00a75 '`readinessOf()` gains findings' (the gate, not only the door)",
+  "wrong_behavior": "freshness is checked only at the export door (an exit named); readiness(root), the console's gate view, omits it",
+  "patches": [
+   [
+    "discovery/export/index.mjs",
+    "  if (proto) joins.push(checkPrototype(prd, proto), checkFreshness({ prd, proto, stories, design, exit }));",
+    "  if (proto) joins.push(checkPrototype(prd, proto));\n  if (proto && exit) joins.push(checkFreshness({ prd, proto, stories, design, exit }));"
+   ]
+  ]
+ },
+ {
+  "id": "A27",
+  "source": "design \u00a75 table (Subject: stories.id, design.id)",
+  "wrong_behavior": "every freshness finding names prd.id as its subject, not the stale stories or design",
+  "patches": [
+   [
+    "discovery/export/index.mjs",
+    "f(\"stories-stale\", stories.id,",
+    "f(\"stories-stale\", prd.id,"
+   ],
+   [
+    "discovery/export/index.mjs",
+    "f(\"design-stale\", design.id,",
+    "f(\"design-stale\", prd.id,"
+   ]
+  ]
+ },
+ {
+  "id": "A28",
+  "source": "design \u00a75 table (design-stale remedy: 'regenerate the design')",
+  "wrong_behavior": "design-stale remedy names the wrong next step: re-review and re-sign the design (a sign-off never changes its traces)",
+  "patches": [
+   [
+    "discovery/export/index.mjs",
+    "\"Regenerate the design, then review and sign it.\"",
+    "\"Review the design again and sign it.\""
+   ]
+  ]
+ },
+ {
+  "id": "A29",
+  "source": "design \u00a75 table (design-stale: 'the design traces other stories, prototype or PRD')",
+  "wrong_behavior": "design-stale is keyed on the sign-off (signed on this exact version) instead of the design's traces",
+  "patches": [
+   [
+    "discovery/export/index.mjs",
+    "if (badge.design?.stale && exit !== \"team\") f(\"design-stale\"",
+    "if (badge.design && !badge.design.signed && exit !== \"team\") f(\"design-stale\""
+   ]
+  ]
+ },
+ {
+  "id": "H01",
+  "source": "design \u00a77 'a refresh destroys the old stories'",
+  "wrong_behavior": "stories write keeps no history copy; a refresh destroys the old backlog",
+  "patches": [
+   [
+    "discovery/stories/index.mjs",
+    "  keepOutgoing(root, \"stories\", STORIES_FILE);\n",
+    ""
+   ],
+   [
+    "discovery/stories/index.mjs",
+    "freshVerdict, keepOutgoing, traceOf",
+    "freshVerdict, traceOf"
+   ]
+  ]
+ },
+ {
+  "id": "H02",
+  "source": "design \u00a75 'History. Before write or the design writer overwrites its record'",
+  "wrong_behavior": "the design writer keeps no history copy",
+  "patches": [
+   [
+    "discovery/design/index.mjs",
+    "  keepOutgoing(root, \"design\", DESIGN_FILE);\n",
+    ""
+   ],
+   [
+    "discovery/design/index.mjs",
+    "freshVerdict, keepOutgoing, traceOf",
+    "freshVerdict, traceOf"
+   ]
+  ]
+ },
+ {
+  "id": "H03",
+  "source": "design \u00a75 'The key is the whole file, not the content hash'",
+  "wrong_behavior": "history keyed by the document's content hash instead of the sha256 of the saved bytes",
+  "patches": [
+   [
+    "discovery/record/index.mjs",
+    "createHash(\"sha256\").update(saved).digest(\"hex\").slice(0, 12)",
+    "JSON.parse(saved).meta.content_hash.slice(0, 12)"
+   ],
+   [
+    "discovery/record/index.mjs",
+    "import { createHash } from \"node:crypto\";\n",
+    ""
+   ]
+  ]
+ },
+ {
+  "id": "H04",
+  "source": "design \u00a75 'first 12 of the sha256'",
+  "wrong_behavior": "history key uses the first 16 hex of the sha256, not 12",
+  "patches": [
+   [
+    "discovery/record/index.mjs",
+    "createHash(\"sha256\").update(saved).digest(\"hex\").slice(0, 12)",
+    "createHash(\"sha256\").update(saved).digest(\"hex\").slice(0, 16)"
+   ]
+  ]
+ },
+ {
+  "id": "H05",
+  "source": "design \u00a75 'sha256 of the saved file's bytes'",
+  "wrong_behavior": "history copy is the record re-serialized as compact JSON, not the saved bytes",
+  "patches": [
+   [
+    "discovery/record/index.mjs",
+    "  const saved = readFileSync(join(root, file));",
+    "  const saved = Buffer.from(JSON.stringify(JSON.parse(readFileSync(join(root, file), \"utf8\"))));"
+   ]
+  ]
+ },
+ {
+  "id": "H06",
+  "source": "design \u00a75 'copied as a pair before the builder call'",
+  "wrong_behavior": "prototype JSON/HTML pair archived after the builder call, when the HTML is already overwritten",
+  "patches": [
+   [
+    "discovery/prototype/index.mjs",
+    "  keepOutgoing(root, \"prototype\", PROTOTYPE_FILE, HTML_FILE);\n",
+    ""
+   ],
+   [
+    "discovery/prototype/index.mjs",
+    "  const target = resolve(root, HTML_FILE);",
+    "  keepOutgoing(root, \"prototype\", PROTOTYPE_FILE, HTML_FILE);\n  const target = resolve(root, HTML_FILE);"
+   ]
+  ]
+ },
+ {
+  "id": "H07",
+  "source": "design \u00a75 'the outgoing JSON and HTML are copied as a pair'",
+  "wrong_behavior": "prototype history keeps the JSON only, not the HTML",
+  "patches": [
+   [
+    "discovery/prototype/index.mjs",
+    "  keepOutgoing(root, \"prototype\", PROTOTYPE_FILE, HTML_FILE);\n",
+    "  keepOutgoing(root, \"prototype\", PROTOTYPE_FILE);\n"
+   ]
+  ]
+ },
+ {
+  "id": "H08",
+  "source": "design \u00a75 'copied as a pair'; design \u00a77 'archived HTML matches the old record's file_hash'",
+  "wrong_behavior": "the archived HTML is keyed by its own bytes rather than beside the record under the record's key",
+  "patches": [
+   [
+    "discovery/record/index.mjs",
+    "copyFileSync(join(root, beside), join(root, `${key}${extname(beside)}`));",
+    "copyFileSync(join(root, beside), join(root, HISTORY, `${kind}-${createHash(\"sha256\").update(readFileSync(join(root, beside))).digest(\"hex\").slice(0, 12)}${extname(beside)}`));"
+   ]
+  ]
+ },
+ {
+  "id": "H09",
+  "source": "design \u00a75 'two refreshes ... keep both copies'; task list 'second refresh loses the first copy'",
+  "wrong_behavior": "history keeps only the newest copy per kind; the second refresh deletes the first copy",
+  "patches": [
+   [
+    "discovery/record/index.mjs",
+    "import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from \"node:fs\";",
+    "import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from \"node:fs\";"
+   ],
+   [
+    "discovery/record/index.mjs",
+    "  mkdirSync(join(root, HISTORY), { recursive: true });\n",
+    "  mkdirSync(join(root, HISTORY), { recursive: true });\n  for (const f of readdirSync(join(root, HISTORY))) if (f.startsWith(`${kind}-`)) rmSync(join(root, HISTORY, f));\n"
+   ]
+  ]
+ },
+ {
+  "id": "H10",
+  "source": "design \u00a75 'two refreshes ... keep both copies'",
+  "wrong_behavior": "history keeps only the first copy per kind; later outgoing copies are dropped",
+  "patches": [
+   [
+    "discovery/record/index.mjs",
+    "import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from \"node:fs\";",
+    "import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from \"node:fs\";"
+   ],
+   [
+    "discovery/record/index.mjs",
+    "  mkdirSync(join(root, HISTORY), { recursive: true });\n",
+    "  mkdirSync(join(root, HISTORY), { recursive: true });\n  if (readdirSync(join(root, HISTORY)).some((f) => f.startsWith(`${kind}-`))) return key;\n"
+   ]
+  ]
+ },
+ {
+  "id": "H11",
+  "source": "task list 'history copy overwrites an earlier copy with the same key' (equivalence probe)",
+  "wrong_behavior": "a copy whose key already exists is never overwritten (reference overwrites); under whole-file keys the same key means the same bytes",
+  "patches": [
+   [
+    "discovery/record/index.mjs",
+    "  writeFileSync(join(root, `${key}.json`), saved);",
+    "  if (!existsSync(join(root, `${key}.json`))) writeFileSync(join(root, `${key}.json`), saved);"
+   ]
+  ]
+ },
+ {
+  "id": "H12",
+  "source": "design \u00a75 'Before write ... overwrites its record, the outgoing file is copied'",
+  "wrong_behavior": "stories history copy taken after saveDoc, so it archives the incoming backlog",
+  "patches": [
+   [
+    "discovery/stories/index.mjs",
+    "  keepOutgoing(root, \"stories\", STORIES_FILE);\n  saveDoc(root, STORIES_FILE, \"story\", doc);\n",
+    "  saveDoc(root, STORIES_FILE, \"story\", doc);\n  keepOutgoing(root, \"stories\", STORIES_FILE);\n"
+   ]
+  ]
+ },
+ {
+  "id": "H13",
+  "source": "design \u00a75 '<kind>' (unspecified; probe of test strictness)",
+  "wrong_behavior": "stories history files are named by the schema id, discovery/history/story-<key>.json",
+  "patches": [
+   [
+    "discovery/stories/index.mjs",
+    "  keepOutgoing(root, \"stories\", STORIES_FILE);\n",
+    "  keepOutgoing(root, \"story\", STORIES_FILE);\n"
+   ]
+  ]
+ },
+ {
+  "id": "H14",
+  "source": "design \u00a75 'two refreshes with equal content but different traces ... keep both copies'",
+  "wrong_behavior": "stories history copy skipped when the backlog's content is unchanged (only traces moved)",
+  "patches": [
+   [
+    "discovery/stories/index.mjs",
+    "  keepOutgoing(root, \"stories\", STORIES_FILE);\n",
+    "  if (JSON.stringify(prior?.stories) !== JSON.stringify(doc.stories)) keepOutgoing(root, \"stories\", STORIES_FILE);\n"
+   ]
+  ]
+ },
+ {
+  "id": "H15",
+  "source": "design \u00a75 'Before ... the design writer overwrites its record, the outgoing file is copied' (unconditional)",
+  "wrong_behavior": "the design writer keeps the outgoing design only when it was signed; an unsigned draft is overwritten with no copy",
+  "patches": [
+   [
+    "discovery/design/index.mjs",
+    "  keepOutgoing(root, \"design\", DESIGN_FILE);\n",
+    "  if (isSigned(prior)) keepOutgoing(root, \"design\", DESIGN_FILE);\n"
+   ]
+  ]
+ },
+ {
+  "id": "H16",
+  "source": "design \u00a75 'Before write or the design writer overwrites its record, the outgoing file is copied' (unconditional)",
+  "wrong_behavior": "stories and design keep the outgoing copy only when it is stale; a rewrite under the same PRD/prototype/stories loses the old one",
+  "patches": [
+   [
+    "discovery/stories/index.mjs",
+    "  keepOutgoing(root, \"stories\", STORIES_FILE);\n",
+    "  if (prior && (prior.traces.prd.content_hash !== prd.meta.content_hash || prior.traces.prototype?.content_hash !== proto.meta.content_hash)) keepOutgoing(root, \"stories\", STORIES_FILE);\n"
+   ],
+   [
+    "discovery/design/index.mjs",
+    "  keepOutgoing(root, \"design\", DESIGN_FILE);\n",
+    "  if (prior && (prior.traces.prd.content_hash !== prd.meta.content_hash || prior.traces.prototype?.content_hash !== proto.meta.content_hash || prior.traces.stories?.content_hash !== stories.meta.content_hash)) keepOutgoing(root, \"design\", DESIGN_FILE);\n"
+   ]
+  ]
+ },
+ {
+  "id": "H17",
+  "source": "design \u00a75 'Before ... the design writer overwrites its record, the outgoing file is copied'",
+  "wrong_behavior": "design history copy taken after saveDoc, so it archives the incoming design",
+  "patches": [
+   [
+    "discovery/design/index.mjs",
+    "  keepOutgoing(root, \"design\", DESIGN_FILE);\n  saveDoc(root, DESIGN_FILE, \"design\", doc);\n",
+    "  saveDoc(root, DESIGN_FILE, \"design\", doc);\n  keepOutgoing(root, \"design\", DESIGN_FILE);\n"
+   ]
+  ]
+ },
+ {
+  "id": "H18",
+  "source": "task list 'history copy overwrites an earlier copy with the same key'",
+  "wrong_behavior": "history keyed by kind only (discovery/history/<kind>.json), so every copy overwrites the one before",
+  "patches": [
+   [
+    "discovery/record/index.mjs",
+    "${kind}-${createHash(\"sha256\").update(saved).digest(\"hex\").slice(0, 12)}",
+    "${kind}"
+   ]
+  ]
+ }
+]

@@ -1,0 +1,275 @@
+diff --git a/discovery/design/index.mjs b/discovery/design/index.mjs
+index c412349..19130cd 100644
+--- a/discovery/design/index.mjs
++++ b/discovery/design/index.mjs
+@@ -17,7 +17,7 @@ import { funnelPath } from "../../shared/funnel.mjs";
+ import { scopeOf } from "../../shared/scope.mjs";
+ import { loadProject, ledgerPath } from "../setup/index.mjs";
+ import { loadPrd, savePrd, PRD_FILE } from "../workshop/index.mjs";
+-import { Refused, readDoc, saveDoc, saveVerdict, readVerdict, freshVerdict, traceOf, rulingsOf, isSigned, insideRequirements, renderRequirement, renderPrd, renderSurfaces, renderPrototype, renderStories, renderStandard, renderDesign, PROTOTYPE_FILE, STORIES_FILE, DESIGN_FILE } from "../record/index.mjs";
++import { Refused, readDoc, saveDoc, saveVerdict, readVerdict, freshVerdict, keepOutgoing, traceOf, rulingsOf, isSigned, insideRequirements, renderRequirement, renderPrd, renderSurfaces, renderPrototype, renderStories, renderStandard, renderDesign, PROTOTYPE_FILE, STORIES_FILE, DESIGN_FILE } from "../record/index.mjs";
+ 
+ const PROMPTS = join(dirname(fileURLToPath(import.meta.url)), "prompts");
+ export const GATE = "design-arithmetic";
+@@ -31,8 +31,9 @@ export function loadDesign(root) { return readDoc(root, DESIGN_FILE); }
+  * Write or rewrite the design. Refused before the line, before a prototype and before a
+  * backlog — the design covers the screens the stories claim, so both must exist. The
+  * writer has no write surface; what it returns is validated, traced to all three by
+- * hash, and the claim-map arithmetic is checked and filed beside it. A fresh reviewer
+- * verdict on the previous design rides into the prompt, as do its control ids.
++ * hash, and the claim-map arithmetic is checked and filed beside it; the design it
++ * replaces is kept in the history first. A fresh reviewer verdict on the previous design
++ * rides into the prompt, as do its control ids.
+  */
+ export async function write({ root, notes, onEvent, _query, _sleep }) {
+   const project = loadProject(root);
+@@ -76,6 +77,7 @@ export async function write({ root, notes, onEvent, _query, _sleep }) {
+   if (!v.ok) throw new Refused("design-invalid", `design: the design does not fit the contract — ${v.errors.slice(0, 5).join("; ")}`, v.errors);
+ 
+   const doc = { ...skeleton("design"), id: `design-${prd.meta.slug}`, traces: traceOf(prd, proto, stories), ...res.structured };
++  keepOutgoing(root, "design", DESIGN_FILE);
+   saveDoc(root, DESIGN_FILE, "design", doc);
+   const arithmetic = { ...checkDesign(proto, stories, doc), judged: pins(prd, proto, stories, doc) };
+   saveVerdict(root, arithmetic);
+diff --git a/discovery/export/index.mjs b/discovery/export/index.mjs
+index 1ca7f9c..6634c11 100644
+--- a/discovery/export/index.mjs
++++ b/discovery/export/index.mjs
+@@ -17,7 +17,7 @@ import { totals } from "../../shared/agent-call/ledger.mjs";
+ import { handoffFile, latestHandoff, itemsOf } from "../../shared/handoff.mjs";
+ import { loadProject, ledgerPath, exec } from "../setup/index.mjs";
+ import { loadPrd, savePrd, PRD_FILE } from "../workshop/index.mjs";
+-import { Refused, readDoc, saveDoc, saveVerdict, isSigned, renderPrd, renderPrototype, renderStories, renderStandard, renderDesign, PROTOTYPE_FILE, STORIES_FILE, DESIGN_FILE } from "../record/index.mjs";
++import { Refused, readDoc, saveDoc, saveVerdict, isSigned, agreementGap, stalenessOf, renderPrd, renderPrototype, renderStories, renderStandard, renderDesign, PROTOTYPE_FILE, STORIES_FILE, DESIGN_FILE } from "../record/index.mjs";
+ import { checkPrototype } from "../prototype/index.mjs";
+ import { checkStories } from "../stories/index.mjs";
+ import { checkDesign } from "../design/index.mjs";
+@@ -29,15 +29,19 @@ export { IDEA, KINDS as TRACKERS, repoOf } from "./trackers.mjs";
+ 
+ // ── the ready gate ──
+ 
+-/** Every join recomputed live and every document's hash checked — one finding-shaped verdict, pinned to what it read. */
+-export function readiness(root) {
++/**
++ * Every join recomputed live, every document's hash checked and every trace held to the
++ * record — one finding-shaped verdict, pinned to what it read. For a team exit a stale
++ * design is not a finding; with no exit named, the gate reads as Delivery's.
++ */
++export function readiness(root, exit) {
+   const prd = loadPrd(root);
+-  return readinessOf({ prd, proto: readDoc(root, PROTOTYPE_FILE), stories: readDoc(root, STORIES_FILE), design: readDoc(root, DESIGN_FILE) });
++  return readinessOf({ prd, proto: readDoc(root, PROTOTYPE_FILE), stories: readDoc(root, STORIES_FILE), design: readDoc(root, DESIGN_FILE), exit });
+ }
+ 
+-export function readinessOf({ prd, proto, stories, design }) {
++export function readinessOf({ prd, proto, stories, design, exit }) {
+   const joins = [checkScope(prd)];
+-  if (proto) joins.push(checkPrototype(prd, proto));
++  if (proto) joins.push(checkPrototype(prd, proto), checkFreshness({ prd, proto, stories, design, exit }));
+   if (proto && stories) joins.push(checkStories(prd, proto, stories));
+   if (proto && stories && design) joins.push(checkDesign(proto, stories, design));
+   const docs = [[prd, PRD_FILE], [proto, PROTOTYPE_FILE], [stories, STORIES_FILE], [design, DESIGN_FILE]].filter(([d]) => d);
+@@ -50,6 +54,24 @@ export function readinessOf({ prd, proto, stories, design }) {
+   };
+ }
+ 
++/**
++ * D05, by content hash only — a matching id or version label never makes a document
++ * current. Without the PM's agreement to this PRD and prototype, or with stories written
++ * from another, nothing leaves; a design written from other stories, prototype or PRD
++ * does not go to Delivery, and a team takes it as it stands.
++ */
++function checkFreshness({ prd, proto, stories, design, exit }) {
++  const findings = [];
++  const f = (rule, subject, summary, evidence, remedy) => findings.push({ severity: "high", confidence: "certain", rule, subject, summary, evidence, remedy });
++  const badge = stalenessOf({ prd, proto, stories, design });
++  const moved = (b) => `${["prd", "prototype", "stories"].filter((k) => b[`${k}_moved`]).map((k) => `\`/traces/${k}\``).join(", ")} no longer match by content hash${b.since.length ? `; since then ${b.since.join(", ")}` : ""}.`;
++  const gap = agreementGap(prd, proto);
++  if (gap) f(gap.rule, prd.id, "No agreement of the PM's covers this PRD and its prototype.", `\`/agreements\`: ${gap.why}.`, "Rebuild the prototype if it traces an older PRD, then agree to the PRD and the prototype.");
++  if (badge.stories?.stale) f("stories-stale", stories.id, `${stories.id} was written from another PRD or prototype.`, moved(badge.stories), "Write the stories again under the current agreement.");
++  if (badge.design?.stale && exit !== "team") f("design-stale", design.id, `${design.id} was written from other stories, prototype or PRD.`, moved(badge.design), "Regenerate the design, then review and sign it.");
++  return { findings, checked: 1 + (stories ? 1 : 0) + (design ? 1 : 0) };
++}
++
+ // ── the contract ──
+ 
+ /** The PRD compiled to what Delivery builds against: its own fields, filtered to the line; rulings in force, approved amendments, open questions. */
+@@ -100,7 +122,7 @@ export async function exportHandoff({ root, exit, by, tracker: trackerOpts, _now
+   if (!stories) throw new Refused("no-stories", "export: there is no backlog to hand off");
+   const design = readDoc(root, DESIGN_FILE);
+ 
+-  const verdict = readinessOf({ prd, proto, stories, design });
++  const verdict = readinessOf({ prd, proto, stories, design, exit });
+   saveVerdict(root, verdict);
+   if (verdict.verdict === "block") throw new Refused("not-ready", "export: the record does not add up — every join is green before anything leaves", verdict.findings);
+   if (exit !== "team") {
+diff --git a/discovery/prototype/index.mjs b/discovery/prototype/index.mjs
+index 9ec7378..ad8cfe6 100644
+--- a/discovery/prototype/index.mjs
++++ b/discovery/prototype/index.mjs
+@@ -17,7 +17,7 @@ import { deriveVerdict, pin } from "../../shared/judge/index.mjs";
+ import { scopeOf } from "../../shared/scope.mjs";
+ import { loadProject, ledgerPath } from "../setup/index.mjs";
+ import { loadPrd, existingIds, PRD_FILE } from "../workshop/index.mjs";
+-import { Refused, readDoc, saveDoc, saveVerdict, traceOf, rulingsOf, renderPrd, PROTOTYPE_FILE, HTML_FILE } from "../record/index.mjs";
++import { Refused, readDoc, saveDoc, saveVerdict, keepOutgoing, traceOf, rulingsOf, renderPrd, PROTOTYPE_FILE, HTML_FILE } from "../record/index.mjs";
+ 
+ const PROMPTS = join(dirname(fileURLToPath(import.meta.url)), "prompts");
+ export const GATE = "prototype-arithmetic";
+@@ -34,7 +34,8 @@ export function fileHash(root) {
+  * Build or rebuild the prototype. Refused before the line is drawn — there is nothing
+  * to hold the prototype to. The builder writes exactly one file; the record it returns
+  * is validated, its screen ids must survive from the previous build, and the arithmetic
+- * is checked and filed as a gate verdict beside it.
++ * is checked and filed as a gate verdict beside it. The previous record and its HTML are
++ * kept in the history as a pair before the call, since the builder overwrites the HTML.
+  */
+ export async function generate({ root, notes, onEvent, _query, _sleep }) {
+   const project = loadProject(root);
+@@ -55,6 +56,7 @@ export async function generate({ root, notes, onEvent, _query, _sleep }) {
+     `## Where to write\n\nWrite one file, \`${HTML_FILE}\`, relative to the project root. Nothing else — the record of screens comes back as your structured answer, not as a file.`,
+   ].filter(Boolean).join("\n\n");
+ 
++  keepOutgoing(root, "prototype", PROTOTYPE_FILE, HTML_FILE);
+   const res = await call({
+     half: "discovery", stage: "prototype", role: "writer", kind: "writer",
+     system, prompt, cwd: root, outputSchema: outputContract("prototype"),
+diff --git a/discovery/record/index.mjs b/discovery/record/index.mjs
+index 423b6f5..d88b4f0 100644
+--- a/discovery/record/index.mjs
++++ b/discovery/record/index.mjs
+@@ -1,10 +1,13 @@
+ // owns: R3, R4 · discovery — the discovery record: where each document lives beside the
+ // PRD, what it traces, how the PRD's settled rulings ride into every writer and reviewer
+ // after it (R3), and the stale badge a document wears once the PRD has moved past what
+-// it traces — with the rulings and amendments that moved it (R4). Also how the record
+-// reads to an agent: one rendering per document, used by every prompt that shows it.
++// it traces — with the rulings and amendments that moved it (R4) — and the outgoing copy
++// a writer keeps before it replaces a document. Also how the record reads to an agent:
++// one rendering per document, used by every prompt that shows it.
+ 
+-import { join } from "node:path";
++import { createHash } from "node:crypto";
++import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
++import { extname, join } from "node:path";
+ import { verdictFreshness } from "../../shared/judge/index.mjs";
+ import { Refused } from "../../shared/refused.mjs";
+ import { readDoc, saveDoc, saveVerdict as file } from "../../shared/store.mjs";
+@@ -17,9 +20,26 @@ export const HTML_FILE = join("discovery", "prototype", "index.html");
+ export const STORIES_FILE = join("discovery", "stories.json");
+ export const DESIGN_FILE = join("discovery", "design.json");
+ export const REVIEWS = join("discovery", "reviews");
++export const HISTORY = join("discovery", "history");
+ 
+ // ── documents ──
+ 
++/**
++ * Keep the document a writer is about to replace: its saved bytes, at
++ * `discovery/history/<kind>-<first 12 hex of their sha256>.json`. The key is the whole
++ * file, not the content hash, which leaves out traces, sign-offs and workflow state. A
++ * file that rides beside it (the prototype's HTML) is kept under the same key.
++ */
++export function keepOutgoing(root, kind, file, beside) {
++  if (!existsSync(join(root, file))) return null;
++  const saved = readFileSync(join(root, file));
++  const key = join(HISTORY, `${kind}-${createHash("sha256").update(saved).digest("hex").slice(0, 12)}`);
++  mkdirSync(join(root, HISTORY), { recursive: true });
++  writeFileSync(join(root, `${key}.json`), saved);
++  if (beside && existsSync(join(root, beside))) copyFileSync(join(root, beside), join(root, `${key}${extname(beside)}`));
++  return key;
++}
++
+ /** A gate's verdict, filed under its gate id (or a name under it). Validated: a verdict that does not fit the shape is not a verdict. */
+ export function saveVerdict(root, verdict, name = verdict?.gate) {
+   return join(root, file(root, join(REVIEWS, `${name}.json`), verdict));
+@@ -89,18 +109,32 @@ export function currentAgreement(prd, proto) {
+   return (prd.agreements ?? []).findLast((a) => a.prd_hash === prd.meta.content_hash && a.prototype_hash === proto?.meta?.content_hash) ?? null;
+ }
+ 
++/**
++ * Why no agreement covers the record as it stands, or null: `no-agreement` when none was
++ * ever recorded, else `agreement-stale` with what moved since the last. One rule: the
++ * stories door refuses on it and the ready gate reports it.
++ */
++export function agreementGap(prd, proto) {
++  if (currentAgreement(prd, proto)) return null;
++  const last = prd.agreements?.at(-1);
++  if (!last) return { rule: "no-agreement", why: "the PM has not agreed this revision" };
++  const moved = changedSince(prd, last.prd_version);
++  const what = last.prd_hash !== prd.meta.content_hash ? `the PRD has moved from ${last.prd_version} to ${prd.meta.version}${moved.length ? ` (${moved.join(", ")})` : ""}` : "the prototype has been rebuilt";
++  return { rule: "agreement-stale", why: `${last.id} agreed to a revision that is no longer on the record — ${what}` };
++}
++
+ /**
+  * The stale badge per downstream document: whether what it traces still matches the
+- * PRD (and, further down, the prototype and the stories), and which rulings and
+- * amendments landed after the version it was made from. A badge is shown, never
+- * enforced — the PM decides whether the document needs redoing. The design also
+- * says whether its sign-off is on this exact version.
++ * PRD (and, further down, the prototype and the stories) by content hash, and which
++ * rulings and amendments landed after the version it was made from. The ready gate
++ * enforces the same badge: stale stories hold every exit, a stale design the Delivery
++ * exits (D05). The design also says whether its sign-off is on this exact version.
+  */
+ export function staleness(root) {
+-  const prd = loadPrd(root);
+-  const proto = readDoc(root, PROTOTYPE_FILE);
+-  const stories = readDoc(root, STORIES_FILE);
+-  const design = readDoc(root, DESIGN_FILE);
++  return stalenessOf({ prd: loadPrd(root), proto: readDoc(root, PROTOTYPE_FILE), stories: readDoc(root, STORIES_FILE), design: readDoc(root, DESIGN_FILE) });
++}
++
++export function stalenessOf({ prd, proto, stories, design }) {
+   const since = (version) => changedSince(prd, version);
+   const moved = (traced, current) => !current || traced.content_hash !== current.meta.content_hash;
+   const badge = (doc, extra = {}) => {
+diff --git a/discovery/stories/index.mjs b/discovery/stories/index.mjs
+index e900036..200ad34 100644
+--- a/discovery/stories/index.mjs
++++ b/discovery/stories/index.mjs
+@@ -15,7 +15,7 @@ import { funnelPath } from "../../shared/funnel.mjs";
+ import { scopeOf } from "../../shared/scope.mjs";
+ import { loadProject, ledgerPath } from "../setup/index.mjs";
+ import { loadPrd, existingIds, PRD_FILE } from "../workshop/index.mjs";
+-import { Refused, readDoc, saveDoc, saveVerdict, freshVerdict, traceOf, rulingsOf, currentAgreement, changedSince, insideRequirements, renderRequirement, renderPrd, renderPrototype, renderStories, PROTOTYPE_FILE, STORIES_FILE } from "../record/index.mjs";
++import { Refused, readDoc, saveDoc, saveVerdict, freshVerdict, keepOutgoing, traceOf, rulingsOf, agreementGap, insideRequirements, renderRequirement, renderPrd, renderPrototype, renderStories, PROTOTYPE_FILE, STORIES_FILE } from "../record/index.mjs";
+ 
+ const PROMPTS = join(dirname(fileURLToPath(import.meta.url)), "prompts");
+ export const GATE = "story-arithmetic";
+@@ -32,8 +32,9 @@ export function loadStories(root) { return readDoc(root, STORIES_FILE); }
+  * any call, while the prototype asks a blocking question the PM has not answered, and
+  * without the PM's agreement to this exact PRD and prototype. The composer has no write
+  * surface; what it returns is validated, its ids must survive from the previous backlog,
+- * and the arithmetic is checked and filed beside it. A fresh reviewer verdict on the
+- * previous backlog rides into the prompt (R13).
++ * and the arithmetic is checked and filed beside it; the backlog it replaces is kept in
++ * the history first. A fresh reviewer verdict on the previous backlog rides into the
++ * prompt (R13).
+  */
+ export async function write({ root, notes, onEvent, _query, _sleep }) {
+   const project = loadProject(root);
+@@ -44,13 +45,9 @@ export async function write({ root, notes, onEvent, _query, _sleep }) {
+   if (!proto) throw new Refused("no-prototype", "stories: there is no prototype — stories claim the screens they happen on, so build it first");
+   const asked = (proto.open_questions ?? []).filter((q) => q.blocking && q.status !== "answered");
+   if (asked.length) throw new Refused("blocking-question", `stories: the prototype asks what the PM must decide first — ${asked.map((q) => `${q.id ?? "(no id; rebuild the prototype)"} "${q.question}"`).join("; ")}. Answer it through the answer door, then agree the revision.`, asked);
+-  if (!currentAgreement(prd, proto)) {
+-    const last = prd.agreements?.at(-1);
+-    if (!last) throw new Refused("no-agreement", "stories: the PM has not agreed this revision — review the PRD and the prototype, then agree to them");
+-    const moved = changedSince(prd, last.prd_version);
+-    const what = last.prd_hash !== prd.meta.content_hash ? `the PRD has moved from ${last.prd_version} to ${prd.meta.version}${moved.length ? ` (${moved.join(", ")})` : ""}` : "the prototype has been rebuilt";
+-    throw new Refused("agreement-stale", `stories: ${last.id} agreed to a revision that is no longer on the record — ${what}. Agree again before the backlog is written.`);
+-  }
++  const gap = agreementGap(prd, proto);
++  if (gap?.rule === "no-agreement") throw new Refused(gap.rule, `stories: ${gap.why} — review the PRD and the prototype, then agree to them`);
++  if (gap) throw new Refused(gap.rule, `stories: ${gap.why}. Agree again before the backlog is written.`);
+   const prior = loadStories(root);
+   const priorIds = prior ? existingIds(prior, ["epics", "stories"]) : [];
+   const review = freshVerdict(root, REVIEW_GATE);
+@@ -86,6 +83,7 @@ export async function write({ root, notes, onEvent, _query, _sleep }) {
+   const dropped = priorIds.filter((p) => !kept.has(p.id));
+   if (dropped.length) throw new Refused("ids-dropped", `stories: the rewrite dropped ${dropped.map((p) => p.id).join(", ")} — ids are sticky; a story that went away is a note, not a silence`, dropped);
+ 
++  keepOutgoing(root, "stories", STORIES_FILE);
+   saveDoc(root, STORIES_FILE, "story", doc);
+   const arithmetic = { ...checkStories(prd, proto, doc), judged: pins(prd, proto, doc) };
+   saveVerdict(root, arithmetic);
