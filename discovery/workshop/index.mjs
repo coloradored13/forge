@@ -4,8 +4,11 @@
 // holding the session); the interrogator holds no tools and emits no data. Extraction
 // is a second, separate call that transcribes the transcript into the section's fields
 // — conversation is not extraction. Shape comes before scope: the sections that draw
-// and read the MVP line cannot open until the shape section is complete.
+// and read the MVP line cannot open until the shape section is complete. A step that waits
+// on a model never saves over a PRD that moved meanwhile: extraction refuses, a turn re-applies
+// only its own section state onto the fresh PRD.
 
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -19,6 +22,7 @@ import { SECTIONS, LINE_SECTION, section, indexOf } from "./sections.mjs";
 import { repoBrief } from "./brief.mjs";
 import { holdRulings, AUDIT_GATE } from "../doors/index.mjs";
 import { saveVerdict } from "../record/index.mjs";
+import { Refused } from "../../shared/refused.mjs";
 
 export const PRD_FILE = join("discovery", "prd.json");
 export const TRANSCRIPTS = join("discovery", "workshop");
@@ -63,8 +67,18 @@ export function loadPrd(root) {
   return JSON.parse(readFileSync(file, "utf8"));
 }
 
-/** Stamp, validate, write. An invalid document is never written — the refusal names the fields. */
-export function savePrd(root, prd) {
+/** The sha256 of the PRD file's bytes: what a step that waits on a model read before it began. */
+export function prdStamp(root) {
+  return createHash("sha256").update(readFileSync(prdPath(root))).digest("hex");
+}
+
+/**
+ * Stamp, validate, write. An invalid document is never written — the refusal names the fields.
+ * With `base`, the file must still be the bytes the caller read; a late write never replaces a
+ * PRD that moved while the model worked (D09's basic guard).
+ */
+export function savePrd(root, prd, { base } = {}) {
+  if (base !== undefined && prdStamp(root) !== base) throw new Refused("prd-changed", "workshop: the PRD changed while this step was working — nothing was saved; run it again on the current PRD");
   stamp(prd);
   const v = validate("prd", prd);
   if (!v.ok) throw new WorkshopRefused("prd-invalid", `workshop: the PRD does not fit its schema — ${v.errors.slice(0, 5).join("; ")}`, v.errors);
@@ -190,15 +204,18 @@ export async function turn({ root, key, text, onEvent, _query, _sleep, _now = ()
   appendTranscript(root, s.key, { at, from: "pm", text });
   appendTranscript(root, s.key, { at, from: "workshop", text: reply, mode, signals, model: res.model, usd: res.usd });
 
-  state.session_id = res.sessionId ?? state.session_id;
-  state.turns += 1;
-  state.status = signals.includes("complete") ? "complete" : "open";
+  // Re-read: the PM may have written while the model worked. The turn re-applies only its own state.
+  const now = loadPrd(root);
+  const fresh = now.sections[s.key];
+  fresh.session_id = res.sessionId ?? fresh.session_id;
+  fresh.turns += 1;
+  fresh.status = signals.includes("complete") ? "complete" : "open";
   if (signals.includes("kill")) {
-    prd.flags.push({ at, section: s.key, kind: "kill_suggested", note: firstParagraph(reply) });
+    now.flags.push({ at, section: s.key, kind: "kill_suggested", note: firstParagraph(reply) });
   }
-  savePrd(root, prd);
+  savePrd(root, now);
 
-  return { section: s.key, reply, mode, signals, state: { ...state }, brief: brief.mode, model: res.model, usd: res.usd, sessionId: res.sessionId };
+  return { section: s.key, reply, mode, signals, state: { ...fresh }, brief: brief.mode, model: res.model, usd: res.usd, sessionId: res.sessionId };
 }
 
 function firstParagraph(text) {
@@ -252,6 +269,7 @@ export function existingIds(prd, fields) {
 export async function extract({ root, key, onEvent, _query, _sleep, _now = () => new Date() }) {
   const project = loadProject(root);
   const prd = loadPrd(root);
+  const base = prdStamp(root);
   const s = section(key);
   const rows = readTranscript(root, s.key);
   if (!rows.length) throw new WorkshopRefused("no-transcript", `workshop: nothing to extract — ${s.key} has no transcript yet`);
@@ -289,7 +307,7 @@ export async function extract({ root, key, onEvent, _query, _sleep, _now = () =>
   }
 
   next.sections[s.key].extracted_at = at;
-  savePrd(root, next);
+  savePrd(root, next, { base });
   for (const { amendment, audit } of held) saveVerdict(root, audit, join(AUDIT_GATE, amendment.id));
   return { section: s.key, fields: s.fields, prd: next, held: held.map((h) => h.amendment), model: res.model, usd: res.usd };
 }
