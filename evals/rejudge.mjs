@@ -21,7 +21,7 @@ import { advance, runStage, reopen } from "../delivery/run/index.mjs";
 import { loadSdd, VERDICT_FILE as SDD_VERDICT, SDD_FILE } from "../delivery/sdd/index.mjs";
 import { rejudge as buildRejudge, checkCurrency, loadBuild, VERDICT_FILE as BUILD_VERDICT, BRANCH } from "../delivery/build/index.mjs";
 import { readDoc } from "../shared/store.mjs";
-import { seedDelivery, seedStories, reexport, BINDING, STORIES, seedBuild, builder, roundCtx, put, gitIn, BUILT, CLEAN } from "./_fixture.mjs";
+import { refresh, seedDelivery, seedStories, reexport, BINDING, STORIES, seedBuild, builder, roundCtx, put, gitIn, BUILT, CLEAN } from "./_fixture.mjs";
 import { answer } from "../discovery/doors/index.mjs";
 
 const { check, done } = suite("rejudge · verdict freshness", 41);
@@ -97,6 +97,7 @@ await withRoot({}, async (tmp) => {
   const reworded = structuredClone(STORIES);
   reworded[1].statement = reworded[1].statement.replace(/so that .*$/, "so that I can plan the dock before the first truck.");
   seedStories(disc, { stories: reworded });
+  await refresh(disc);
   const v2 = await reexport(disc, cold, { now: clock() });
   const adopted = adoptHandoff(cold, { version: 2, by: "Brad", now: clock() });
   check("v2 moved STORY-2; adopting it moves the pin and sends every approved stage stale with its rounds returned to zero — a flag per stage naming the move",
@@ -127,6 +128,7 @@ await withRoot({}, async (tmp) => {
   const proving = structuredClone(reworded);
   proving[1].scenarios.push({ name: "Vendor named from the manifest", gherkin: "Given a delivery with no paperwork\nWhen the receiving lead opens its row\nThen the vendor is shown as named on the manifest", proves: ["REQ-2/AC-2"] });
   seedStories(disc, { stories: proving });
+  await refresh(disc);
   const v3 = await reexport(disc, cold, { now: clock() });
   adoptHandoff(cold, { version: 3, by: "Brad", now: clock() });
   const rebound = structuredClone(BINDING);
@@ -151,6 +153,7 @@ await withRoot({}, async (tmp) => {
   const late = structuredClone(proving);
   late[0].scenarios.push({ name: "Recorded after the truck left", gherkin: "Given a delivery whose truck has left\nWhen the dock lead records an exception against it before the shift closes\nThen the exception is recorded", proves: ["REQ-1/AC-3"] });
   seedStories(disc, { stories: late });
+  await refresh(disc);
   const v4 = await reexport(disc, cold, { now: clock() });
   adoptHandoff(cold, { version: 4, by: "Brad", now: clock() });
   const asking = structuredClone(rebound);
@@ -170,6 +173,7 @@ await withRoot({}, async (tmp) => {
   const closing = structuredClone(late);
   closing[0].scenarios.push({ name: "The lead closes the shift", gherkin: "Given an open shift\nWhen the dock lead closes it\nThen no exception can be recorded against its deliveries", proves: ["REQ-1/AC-4"] });
   seedStories(disc, { stories: closing });
+  await refresh(disc);
   const v5 = await reexport(disc, cold, { now: clock() });
   const adopted5 = adoptHandoff(cold, { version: 5, by: "Brad", now: clock() });
   check("adopting v5 moves the blocked stage too: intake and sdd both stale at round 0, a flag per stage naming v4 → v5 — a block against a moved contract is re-judged, not escalated",

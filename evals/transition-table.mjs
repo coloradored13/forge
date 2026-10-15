@@ -14,6 +14,7 @@ import { join } from "node:path";
 import { suite, withRoot, scripted } from "./_harness.mjs";
 import { seedProject, seedPrototype, seedStories, seedDesign, DESIGN } from "./_fixture.mjs";
 import { review, signoff } from "../discovery/design/index.mjs";
+import { agree } from "../discovery/doors/index.mjs";
 import { exportHandoff } from "../discovery/export/index.mjs";
 import { validate, load, contractOf } from "../shared/schema/index.mjs";
 import { stamp } from "../shared/hash.mjs";
@@ -283,7 +284,7 @@ await withRoot({}, async (tmp) => {
   check("…without a name, no-author", refusal(() => createRun(root, { by: " ", now: T0 }))?.code === "no-author");
 
   // A team handoff — unsigned design — is not Delivery's.
-  seedPrototype(root); seedStories(root); seedDesign(root);
+  seedPrototype(root); agree({ root, by: "Brad" }); seedStories(root); seedDesign(root);
   const go = (exit) => exportHandoff({ root, exit, by: "Brad", _exec: noExec, _fetch: noExec, _env: {}, _now: now });
   await go("team");
   const unsigned = refusal(() => createRun(root, { by: "Brad", now: T0 }));

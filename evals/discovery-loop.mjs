@@ -11,8 +11,8 @@ import { suite, scripted, withRoot } from "./_harness.mjs";
 import { partialContract, validateAgainst } from "../shared/schema/index.mjs";
 import { checkScope } from "../shared/scope.mjs";
 import { refusalHtml, esc } from "../shared/console/index.mjs";
-import { setupProject } from "../discovery/setup/index.mjs";
-import { openPrd, turn, extract, loadPrd, appendTranscript, WorkshopRefused } from "../discovery/workshop/index.mjs";
+import { project, cancel } from "./_fixture.mjs";
+import { extract, loadPrd, appendTranscript, WorkshopRefused } from "../discovery/workshop/index.mjs";
 import { section } from "../discovery/workshop/sections.mjs";
 import * as doors from "../discovery/doors/index.mjs";
 import { generate, GATE as PROTOTYPE_GATE } from "../discovery/prototype/index.mjs";
@@ -27,8 +27,6 @@ const CONTRARY = "Cancellation is available after pickup.";
 const NOTE = "The equipment desk handles bookings.";
 const AT = "2026-10-08T12:00:00.000Z";
 const HTML = "<!doctype html><title>Booking</title><button>Cancel booking</button>\n";
-const cancel = (id) => ({ id, statement: "Members can cancel equipment bookings.", type: "functional", status: "committed",
-  done_definition: "A cancelled booking releases its reservation.", acceptance_criteria: [{ id: "AC-1", statement: "Cancellation releases the reservation." }] });
 // D02 lists returns first: it reuses the bare id AC-2, as real PRDs do, so protection must follow REQ-2/AC-2, not "AC-2".
 const RETURNS = { id: "REQ-1", statement: "Staff record returns.", type: "functional", status: "committed", done_definition: "A returned item can be booked again.",
   acceptance_criteria: [{ id: "AC-1", statement: "Staff can mark a booking returned." }, { id: "AC-2", statement: "A return records when it happened." }] };
@@ -51,24 +49,6 @@ const criterion = (doc, ref) => {
   return doc?.requirements?.find((r) => r.id === req)?.acceptance_criteria?.find((a) => a.id === ac);
 };
 const NOT_RUN = "not run — the setup above did not reach the state under test";
-
-async function project(parent, reqs) {
-  const { root } = setupProject({ parent, slug: "bookings", title: "Equipment bookings", _exec: () => "" });
-  openPrd({ root, slug: "bookings", title: "Equipment bookings", seed: "Members need to cancel equipment bookings; after-pickup policy is undecided." });
-  await turn({ root, key: "shape", text: "Staff mark pickup. A booking runs from reserved to picked up to returned.",
-    _query: scripted({ text: "🏛 Shape captured.\n[SECTION_COMPLETE]" }).query });
-  await extract({ root, key: "shape", _query: scripted({ structured: { shape: {
-    lifecycles: [{ id: "LC-1", subject: "booking", states: ["reserved", "picked up", "returned"], owner: "staff" }],
-    vocabulary: [], attribution: [], clocks: [],
-  } } }).query });
-  await turn({ root, key: "requirements", text: "Members cancel bookings on a web page; cancellation releases the reservation. Notifications are excluded.",
-    _query: scripted({ text: "🏛 Cancellation is in scope.\n[SECTION_COMPLETE]" }).query });
-  const ids = reqs.map((r) => r.id);
-  await extract({ root, key: "requirements", _query: scripted({ structured: { requirements: structuredClone(reqs),
-    surfaces: { shipped: [{ id: "SURF-1", kind: "web app", statement: "A booking page for members.", req_refs: ids }], deferred: [] },
-    mvp: { line: "Booking cancellation and returns only; notifications are excluded.", inside: ids, past: [] } } }).query });
-  return root;
-}
 
 // ── D01: the only difference between the two runs is the second question's `blocking` flag ──
 for (const blocking of [false, true]) {
