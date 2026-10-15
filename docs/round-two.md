@@ -1,3 +1,7 @@
+> **Superseded on 2026-10-04. Do not resume this plan.** An adversarial review found it would not get the
+> pipeline working, and the owner retired it. The current plan is [the Discovery-to-Handoff plan](discovery-handoff-plan.md);
+> milestone results are in the dated evidence docs it links. The "start here" note below no longer applies.
+
 # Closing cold review round two
 
 **Working document. Start here.** Written 2026-09-20 against `main` at `e8c3652`.
