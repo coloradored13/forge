@@ -410,12 +410,12 @@ await withRoot({}, async (tmp) => {
     elsewhere.handoff.tracker.repo === "acme/oven-backlog" && elsewhere.tracker.created.length === 5 && g.calls.slice(-5).every((c) => c.path === "repos/acme/oven-backlog/issues" && c.method === "POST") && elsewhere.handoff.tracker.keys["REQ-1"] === 6 && (await goOven("team")).handoff.tracker.repo === "acme/oven-backlog", JSON.stringify(elsewhere.handoff.tracker));
   const noRemote = seedProject(tmp, { slug: "mill" });
   seedPrototype(noRemote); agree({ root: noRemote, by: "Brad" }); seedStories(noRemote);
+  const flagsBefore = JSON.stringify(loadPrd(noRemote).flags);
   writeFileSync(join(noRemote, "forge", "project.json"), JSON.stringify({ ...loadProject(noRemote), repo: { ...loadProject(noRemote).repo, remote: "git@gitlab.com:acme/mill.git" } }));
   const noRepo = await refusal(() => exportHandoff({ root: noRemote, exit: "team", by: "Brad", tracker: { kind: "github" }, _exec: noExec, _fetch: noExec, _env: {} }));
   check("GitHub with a remote that is not on GitHub and no repository given is refused", noRepo?.code === "bad-tracker" && /owner\/name/.test(noRepo.message), noRepo?.message);
 
   // gh fails midway: the snapshot stands with the keys it got; the next export resumes.
-  const flagsBefore = JSON.stringify(loadPrd(noRemote).flags);
   const failing = ghScript({ fail: (n) => n === 2 });
   const midway = await refusal(() => exportHandoff({ root: noRemote, exit: "team", by: "Brad", tracker: { kind: "github", repo: "acme/mill" }, _exec: failing.exec, _fetch: noExec, _env: {} }));
   const partial = latestHandoff(noRemote);

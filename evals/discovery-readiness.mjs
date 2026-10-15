@@ -1,34 +1,38 @@
 #!/usr/bin/env node
 // owns: R3, R4, R14 · shared — D05: freshness gates and byte-keyed outgoing history.
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { suite, scripted, withRoot } from "./_harness.mjs";
-import { seedProject, seedPrototype, seedStories, seedDesign, refresh, writeHtml, HTML, SCREENS, EPICS, STORIES } from "./_fixture.mjs";
+import { seedProject, seedPrototype, seedStories, seedDesign, refresh, writeHtml, HTML, SCREENS, EPICS, STORIES, DESIGN } from "./_fixture.mjs";
 import { loadPrd, savePrd } from "../discovery/workshop/index.mjs";
 import * as doors from "../discovery/doors/index.mjs";
 import { generate } from "../discovery/prototype/index.mjs";
 import { write } from "../discovery/stories/index.mjs";
-import { review, signoff } from "../discovery/design/index.mjs";
+import { write as writeDesign, review, signoff } from "../discovery/design/index.mjs";
 import { readiness, exportHandoff, EXITS } from "../discovery/export/index.mjs";
 import { Refused, readDoc, saveDoc, staleness, PRD_FILE, PROTOTYPE_FILE, STORIES_FILE, DESIGN_FILE, HTML_FILE } from "../discovery/record/index.mjs";
 
-const { check, done } = suite("discovery-readiness · D05 exits and outgoing history", 59);
+const { check, done } = suite("discovery-readiness · D05 exits and outgoing history", 64);
 const bytes = (root, file) => readFileSync(join(root, file), "utf8");
 const hash = (s) => createHash("sha256").update(s).digest("hex");
 const attempt = async (fn) => { try { return { value: await fn() }; } catch (error) { return { error }; } };
 const noService = () => { throw new Error("unexpected external service"); };
 const go = (root, exit) => attempt(() => exportHandoff({ root, exit, by: "PM", _exec: noService, _fetch: noService, _env: {} }));
 const allowed = async (root) => { const results = []; for (const exit of EXITS) results.push(await go(root, exit)); return results.every((r) => r.value); };
-const finding = (root, rule, subject, remedy) => {
+const finding = (root, rule, subject, remedy, mode) => {
   const f = readiness(root).findings.find((f) => f.rule === rule);
-  check(`${rule}: high, certain, subject and next step`, f?.severity === "high" && f.confidence === "certain" && f.subject === subject && remedy.test(f.remedy), JSON.stringify(f));
+  check(`${mode}: ${rule}: high, certain, subject and next step`, f?.severity === "high" && f.confidence === "certain" && f.subject === subject && f.remedy !== f.summary && remedy.every((r) => r.test(f.remedy)), JSON.stringify(f));
+};
+const snapshots = (root) => {
+  const dir = join(root, "discovery", "handoffs");
+  return existsSync(dir) ? JSON.stringify(readdirSync(dir).sort().map((file) => [file, bytes(dir, file)])) : "[]";
 };
 const blocked = async (root, rule, exits = EXITS) => {
   for (const exit of exits) {
-    const before = bytes(root, PRD_FILE), out = await go(root, exit);
+    const before = bytes(root, PRD_FILE), handoffs = snapshots(root), out = await go(root, exit);
     check(`${exit} refuses ${rule} without exporting`, out.error instanceof Refused && out.error.code === "not-ready"
-      && out.error.detail?.some((f) => f.rule === rule) && bytes(root, PRD_FILE) === before, out.error?.message ?? "export succeeded");
+      && out.error.detail?.some((f) => f.rule === rule) && bytes(root, PRD_FILE) === before && snapshots(root) === handoffs, out.error?.message ?? "export succeeded");
   }
 };
 const movePrd = (root) => { const p = loadPrd(root); p.problem.crux += " at night"; savePrd(root, p); };
@@ -44,13 +48,20 @@ const setup = async (parent) => {
   return root;
 };
 
+await withRoot({}, async (parent) => {
+  const root = seedProject(parent); seedPrototype(root);
+  finding(root, "no-agreement", loadPrd(root).id, [/\bagree\b/i], "prototype only");
+  doors.agree({ root, by: "PM" });
+  check("prototype only: agreement clears the finding without stories", !readDoc(root, STORIES_FILE) && !readiness(root).findings.some((f) => /agreement/.test(f.rule)));
+});
+
 for (const mode of ["none", "prd", "prototype"]) await withRoot({}, async (parent) => {
   const root = await setup(parent), original = loadPrd(root), proto = readDoc(root, PROTOTYPE_FILE);
   if (mode !== "none") doors.agree({ root, by: "PM" });
   if (mode === "prd") movePrd(root);
   if (mode === "prototype") { proto.screens[0].name += " revised"; saveDoc(root, PROTOTYPE_FILE, "prototype", proto); }
   const rule = mode === "none" ? "no-agreement" : "agreement-stale";
-  finding(root, rule, original.id, /agree/i);
+  finding(root, rule, original.id, [/\bagree\b/i, ...(mode === "prd" ? [/\b(rebuild|regenerate|refresh)\b[^.]*\bprototype\b/i] : [])], mode);
   const q = backlog(), before = bytes(root, STORIES_FILE), out = await attempt(() => write({ root, _query: q.query }));
   check(`${mode}: write shares the agreement rule before any call`, out.error instanceof Refused && out.error.code === rule && q.calls.length === 0 && bytes(root, STORIES_FILE) === before);
   await blocked(root, rule);
@@ -64,7 +75,7 @@ for (const source of ["prd", "prototype"]) await withRoot({}, async (parent) => 
   if (source === "prd") { movePrd(root); await rebuild(root); }
   else { const p = readDoc(root, PROTOTYPE_FILE); p.screens[0].name += " revised"; saveDoc(root, PROTOTYPE_FILE, "prototype", p); }
   doors.agree({ root, by: "PM" });
-  finding(root, "stories-stale", old.id, /writ|regenerat/i);
+  finding(root, "stories-stale", old.id, [/\b(rewrite|write|regenerate|refresh)\b[^.]*\b(stories|backlog)\b/i], source);
   check(`${source}: stable story ids and labels do not imply freshness`, bytes(root, STORIES_FILE) === JSON.stringify(old, null, 2) + "\n" && staleness(root).stories.stale);
   await blocked(root, "stories-stale");
   await refresh(root);
@@ -75,7 +86,7 @@ await withRoot({}, async (parent) => {
   const root = await setup(parent); doors.agree({ root, by: "PM" });
   const oldDesign = bytes(root, DESIGN_FILE);
   movePrd(root); await rebuild(root); doors.agree({ root, by: "PM" }); await write({ root, _query: backlog().query });
-  finding(root, "design-stale", readDoc(root, DESIGN_FILE).id, /design/i);
+  finding(root, "design-stale", readDoc(root, DESIGN_FILE).id, [/\b(regenerate|rebuild|rewrite|refresh)\b[^.]*\bdesign\b/i], "prd");
   await blocked(root, "design-stale", ["delivery", "both"]);
   const team = await go(root, "team");
   check("team carries the old design with stale trace evidence", !!team.value && bytes(root, DESIGN_FILE) === oldDesign
@@ -100,7 +111,7 @@ for (const source of ["prototype", "stories"]) await withRoot({}, async (parent)
     const stories = structuredClone(STORIES); stories[0].statement += " At night.";
     await write({ root, _query: scripted({ structured: { epics: EPICS, stories, notes: "", open_questions: [] } }).query });
   }
-  finding(root, "design-stale", readDoc(root, DESIGN_FILE).id, /design/i);
+  finding(root, "design-stale", readDoc(root, DESIGN_FILE).id, [/\b(regenerate|rebuild|rewrite|refresh)\b[^.]*\bdesign\b/i], source);
   await blocked(root, "design-stale", ["delivery", "both"]);
   check(`${source}: team accepts stale design without rewriting it`, !!(await go(root, "team")).value && bytes(root, DESIGN_FILE) === old);
   await refresh(root);
@@ -124,6 +135,15 @@ await withRoot({}, async (parent) => {
 
 const archive = (kind, saved) => `discovery/history/${kind}-${hash(saved).slice(0, 12)}.json`;
 const kept = (root, file, saved) => existsSync(join(root, file)) && bytes(root, file) === saved;
+await withRoot({}, async (parent) => {
+  const root = seedProject(parent); seedPrototype(root); doors.agree({ root, by: "PM" }); seedStories(root); seedDesign(root);
+  const stories = bytes(root, STORIES_FILE), design = bytes(root, DESIGN_FILE), prd = bytes(root, PRD_FILE);
+  check("history control: current backlog and unsigned current design", !staleness(root).stories.stale && !staleness(root).design.stale && !readDoc(root, DESIGN_FILE).signoff);
+  const writer = backlog(); await write({ root, _query: writer.query });
+  check("current stories are archived under an unchanged agreement", writer.calls.length === 1 && bytes(root, PRD_FILE) === prd && kept(root, archive("stories", stories), stories));
+  const designer = scripted({ structured: DESIGN }); await writeDesign({ root, _query: designer.query });
+  check("unsigned current design is archived on rewrite", designer.calls.length === 1 && kept(root, archive("design", design), design));
+});
 await withRoot({}, async (parent) => {
   const root = await setup(parent); doors.agree({ root, by: "PM" });
   const first = [STORIES_FILE, DESIGN_FILE].map((f) => bytes(root, f));
