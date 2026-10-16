@@ -196,10 +196,13 @@ So when the prototype moved, the result is `revision-moved` whether or not the P
 
 `approve()` keeps its signature. Supersession runs first, as it does today, over the rulings that existed before this approval. Then, if all of the following hold, approval appends one ruling:
 - the amendment has a `pq`;
+- it names a reaction that is on the record, whose text becomes the answer (added on #72: `mint` is exported and takes `pq` without `reaction`);
 - its target is one of the two shapes in §2;
-- that PQ is still open.
+- that PQ is still open on the prototype record.
 
-**The ruling.** `{ id: RUL-n, pq, question: the PQ's text, answer: the reaction's text, criterion: REQ-n/AC-m (the edited or added criterion), by: the approver, at, version, prd_hash, amendment: AMD-n }`. It adds no criterion, and it is never superseded by its own amendment.
+Otherwise approval goes ahead as it does today, behind all its existing guards (movement, target, radius, audit). It writes no ruling and leaves `prototype.json` byte-identical, for example when the PQ is already answered or no longer asked, or there is no prototype.
+
+**The ruling.** `{ id: RUL-n, pq, question: the PQ's text, answer: the reaction's text, trimmed, criterion: REQ-n/AC-m (the edited or added criterion, read after the change applies), by: the approver, at (the approval's), version (the resulting one), prd_hash (the saved one), amendment: AMD-n }`. It adds no criterion, and it is never superseded by its own amendment. Approval's existing decision note names the ruling and the PQ it settles; there is no second flag.
 
 **On the prototype record,** the PQ is marked answered by that ruling, and both records are validated before either is written, as `answer` does.
 
@@ -213,7 +216,7 @@ So when the prototype moved, the result is `revision-moved` whether or not the P
 - amendments gain `reaction` and `pq`, and `origin` gains `"reaction"`;
 - rulings gain `amendment`, which `rulingsOf()` does not carry;
 - the PRD gains `reactions`;
-- the rulings description changes from "written by the answer door" to also cover approval;
+- the rulings description changes from "written by the answer door" to also cover approval, and so does the prototype's PQ `status` description ("Open until the PM answers it through the answer door", added on #72);
 - R3's enforcer, in `rules.json` and SPEC, gains the approve door, word-neutrally.
 
 ## 4. The D03 journey
