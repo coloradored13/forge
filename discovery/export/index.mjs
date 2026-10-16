@@ -14,7 +14,7 @@ import { verify } from "../../shared/hash.mjs";
 import { pin, deriveVerdict } from "../../shared/judge/index.mjs";
 import { checkScope, lineDrawn } from "../../shared/scope.mjs";
 import { totals } from "../../shared/agent-call/ledger.mjs";
-import { handoffFile, latestHandoff, itemsOf } from "../../shared/handoff.mjs";
+import { handoffFile, latestHandoff, itemsOf, designMoved } from "../../shared/handoff.mjs";
 import { loadProject, ledgerPath, exec } from "../setup/index.mjs";
 import { loadPrd, savePrd, PRD_FILE } from "../workshop/index.mjs";
 import { Refused, readDoc, saveDoc, saveVerdict, isSigned, agreementGap, stalenessOf, renderPrd, renderPrototype, renderStories, renderStandard, renderDesign, PROTOTYPE_FILE, STORIES_FILE, DESIGN_FILE } from "../record/index.mjs";
@@ -176,14 +176,6 @@ export function designState(design) {
  * amendments in force, the backlog, the design as it stands, the prototype. Derived —
  * the snapshot is the record; this is written from it and never read back.
  */
-/** What a handoff's design was written from that differs from what the handoff carries — read from the snapshot alone, so a rendering never changes after export. */
-function designMoved(h) {
-  const t = h.design?.traces;
-  if (!t) return [];
-  return [["PRD", t.prd, h.contract.prd], ["prototype", t.prototype, h.prototype?.meta], ["backlog", t.stories, h.stories?.meta]]
-    .filter(([, traced, carried]) => traced && traced.content_hash !== carried?.content_hash).map(([name]) => name);
-}
-
 export function renderHandoff(h) {
   const c = h.contract;
   const moved = designMoved(h);
