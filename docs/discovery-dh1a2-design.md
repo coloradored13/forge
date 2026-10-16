@@ -14,7 +14,7 @@ Status: for ChatGPT's review, as PR 1 of DH1a.2, before any tests or code. Base:
 | 2 | The guard (§1) |
 | 3 | D05 readiness and the history copy (§5), with the §7 suite refits and the SPEC wording |
 | 4a | The PRD's runner-owned `reactions` list, the pending-reaction hold in `write()`, its readiness row, and the `amendment-audit` count (split by the owner, 2026-10-16) |
-| 4b | The `react` door (§2): the editor prompt, `reaction.schema.json` and its refusals, with the `coherence` count |
+| 4b | The `react` door (§2): the editor prompt, `reaction.schema.json` and its refusals, the amendment fields `origin: "reaction"`, `reaction` and `pq` (moved from PR 5, owner 2026-10-16), with the `coherence` count |
 | 5 | Approval settles the linked question (§3), and the D03 journey suite (§4) |
 
 Each PR's lines count toward this milestone's estimate.
@@ -41,7 +41,7 @@ Each PR's lines count toward this milestone's estimate.
 - Implementation was close to the original estimate. Tests were underestimated about 3×: each behavior needs a refused run, an allowed run and a no-write check, and review adds cases.
 - The 1.5× line, a gut check rather than a ceiling, is the actuals plus 1.5× of what remains: about 366 implementation and 1,281 test lines.
 - **Risks to settle as PR 4 starts:**
-  - `fieldsOf` (`shared/schema/index.mjs`) does not walk `oneOf`, so a `change` that takes one of two shapes would not have its fields described to the editor. That is 4b; it adds about 10–20 lines each of implementation and tests.
+  - ~~`fieldsOf` does not walk `oneOf`~~ — resolved by "4b decisions": `change` is one nullable object, which `fieldsOf` already describes, so 4b is about 10–20 lines smaller each than estimated.
   - Five smaller gaps (4b and 5):
     - `react`'s prototype recheck comes before `savePrd`'s guard;
     - `prd-changed` carries no detail, so `react` re-throws it with `{ text, pq }`;
