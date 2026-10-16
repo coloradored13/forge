@@ -1,10 +1,13 @@
 // owns: R3, R4 · discovery — the discovery record: where each document lives beside the
 // PRD, what it traces, how the PRD's settled rulings ride into every writer and reviewer
 // after it (R3), and the stale badge a document wears once the PRD has moved past what
-// it traces — with the rulings and amendments that moved it (R4). Also how the record
-// reads to an agent: one rendering per document, used by every prompt that shows it.
+// it traces — with the rulings and amendments that moved it (R4) — and the outgoing copy
+// a writer keeps before it replaces a document. Also how the record reads to an agent:
+// one rendering per document, used by every prompt that shows it.
 
-import { join } from "node:path";
+import { createHash } from "node:crypto";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { extname, join } from "node:path";
 import { verdictFreshness } from "../../shared/judge/index.mjs";
 import { Refused } from "../../shared/refused.mjs";
 import { readDoc, saveDoc, saveVerdict as file } from "../../shared/store.mjs";
@@ -17,8 +20,25 @@ export const HTML_FILE = join("discovery", "prototype", "index.html");
 export const STORIES_FILE = join("discovery", "stories.json");
 export const DESIGN_FILE = join("discovery", "design.json");
 export const REVIEWS = join("discovery", "reviews");
+export const HISTORY = join("discovery", "history");
 
 // ── documents ──
+
+/**
+ * Keep the document a writer is about to replace: its saved bytes, at
+ * `discovery/history/<kind>-<first 12 hex of their sha256>.json`. The key is the whole
+ * file, not the content hash, which leaves out traces, sign-offs and workflow state. A
+ * file that rides beside it (the prototype's HTML) is kept under the same key.
+ */
+export function keepOutgoing(root, kind, file, beside) {
+  if (!existsSync(join(root, file))) return null;
+  const saved = readFileSync(join(root, file));
+  const key = join(HISTORY, `${kind}-${createHash("sha256").update(saved).digest("hex").slice(0, 12)}`);
+  mkdirSync(join(root, HISTORY), { recursive: true });
+  writeFileSync(join(root, `${key}.json`), saved);
+  if (beside && existsSync(join(root, beside))) copyFileSync(join(root, beside), join(root, `${key}${extname(beside)}`));
+  return key;
+}
 
 /** A gate's verdict, filed under its gate id (or a name under it). Validated: a verdict that does not fit the shape is not a verdict. */
 export function saveVerdict(root, verdict, name = verdict?.gate) {
@@ -90,17 +110,31 @@ export function currentAgreement(prd, proto) {
 }
 
 /**
+ * Why no agreement covers the record as it stands, or null: `no-agreement` when none was
+ * ever recorded, else `agreement-stale` with what moved since the last. One rule: the
+ * stories door refuses on it and the ready gate reports it.
+ */
+export function agreementGap(prd, proto) {
+  if (currentAgreement(prd, proto)) return null;
+  const last = prd.agreements?.at(-1);
+  if (!last) return { rule: "no-agreement", why: "the PM has not agreed this revision" };
+  const moved = changedSince(prd, last.prd_version);
+  const what = last.prd_hash !== prd.meta.content_hash ? `the PRD has moved from ${last.prd_version} to ${prd.meta.version}${moved.length ? ` (${moved.join(", ")})` : ""}` : "the prototype has been rebuilt";
+  return { rule: "agreement-stale", why: `${last.id} agreed to a revision that is no longer on the record — ${what}` };
+}
+
+/**
  * The stale badge per downstream document: whether what it traces still matches the
- * PRD (and, further down, the prototype and the stories), and which rulings and
- * amendments landed after the version it was made from. A badge is shown, never
- * enforced — the PM decides whether the document needs redoing. The design also
- * says whether its sign-off is on this exact version.
+ * PRD (and, further down, the prototype and the stories) by content hash, and which
+ * rulings and amendments landed after the version it was made from. The ready gate
+ * enforces the same badge: stale stories hold every exit, a stale design the Delivery
+ * exits (D05). The design also says whether its sign-off is on this exact version.
  */
 export function staleness(root) {
-  const prd = loadPrd(root);
-  const proto = readDoc(root, PROTOTYPE_FILE);
-  const stories = readDoc(root, STORIES_FILE);
-  const design = readDoc(root, DESIGN_FILE);
+  return stalenessOf({ prd: loadPrd(root), proto: readDoc(root, PROTOTYPE_FILE), stories: readDoc(root, STORIES_FILE), design: readDoc(root, DESIGN_FILE) });
+}
+
+export function stalenessOf({ prd, proto, stories, design }) {
   const since = (version) => changedSince(prd, version);
   const moved = (traced, current) => !current || traced.content_hash !== current.meta.content_hash;
   const badge = (doc, extra = {}) => {

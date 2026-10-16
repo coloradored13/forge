@@ -17,7 +17,7 @@ import { deriveVerdict, pin } from "../../shared/judge/index.mjs";
 import { scopeOf } from "../../shared/scope.mjs";
 import { loadProject, ledgerPath } from "../setup/index.mjs";
 import { loadPrd, existingIds, PRD_FILE } from "../workshop/index.mjs";
-import { Refused, readDoc, saveDoc, saveVerdict, traceOf, rulingsOf, renderPrd, PROTOTYPE_FILE, HTML_FILE } from "../record/index.mjs";
+import { Refused, readDoc, saveDoc, saveVerdict, keepOutgoing, traceOf, rulingsOf, renderPrd, PROTOTYPE_FILE, HTML_FILE } from "../record/index.mjs";
 
 const PROMPTS = join(dirname(fileURLToPath(import.meta.url)), "prompts");
 export const GATE = "prototype-arithmetic";
@@ -34,7 +34,8 @@ export function fileHash(root) {
  * Build or rebuild the prototype. Refused before the line is drawn — there is nothing
  * to hold the prototype to. The builder writes exactly one file; the record it returns
  * is validated, its screen ids must survive from the previous build, and the arithmetic
- * is checked and filed as a gate verdict beside it.
+ * is checked and filed as a gate verdict beside it. The previous record and its HTML are
+ * kept in the history as a pair before the call, since the builder overwrites the HTML.
  */
 export async function generate({ root, notes, onEvent, _query, _sleep }) {
   const project = loadProject(root);
@@ -55,6 +56,7 @@ export async function generate({ root, notes, onEvent, _query, _sleep }) {
     `## Where to write\n\nWrite one file, \`${HTML_FILE}\`, relative to the project root. Nothing else — the record of screens comes back as your structured answer, not as a file.`,
   ].filter(Boolean).join("\n\n");
 
+  keepOutgoing(root, "prototype", PROTOTYPE_FILE, HTML_FILE);
   const res = await call({
     half: "discovery", stage: "prototype", role: "writer", kind: "writer",
     system, prompt, cwd: root, outputSchema: outputContract("prototype"),

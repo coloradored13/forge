@@ -44,7 +44,7 @@ Two bars, because two executors. The seam is a snapshot.
 | executor | a human — the PM, a designer, a team | a machine — agents whose output nobody reads before it runs |
 | bar | vetted and linked | proven |
 | loop | human-triggered review; the PM is the loop | capped regeneration with a cost function |
-| staleness | a badge and a diff; the PM decides | re-judge, regenerate only on block |
+| staleness | a stale agreement or backlog blocks every export | re-judge, regenerate only on block |
 | state | document status: draft → reviewed → signed | one state machine with liveness |
 | may amend the PRD | yes, audited | never — it may only ask |
 | output | the handoff and its rendering; a tracker projection (GitHub Issues or Jira) when set | a product + its provenance manifest |
