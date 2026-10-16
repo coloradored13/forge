@@ -10,14 +10,18 @@ import { skeleton } from "../shared/schema/index.mjs";
 import { HANDOFFS } from "../shared/handoff.mjs";
 import { scripted } from "./_harness.mjs";
 import { reconcileIgnore, setupProject } from "../discovery/setup/index.mjs";
-import { openPrd, loadPrd, savePrd } from "../discovery/workshop/index.mjs";
+import { openPrd, loadPrd, savePrd, turn, extract } from "../discovery/workshop/index.mjs";
 import { readDoc, saveDoc, traceOf, PROTOTYPE_FILE, HTML_FILE, STORIES_FILE, DESIGN_FILE } from "../discovery/record/index.mjs";
-import { review, signoff } from "../discovery/design/index.mjs";
+import { write as writeDesign, review, signoff } from "../discovery/design/index.mjs";
 import { exportHandoff } from "../discovery/export/index.mjs";
 import { createRun, readRun } from "../delivery/state/index.mjs";
 import { runStage } from "../delivery/run/index.mjs";
 import { takePinned, INTAKE_FILE } from "../delivery/intake/index.mjs";
 import { loadSdd, UNTESTED } from "../delivery/sdd/index.mjs";
+
+import { agree } from "../discovery/doors/index.mjs";
+import { generate } from "../discovery/prototype/index.mjs";
+import { write } from "../discovery/stories/index.mjs";
 
 export const HTML = "<!doctype html><title>Dock</title><main><h1>Run sheet</h1><button>Record an exception</button></main>\n";
 
@@ -154,6 +158,7 @@ const cleanJudge = () => scripted({ structured: { findings: [], deferred: [], ch
 export async function seedDelivery(tmp, { slug = "dock", open_questions = [], by = "Brad", now = new Date("2026-09-06T09:00:00Z") } = {}) {
   const disc = seedProject(tmp, { slug });
   seedPrototype(disc);
+  agree({ root: disc, by });
   seedStories(disc, { open_questions });
   seedDesign(disc);
   await review({ root: disc, _query: cleanJudge() });
@@ -280,4 +285,39 @@ export function builder(reports, effects = {}, extra = {}) {
 export function roundCtx(cold, { review = null, now = new Date("2026-09-06T11:00:00Z"), by = "runner" } = {}) {
   const run = readRun(cold);
   return { run, now, by, review, handoff: takePinned(cold, run), intake: readDoc(cold, INTAKE_FILE) };
+}
+
+export const cancel = (id) => ({ id, statement: "Members can cancel equipment bookings.", type: "functional", status: "committed",
+  done_definition: "A cancelled booking releases its reservation.", acceptance_criteria: [{ id: "AC-1", statement: "Cancellation releases the reservation." }] });
+
+export async function project(parent, reqs) {
+  const { root } = setupProject({ parent, slug: "bookings", title: "Equipment bookings", _exec: () => "" });
+  openPrd({ root, slug: "bookings", title: "Equipment bookings", seed: "Members need to cancel equipment bookings; after-pickup policy is undecided." });
+  await turn({ root, key: "shape", text: "Staff mark pickup. A booking runs from reserved to picked up to returned.",
+    _query: scripted({ text: "🏛 Shape captured.\n[SECTION_COMPLETE]" }).query });
+  await extract({ root, key: "shape", _query: scripted({ structured: { shape: {
+    lifecycles: [{ id: "LC-1", subject: "booking", states: ["reserved", "picked up", "returned"], owner: "staff" }],
+    vocabulary: [], attribution: [], clocks: [],
+  } } }).query });
+  await turn({ root, key: "requirements", text: "Members cancel bookings on a web page; cancellation releases the reservation. Notifications are excluded.",
+    _query: scripted({ text: "🏛 Cancellation is in scope.\n[SECTION_COMPLETE]" }).query });
+  const ids = reqs.map((r) => r.id);
+  await extract({ root, key: "requirements", _query: scripted({ structured: { requirements: structuredClone(reqs),
+    surfaces: { shipped: [{ id: "SURF-1", kind: "web app", statement: "A booking page for members.", req_refs: ids }], deferred: [] },
+    mvp: { line: "Booking cancellation and returns only; notifications are excluded.", inside: ids, past: [] } } }).query });
+  return root;
+}
+
+/** Rebuild through scripted writers, preserving each suite's chosen backlog and design. */
+export async function refresh(root, { stories = readDoc(root, STORIES_FILE), design = readDoc(root, DESIGN_FILE) } = {}) {
+  const proto = readDoc(root, PROTOTYPE_FILE);
+  const q = scripted({ structured: { screens: proto.screens, uncovered: proto.uncovered, notes: proto.notes, open_questions: [] } });
+  await generate({ root, _query: (args) => { writeHtml(root); return q.query(args); } });
+  agree({ root, by: "Brad" });
+  await write({ root, _query: scripted({ structured: { epics: stories.epics, stories: stories.stories, notes: stories.notes, open_questions: stories.open_questions } }).query });
+  if (!design) return;
+  const { standard, tokens, stylesheet, screens, notes, open_questions } = design;
+  await writeDesign({ root, _query: scripted({ structured: { standard, tokens, stylesheet, screens, notes, open_questions } }).query });
+  await review({ root, _query: cleanJudge() });
+  signoff(root, { by: "Ana Ruiz" });
 }

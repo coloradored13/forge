@@ -17,7 +17,7 @@ import { funnelPath } from "../../shared/funnel.mjs";
 import { scopeOf } from "../../shared/scope.mjs";
 import { loadProject, ledgerPath } from "../setup/index.mjs";
 import { loadPrd, savePrd, PRD_FILE } from "../workshop/index.mjs";
-import { Refused, readDoc, saveDoc, saveVerdict, readVerdict, freshVerdict, traceOf, rulingsOf, isSigned, insideRequirements, renderRequirement, renderPrd, renderSurfaces, renderPrototype, renderStories, renderStandard, renderDesign, PROTOTYPE_FILE, STORIES_FILE, DESIGN_FILE } from "../record/index.mjs";
+import { Refused, readDoc, saveDoc, saveVerdict, readVerdict, freshVerdict, keepOutgoing, traceOf, rulingsOf, isSigned, insideRequirements, renderRequirement, renderPrd, renderSurfaces, renderPrototype, renderStories, renderStandard, renderDesign, PROTOTYPE_FILE, STORIES_FILE, DESIGN_FILE } from "../record/index.mjs";
 
 const PROMPTS = join(dirname(fileURLToPath(import.meta.url)), "prompts");
 export const GATE = "design-arithmetic";
@@ -31,8 +31,9 @@ export function loadDesign(root) { return readDoc(root, DESIGN_FILE); }
  * Write or rewrite the design. Refused before the line, before a prototype and before a
  * backlog — the design covers the screens the stories claim, so both must exist. The
  * writer has no write surface; what it returns is validated, traced to all three by
- * hash, and the claim-map arithmetic is checked and filed beside it. A fresh reviewer
- * verdict on the previous design rides into the prompt, as do its control ids.
+ * hash, and the claim-map arithmetic is checked and filed beside it; the design it
+ * replaces is kept in the history first. A fresh reviewer verdict on the previous design
+ * rides into the prompt, as do its control ids.
  */
 export async function write({ root, notes, onEvent, _query, _sleep }) {
   const project = loadProject(root);
@@ -76,6 +77,7 @@ export async function write({ root, notes, onEvent, _query, _sleep }) {
   if (!v.ok) throw new Refused("design-invalid", `design: the design does not fit the contract — ${v.errors.slice(0, 5).join("; ")}`, v.errors);
 
   const doc = { ...skeleton("design"), id: `design-${prd.meta.slug}`, traces: traceOf(prd, proto, stories), ...res.structured };
+  keepOutgoing(root, "design", DESIGN_FILE);
   saveDoc(root, DESIGN_FILE, "design", doc);
   const arithmetic = { ...checkDesign(proto, stories, doc), judged: pins(prd, proto, stories, doc) };
   saveVerdict(root, arithmetic);

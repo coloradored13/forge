@@ -12,7 +12,7 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { suite, withRoot, scripted, ROOT } from "./_harness.mjs";
-import { seedProject, seedPrototype, seedStories, seedDesign, STORIES, seedBuild, builder, roundCtx, put, gitIn, BUILT } from "./_fixture.mjs";
+import { refresh, seedProject, seedPrototype, seedStories, seedDesign, STORIES, seedBuild, builder, roundCtx, put, gitIn, BUILT } from "./_fixture.mjs";
 import { round as buildRound, worktree, WORKTREE, BRANCH, RECORD } from "../delivery/build/index.mjs";
 import { violations } from "../tools/import-rule.mjs";
 import { load, inlineRefs, outputContract, fields, validate } from "../shared/schema/index.mjs";
@@ -28,7 +28,7 @@ import { setupProject, loadProject, ledgerPath, insidePipeline, SetupRefused, PI
 import { GENERATED } from "../shared/runners.mjs";
 import { loadPrd } from "../discovery/workshop/index.mjs";
 import { readDoc, readVerdict, isSigned, DESIGN_FILE, REVIEWS } from "../discovery/record/index.mjs";
-import { answer } from "../discovery/doors/index.mjs";
+import { answer, agree } from "../discovery/doors/index.mjs";
 import { review, signoff } from "../discovery/design/index.mjs";
 import { exportHandoff, readiness, compile, designState, renderHandoff, repoOf, GATE as EXPORT_GATE, EXITS, IDEA, TRACKERS } from "../discovery/export/index.mjs";
 
@@ -254,6 +254,7 @@ await withRoot({}, async (tmp) => {
   check("no refusal wrote a handoff, a verdict or a flag, or reached Jira",
     !existsSync(join(root, HANDOFFS)) && readVerdict(root, EXPORT_GATE) === null && loadPrd(root).flags.length === 0 && j.calls.length === 0);
 
+  agree({ root, by: "Brad" });
   // The ready gate stands on its own: recomputed live, pinned to what it read.
   seedStories(root);
   const ready = readiness(root);
@@ -343,12 +344,13 @@ await withRoot({}, async (tmp) => {
   check("a criterion no story proves blocks every exit as not-ready, the findings attached, naming REQ-1/AC-3",
     notReady?.code === "not-ready" && unproved && /REQ-1\/AC-3/.test(unproved.subject + unproved.evidence) && readHandoffs(root).length === 4, notReady?.message);
   check("the blocking readiness verdict is on file — the console can show it — and the PRD took no export flag", readVerdict(root, EXPORT_GATE).verdict === "block" && !/handoff v5/.test(loadPrd(root).flags.at(-1).note));
-  check("a stale design is not a gate: the stories moved under it, the design still verifies signed", isSigned(readDoc(root, DESIGN_FILE)));
+  check("the old design still verifies signed even though its upstream record moved", isSigned(readDoc(root, DESIGN_FILE)));
 
   // The backlog catches up; both exits. Changed items are updated in Jira, unchanged left alone, the ruling rides in the contract.
   const proving = structuredClone(STORIES);
   proving[0].scenarios.push({ name: "After the truck has left", gherkin: "Given a delivery whose truck has left\nWhen I record an exception before the shift ends\nThen the exception is recorded against that delivery", proves: ["REQ-1/AC-3"] });
   seedStories(root, { stories: proving });
+  await refresh(root);
   j.calls.length = 0;
   const v5 = await go("both", { tracker: undefined });
   check("both: v5 exported, the PRD moved so the idea is updated and the PRD re-attached; REQ-1's epic and STORY-1 are updated in place; nothing is created",
@@ -373,7 +375,7 @@ await withRoot({}, async (tmp) => {
 
   // A second project, no Jira anywhere: files only, then GitHub Issues through the gh the PM already has.
   const oven = seedProject(tmp, { slug: "oven" });
-  seedPrototype(oven); seedStories(oven);
+  seedPrototype(oven); agree({ root: oven, by: "Brad" }); seedStories(oven);
   const g = ghScript();
   const goOven = (exit, opts = {}) => exportHandoff({ root: oven, exit, by: "Brad", _exec: g.exec, _fetch: noExec, _env: {}, ...opts });
   const files = await goOven("team");
@@ -399,6 +401,7 @@ await withRoot({}, async (tmp) => {
   const proving2 = structuredClone(STORIES);
   proving2[1].scenarios.push({ name: "Two exceptions", gherkin: "Given a delivery with two exceptions\nWhen I open it\nThen only the most recent exception is shown", proves: ["REQ-2/AC-2"] });
   seedStories(oven, { stories: proving2 });
+  await refresh(oven);
   const gh3 = await goOven("team");
   check("changed items are patched in place — REQ-2's issue and STORY-2's — and nothing else is touched",
     g.calls.map((c) => `${c.method} ${c.path}`).join(" | ") === "PATCH repos/acme/oven/issues/2 | PATCH repos/acme/oven/issues/5" && gh3.tracker.updated.join() === "REQ-2,STORY-2" && gh3.tracker.unchanged.join() === "REQ-1,REQ-4,STORY-1" && g.calls[0].fields.body.includes("REQ-2/AC-2") && g.calls[0].fields.labels.join() === "epic,REQ-2", g.calls.map((c) => `${c.method} ${c.path}`).join(" | "));
@@ -406,7 +409,8 @@ await withRoot({}, async (tmp) => {
   check("a different repository is a fresh projection: the keys do not carry across, five issues are created there, and the next export follows it",
     elsewhere.handoff.tracker.repo === "acme/oven-backlog" && elsewhere.tracker.created.length === 5 && g.calls.slice(-5).every((c) => c.path === "repos/acme/oven-backlog/issues" && c.method === "POST") && elsewhere.handoff.tracker.keys["REQ-1"] === 6 && (await goOven("team")).handoff.tracker.repo === "acme/oven-backlog", JSON.stringify(elsewhere.handoff.tracker));
   const noRemote = seedProject(tmp, { slug: "mill" });
-  seedPrototype(noRemote); seedStories(noRemote);
+  seedPrototype(noRemote); agree({ root: noRemote, by: "Brad" }); seedStories(noRemote);
+  const flagsBefore = JSON.stringify(loadPrd(noRemote).flags);
   writeFileSync(join(noRemote, "forge", "project.json"), JSON.stringify({ ...loadProject(noRemote), repo: { ...loadProject(noRemote).repo, remote: "git@gitlab.com:acme/mill.git" } }));
   const noRepo = await refusal(() => exportHandoff({ root: noRemote, exit: "team", by: "Brad", tracker: { kind: "github" }, _exec: noExec, _fetch: noExec, _env: {} }));
   check("GitHub with a remote that is not on GitHub and no repository given is refused", noRepo?.code === "bad-tracker" && /owner\/name/.test(noRepo.message), noRepo?.message);
@@ -416,7 +420,7 @@ await withRoot({}, async (tmp) => {
   const midway = await refusal(() => exportHandoff({ root: noRemote, exit: "team", by: "Brad", tracker: { kind: "github", repo: "acme/mill" }, _exec: failing.exec, _fetch: noExec, _env: {} }));
   const partial = latestHandoff(noRemote);
   check("a tracker error is a refusal naming the call and the kind; the snapshot was already written, holding the first epic's key; the PRD took no flag",
-    midway?.code === "tracker-error" && /gh POST issues failed — gh: Validation Failed/.test(midway.message) && midway.detail === "github" && partial?.version === 1 && JSON.stringify(partial.tracker.keys) === JSON.stringify({ "REQ-1": 1 }) && loadPrd(noRemote).flags.length === 0, midway?.message);
+    midway?.code === "tracker-error" && /gh POST issues failed — gh: Validation Failed/.test(midway.message) && midway.detail === "github" && partial?.version === 1 && JSON.stringify(partial.tracker.keys) === JSON.stringify({ "REQ-1": 1 }) && JSON.stringify(loadPrd(noRemote).flags) === flagsBefore, midway?.message);
   const resumed = ghScript();
   const again = await exportHandoff({ root: noRemote, exit: "team", by: "Brad", _exec: resumed.exec, _fetch: noExec, _env: {} });
   check("the next export resumes: REQ-1 is left alone, the remaining epics and stories are created — nothing duplicated",
@@ -424,7 +428,7 @@ await withRoot({}, async (tmp) => {
 
   // Jira fails midway the same way.
   const kiln = seedProject(tmp, { slug: "kiln" });
-  seedPrototype(kiln); seedStories(kiln);
+  seedPrototype(kiln); agree({ root: kiln, by: "Brad" }); seedStories(kiln);
   const jf = jiraScript({ fail: (n) => n === 4 });
   const jMid = await refusal(() => exportHandoff({ root: kiln, exit: "team", by: "Brad", tracker: JIRA, _fetch: jf.fetch, _env: ENV, _exec: noExec }));
   const jPartial = latestHandoff(kiln);
@@ -449,7 +453,7 @@ await withRoot({}, async (tmp) => {
     { subject: "STORY-1", question: LONG_QUESTION, blocking: false },
   ];
   const disc = seedProject(tmp, { slug: "dock" });
-  seedPrototype(disc);
+  seedPrototype(disc); agree({ root: disc, by: "Brad" });
   seedStories(disc, { open_questions: [...asked, { subject: "REQ-2", question: "Does the run sheet show deliveries already received?", blocking: true }] });
   seedDesign(disc);
   await review({ root: disc, _query: clean() });
@@ -460,6 +464,7 @@ await withRoot({}, async (tmp) => {
   const proving = structuredClone(STORIES);
   proving[0].scenarios.push({ name: "After the truck has left", gherkin: "Given a delivery whose truck has left\nWhen I record an exception before the shift ends\nThen the exception is recorded against that delivery", proves: ["REQ-1/AC-3"] });
   seedStories(disc, { stories: proving, open_questions: asked });
+  await refresh(disc);
   const v2 = await go();
   check("Discovery stands at v2: the edit moved REQ-1 and STORY-1 and added RUL-1", v2.handoff.version === 2 && v2.handoff.contract.rulings.length === 1 && v2.handoff.stories.open_questions.length === 3);
 

@@ -74,6 +74,18 @@ export function itemsOf(handoff) {
 }
 
 /**
+ * What a handoff's design was written from that differs from what the handoff carries —
+ * the PRD, the prototype or the backlog, read from the snapshot alone, so a snapshot that
+ * was current when exported stays current however Discovery moves after it (D05).
+ */
+export function designMoved(h) {
+  const t = h.design?.traces;
+  if (!t) return [];
+  return [["PRD", t.prd, h.contract?.prd], ["prototype", t.prototype, h.prototype?.meta], ["backlog", t.stories, h.stories?.meta]]
+    .filter(([, traced, carried]) => traced && traced.content_hash !== carried?.content_hash).map(([name]) => name);
+}
+
+/**
  * Recompute and compare — the snapshot's own content hash, and every item against the
  * index it carries. Finding-shaped like every gate; each finding names one id.
  */
