@@ -22,6 +22,11 @@ Each PR's lines count toward this milestone's estimate.
 - **Implementation:** guard ~15, react ~60, editor prompt ~15, reaction schema ~20, PRD schema additions ~20, approval settlement ~25, readiness ~30, history ~10, stories' pending-reaction check ~5, turn re-apply ~5.
 - **Tests:** new cases ~250, plus ~45 lines of edits to existing suites (§7).
 - The agreed estimate was ~200 / ~220. The increase is the guard, D05's suite refits, and the history copy.
+- **Actual after the guard and D05 (2026-10-16).** Net nonblank lines, the plan's counting basis, with gross additions and SPEC reported separately:
+  - Implementation: the guard (#62) +17 net (+27 / −10); D05 (#66) +71 net (+111 / −40). **Total +88 of ~225.**
+  - Tests: the guard (#61) +162 net; D05 (#65) +264 net (+299 / −35, including 19 lines of unchanged helper moves). **Total +426 of ~300 (142%), under the 1.5× line of 450.** Gross additions are 461.
+  - SPEC: one row reworded word-neutrally (+1 / −1). It is documentation, not implementation.
+  - The tests grew from the §7 refits, from tightening after deliberately wrong versions got through, and from the review findings D05 took on: the archived pair on a failed build, the stale marker in the team rendering, and Delivery's intake (owner, 2026-10-16). PRs 4 and 5 are re-estimated before they start.
 
 ## 1. The guard: a late write cannot replace a PRD that moved
 
