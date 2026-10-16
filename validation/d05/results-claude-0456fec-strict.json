@@ -1,0 +1,3154 @@
+{
+  "generated": "2026-10-15T19:38:38-0600",
+  "base": "0456fecfb37bec91ffe109df0561c58577cea330",
+  "base_commit": "0456fecfb37bec91ffe109df0561c58577cea330",
+  "reference_diff": "/Users/bjgilbert/Projects/forge/validation/d05/reference.diff",
+  "harness": "/Users/bjgilbert/Projects/forge/validation/d05/mutants.py",
+  "rule": "rejected = an assertion that passes on the reference fails on the mutant (discovery-readiness standalone run, or a new FAIL label in any suite of npm run evals); a crash, abort or timeout with no failed assertion is a runtime error, not a rejection; a failed restoration is a harness error",
+  "reference": {
+    "readiness": "64/64 passed",
+    "evals_summary": "19/19 suites passed",
+    "suites": {
+      "amendment-audit": {
+        "status": "PASS",
+        "note": "52/52 passed",
+        "fails": [],
+        "error": null
+      },
+      "coherence": {
+        "status": "PASS",
+        "note": "202/202 passed",
+        "fails": [],
+        "error": null
+      },
+      "discovery-decisions": {
+        "status": "PASS",
+        "note": "22/22 passed",
+        "fails": [],
+        "error": null
+      },
+      "discovery-guard": {
+        "status": "PASS",
+        "note": "11/11 passed",
+        "fails": [],
+        "error": null
+      },
+      "discovery-loop": {
+        "status": "PASS",
+        "note": "11/11 passed",
+        "fails": [],
+        "error": null
+      },
+      "discovery-readiness": {
+        "status": "PASS",
+        "note": "64/64 passed",
+        "fails": [],
+        "error": null
+      },
+      "economics": {
+        "status": "PASS",
+        "note": "130/130 passed",
+        "fails": [],
+        "error": null
+      },
+      "funnel": {
+        "status": "PASS",
+        "note": "70/70 passed",
+        "fails": [],
+        "error": null
+      },
+      "owns": {
+        "status": "PASS",
+        "note": "11/11 passed",
+        "fails": [],
+        "error": null
+      },
+      "provenance": {
+        "status": "PASS",
+        "note": "36/36 passed",
+        "fails": [],
+        "error": null
+      },
+      "qa": {
+        "status": "PASS",
+        "note": "40/40 passed",
+        "fails": [],
+        "error": null
+      },
+      "ratio": {
+        "status": "PASS",
+        "note": "",
+        "fails": [],
+        "error": null
+      },
+      "rejudge": {
+        "status": "PASS",
+        "note": "41/41 passed",
+        "fails": [],
+        "error": null
+      },
+      "release": {
+        "status": "PASS",
+        "note": "20/20 passed",
+        "fails": [],
+        "error": null
+      },
+      "rulings": {
+        "status": "PASS",
+        "note": "33/33 passed",
+        "fails": [],
+        "error": null
+      },
+      "scope": {
+        "status": "PASS",
+        "note": "178/178 passed",
+        "fails": [],
+        "error": null
+      },
+      "seam": {
+        "status": "PASS",
+        "note": "149/149 passed",
+        "fails": [],
+        "error": null
+      },
+      "spec-budget": {
+        "status": "PASS",
+        "note": "4/4 passed",
+        "fails": [],
+        "error": null
+      },
+      "transition-table": {
+        "status": "PASS",
+        "note": "97/97 passed",
+        "fails": [],
+        "error": null
+      }
+    },
+    "seconds": 15.3
+  },
+  "totals": {
+    "mutants": 47,
+    "rejected": 46,
+    "survived": [
+      "H11"
+    ],
+    "harness_or_runtime_errors": []
+  },
+  "mutants": [
+    {
+      "id": "A01",
+      "wrong_behavior": "readiness counts an agreement to this PRD's hash as current whatever prototype it agreed to",
+      "source": "design \u00a77 'readiness ignores the prototype hash'",
+      "files": [
+        "discovery/export/index.mjs"
+      ],
+      "patches": [
+        {
+          "file": "discovery/export/index.mjs",
+          "old": "  const gap = agreementGap(prd, proto);\n",
+          "new": "  const gap = (prd.agreements ?? []).some((a) => a.prd_hash === prd.meta.content_hash) ? null : agreementGap(prd, proto);\n"
+        }
+      ],
+      "rejected": true,
+      "failing": "discovery-readiness: prototype: agreement-stale: high, certain, subject and next step; discovery-readiness: team refuses agreement-stale without exporting; discovery-readiness: delivery refuses agreement-stale without exporting; discovery-readiness: both refuses agreement-stale without exporting",
+      "failing_checks": [
+        "discovery-readiness: prototype: agreement-stale: high, certain, subject and next step",
+        "discovery-readiness: team refuses agreement-stale without exporting",
+        "discovery-readiness: delivery refuses agreement-stale without exporting",
+        "discovery-readiness: both refuses agreement-stale without exporting"
+      ],
+      "readiness": {
+        "tally": "60/64 passed",
+        "fails": [
+          "prototype: agreement-stale: high, certain, subject and next step",
+          "team refuses agreement-stale without exporting",
+          "delivery refuses agreement-stale without exporting",
+          "both refuses agreement-stale without exporting"
+        ],
+        "details": {
+          "team refuses agreement-stale without exporting": "export: the record does not add up \u2014 every join is green before anything leaves",
+          "delivery refuses agreement-stale without exporting": "export: the record does not add up \u2014 every join is green before anything leaves",
+          "both refuses agreement-stale without exporting": "export: the record does not add up \u2014 every join is green before anything leaves"
+        },
+        "error": null,
+        "tally_inside_npm_run_evals": "60/64 passed"
+      },
+      "evals_summary": "18/19 suites passed",
+      "suites_not_pass": {
+        "discovery-readiness": {
+          "status": "FAIL",
+          "note": "60/64 passed",
+          "fails": [
+            "prototype: agreement-stale: high, certain, subject and next step",
+            "team refuses agreement-stale without exporting",
+            "delivery refuses agreement-stale without exporting",
+            "both refuses agreement-stale without exporting"
+          ],
+          "error": null
+        }
+      },
+      "reference_failures_now_passing": {},
+      "restored": {
+        "diff_is_reference": true,
+        "readiness": "64/64 passed"
+      },
+      "seconds": 18.0
+    },
+    {
+      "id": "A02",
+      "wrong_behavior": "stories-stale compares only the PRD hash; a rebuilt prototype does not stale the stories",
+      "source": "design \u00a75 table (stories-stale: 'trace another PRD or prototype'); task list",
+      "files": [
+        "discovery/export/index.mjs"
+      ],
+      "patches": [
+        {
+          "file": "discovery/export/index.mjs",
+          "old": "if (badge.stories?.stale) f(\"stories-stale\"",
+          "new": "if (badge.stories?.prd_moved) f(\"stories-stale\""
+        }
+      ],
+      "rejected": true,
+      "failing": "discovery-readiness: prototype: stories-stale: high, certain, subject and next step; discovery-readiness: team refuses stories-stale without exporting; discovery-readiness: delivery refuses stories-stale without exporting; discovery-readiness: both refuses stories-stale without exporting",
+      "failing_checks": [
+        "discovery-readiness: prototype: stories-stale: high, certain, subject and next step",
+        "discovery-readiness: team refuses stories-stale without exporting",
+        "discovery-readiness: delivery refuses stories-stale without exporting",
+        "discovery-readiness: both refuses stories-stale without exporting"
+      ],
+      "readiness": {
+        "tally": "60/64 passed",
+        "fails": [
+          "prototype: stories-stale: high, certain, subject and next step",
+          "team refuses stories-stale without exporting",
+          "delivery refuses stories-stale without exporting",
+          "both refuses stories-stale without exporting"
+        ],
+        "details": {
+          "team refuses stories-stale without exporting": "export succeeded",
+          "delivery refuses stories-stale without exporting": "export: the record does not add up \u2014 every join is green before anything leaves",
+          "both refuses stories-stale without exporting": "export: the record does not add up \u2014 every join is green before anything leaves"
+        },
+        "error": null,
+        "tally_inside_npm_run_evals": "60/64 passed"
+      },
+      "evals_summary": "18/19 suites passed",
+      "suites_not_pass": {
+        "discovery-readiness": {
+          "status": "FAIL",
+          "note": "60/64 passed",
+          "fails": [
+            "prototype: stories-stale: high, certain, subject and next step",
+            "team refuses stories-stale without exporting",
+            "delivery refuses stories-stale without exporting",
+            "both refuses stories-stale without exporting"
+          ],
+          "error": null
+        }
+      },
+      "reference_failures_now_passing": {},
+      "restored": {
+        "diff_is_reference": true,
+        "readiness": "64/64 passed"
+      },
+      "seconds": 17.9
+    },
+    {
+      "id": "A20",
+      "wrong_behavior": "stories-stale compares only the prototype hash; a moved PRD does not stale the stories",
+      "source": "design \u00a75 table (stories-stale: 'trace another PRD or prototype')",
+      "files": [
+        "discovery/export/index.mjs"
+      ],
+      "patches": [
+        {
+          "file": "discovery/export/index.mjs",
+          "old": "if (badge.stories?.stale) f(\"stories-stale\"",
+          "new": "if (badge.stories?.prototype_moved) f(\"stories-stale\""
+        }
+      ],
+      "rejected": true,
+      "failing": "discovery-readiness: prd: stories-stale: high, certain, subject and next step; discovery-readiness: team refuses stories-stale without exporting; discovery-readiness: delivery refuses stories-stale without exporting; discovery-readiness: both refuses stories-stale without exporting",
+      "failing_checks": [
+        "discovery-readiness: prd: stories-stale: high, certain, subject and next step",
+        "discovery-readiness: team refuses stories-stale without exporting",
+        "discovery-readiness: delivery refuses stories-stale without exporting",
+        "discovery-readiness: both refuses stories-stale without exporting"
+      ],
+      "readiness": {
+        "tally": "60/64 passed",
+        "fails": [
+          "prd: stories-stale: high, certain, subject and next step",
+          "team refuses stories-stale without exporting",
+          "delivery refuses stories-stale without exporting",
+          "both refuses stories-stale without exporting"
+        ],
+        "details": {
+          "team refuses stories-stale without exporting": "export succeeded",
+          "delivery refuses stories-stale without exporting": "export: the record does not add up \u2014 every join is green before anything leaves",
+          "both refuses stories-stale without exporting": "export: the record does not add up \u2014 every join is green before anything leaves"
+        },
+        "error": null,
+        "tally_inside_npm_run_evals": "60/64 passed"
+      },
+      "evals_summary": "18/19 suites passed",
+      "suites_not_pass": {
+        "discovery-readiness": {
+          "status": "FAIL",
+          "note": "60/64 passed",
+          "fails": [
+            "prd: stories-stale: high, certain, subject and next step",
+            "team refuses stories-stale without exporting",
+            "delivery refuses stories-stale without exporting",
+            "both refuses stories-stale without exporting"
+          ],
+          "error": null
+        }
+      },
+      "reference_failures_now_passing": {},
+      "restored": {
+        "diff_is_reference": true,
+        "readiness": "64/64 passed"
+      },
+      "seconds": 18.0
+    },
+    {
+      "id": "A21",
+      "wrong_behavior": "design-stale ignores the PRD trace (prototype and stories only)",
+      "source": "design \u00a75 table (design-stale: 'traces other stories, prototype or PRD')",
+      "files": [
+        "discovery/export/index.mjs"
+      ],
+      "patches": [
+        {
+          "file": "discovery/export/index.mjs",
+          "old": "if (badge.design?.stale && exit !== \"team\") f(\"design-stale\"",
+          "new": "if ((badge.design?.prototype_moved || badge.design?.stories_moved) && exit !== \"team\") f(\"design-stale\""
+        }
+      ],
+      "rejected": true,
+      "failing": "discovery-readiness: prd: design-stale: high, certain, subject and next step; discovery-readiness: delivery refuses design-stale without exporting; discovery-readiness: both refuses design-stale without exporting",
+      "failing_checks": [
+        "discovery-readiness: prd: design-stale: high, certain, subject and next step",
+        "discovery-readiness: delivery refuses design-stale without exporting",
+        "discovery-readiness: both refuses design-stale without exporting"
+      ],
+      "readiness": {
+        "tally": "61/64 passed",
+        "fails": [
+          "prd: design-stale: high, certain, subject and next step",
+          "delivery refuses design-stale without exporting",
+          "both refuses design-stale without exporting"
+        ],
+        "details": {
+          "delivery refuses design-stale without exporting": "export succeeded",
+          "both refuses design-stale without exporting": "export succeeded"
+        },
+        "error": null,
+        "tally_inside_npm_run_evals": "61/64 passed"
+      },
+      "evals_summary": "18/19 suites passed",
+      "suites_not_pass": {
+        "discovery-readiness": {
+          "status": "FAIL",
+          "note": "61/64 passed",
+          "fails": [
+            "prd: design-stale: high, certain, subject and next step",
+            "delivery refuses design-stale without exporting",
+            "both refuses design-stale without exporting"
+          ],
+          "error": null
+        }
+      },
+      "reference_failures_now_passing": {},
+      "restored": {
+        "diff_is_reference": true,
+        "readiness": "64/64 passed"
+      },
+      "seconds": 18.2
+    },
+    {
+      "id": "A03",
+      "wrong_behavior": "design-stale ignores the stories trace (PRD and prototype only)",
+      "source": "design \u00a75 table (design-stale: 'traces other stories, prototype or PRD')",
+      "files": [
+        "discovery/export/index.mjs"
+      ],
+      "patches": [
+        {
+          "file": "discovery/export/index.mjs",
+          "old": "if (badge.design?.stale && exit !== \"team\") f(\"design-stale\"",
+          "new": "if ((badge.design?.prd_moved || badge.design?.prototype_moved) && exit !== \"team\") f(\"design-stale\""
+        }
+      ],
+      "rejected": true,
+      "failing": "discovery-readiness: stories: design-stale: high, certain, subject and next step; discovery-readiness: delivery refuses design-stale without exporting; discovery-readiness: both refuses design-stale without exporting",
+      "failing_checks": [
+        "discovery-readiness: stories: design-stale: high, certain, subject and next step",
+        "discovery-readiness: delivery refuses design-stale without exporting",
+        "discovery-readiness: both refuses design-stale without exporting"
+      ],
+      "readiness": {
+        "tally": "61/64 passed",
+        "fails": [
+          "stories: design-stale: high, certain, subject and next step",
+          "delivery refuses design-stale without exporting",
+          "both refuses design-stale without exporting"
+        ],
+        "details": {
+          "delivery refuses design-stale without exporting": "export succeeded",
+          "both refuses design-stale without exporting": "export succeeded"
+        },
+        "error": null,
+        "tally_inside_npm_run_evals": "61/64 passed"
+      },
+      "evals_summary": "18/19 suites passed",
+      "suites_not_pass": {
+        "discovery-readiness": {
+          "status": "FAIL",
+          "note": "61/64 passed",
+          "fails": [
+            "stories: design-stale: high, certain, subject and next step",
+            "delivery refuses design-stale without exporting",
+            "both refuses design-stale without exporting"
+          ],
+          "error": null
+        }
+      },
+      "reference_failures_now_passing": {},
+      "restored": {
+        "diff_is_reference": true,
+        "readiness": "64/64 passed"
+      },
+      "seconds": 18.1
+    },
+    {
+      "id": "A04",
+      "wrong_behavior": "design-stale ignores the prototype trace (PRD and stories only)",
+      "source": "design \u00a75 table (design-stale)",
+      "files": [
+        "discovery/export/index.mjs"
+      ],
+      "patches": [
+        {
+          "file": "discovery/export/index.mjs",
+          "old": "if (badge.design?.stale && exit !== \"team\") f(\"design-stale\"",
+          "new": "if ((badge.design?.prd_moved || badge.design?.stories_moved) && exit !== \"team\") f(\"design-stale\""
+        }
+      ],
+      "rejected": true,
+      "failing": "discovery-readiness: prototype: design-stale: high, certain, subject and next step; discovery-readiness: delivery refuses design-stale without exporting; discovery-readiness: both refuses design-stale without exporting",
+      "failing_checks": [
+        "discovery-readiness: prototype: design-stale: high, certain, subject and next step",
+        "discovery-readiness: delivery refuses design-stale without exporting",
+        "discovery-readiness: both refuses design-stale without exporting"
+      ],
+      "readiness": {
+        "tally": "61/64 passed",
+        "fails": [
+          "prototype: design-stale: high, certain, subject and next step",
+          "delivery refuses design-stale without exporting",
+          "both refuses design-stale without exporting"
+        ],
+        "details": {
+          "delivery refuses design-stale without exporting": "export succeeded",
+          "both refuses design-stale without exporting": "export succeeded"
+        },
+        "error": null,
+        "tally_inside_npm_run_evals": "61/64 passed"
+      },
+      "evals_summary": "18/19 suites passed",
+      "suites_not_pass": {
+        "discovery-readiness": {
+          "status": "FAIL",
+          "note": "61/64 passed",
+          "fails": [
+            "prototype: design-stale: high, certain, subject and next step",
+            "delivery refuses design-stale without exporting",
+            "both refuses design-stale without exporting"
+          ],
+          "error": null
+        }
+      },
+      "reference_failures_now_passing": {},
+      "restored": {
+        "diff_is_reference": true,
+        "readiness": "64/64 passed"
+      },
+      "seconds": 18.3
+    },
+    {
+      "id": "A05",
+      "wrong_behavior": "stories/design freshness by version label: current while traces.prd.version equals the PRD's version",
+      "source": "design \u00a75 'Staleness compares content hashes only'; design \u00a77 'accepts unchanged ids as current'",
+      "files": [
+        "discovery/export/index.mjs"
+      ],
+      "patches": [
+        {
+          "file": "discovery/export/index.mjs",
+          "old": "if (badge.stories?.stale) f(\"stories-stale\"",
+          "new": "if (stories && stories.traces.prd.version !== prd.meta.version) f(\"stories-stale\""
+        },
+        {
+          "file": "discovery/export/index.mjs",
+          "old": "if (badge.design?.stale && exit !== \"team\") f(\"design-stale\"",
+          "new": "if (design && design.traces.prd.version !== prd.meta.version && exit !== \"team\") f(\"design-stale\""
+        }
+      ],
+      "rejected": true,
+      "failing": "discovery-readiness: prd: stories-stale: high, certain, subject and next step; discovery-readiness: team refuses stories-stale without exporting; discovery-readiness: delivery refuses stories-stale without exporting; discovery-readiness: both refuses stories-stale without exporting; discovery-readiness: prototype: stories-stale: high, certain, subject and next step; discovery-readiness: team refuses stories-stale without exporting; discovery-readiness: delivery refuses stories-stale without exporting; discovery-readiness: both refuses stories-stale without exporting; discovery-readiness: prd: design-stale: high, certain, subject and next step; discovery-readiness: delivery refuses design-stale without exporting; discovery-readiness: both refuses design-stale without exporting; discovery-readiness: prototype: design-stale: high, certain, subject and next step; discovery-readiness: delivery refuses design-stale without exporting; discovery-readiness: both refuses design-stale without exporting; discovery-readiness: stories: design-stale: high, certain, subject and next step; discovery-readiness: delivery refuses design-stale without exporting; discovery-readiness: both refuses design-stale without exporting; discovery-readiness: changed bytes and version labels leave content current; discovery-readiness: content-only freshness permits every exit",
+      "failing_checks": [
+        "discovery-readiness: prd: stories-stale: high, certain, subject and next step",
+        "discovery-readiness: team refuses stories-stale without exporting",
+        "discovery-readiness: delivery refuses stories-stale without exporting",
+        "discovery-readiness: both refuses stories-stale without exporting",
+        "discovery-readiness: prototype: stories-stale: high, certain, subject and next step",
+        "discovery-readiness: team refuses stories-stale without exporting",
+        "discovery-readiness: delivery refuses stories-stale without exporting",
+        "discovery-readiness: both refuses stories-stale without exporting",
+        "discovery-readiness: prd: design-stale: high, certain, subject and next step",
+        "discovery-readiness: delivery refuses design-stale without exporting",
+        "discovery-readiness: both refuses design-stale without exporting",
+        "discovery-readiness: prototype: design-stale: high, certain, subject and next step",
+        "discovery-readiness: delivery refuses design-stale without exporting",
+        "discovery-readiness: both refuses design-stale without exporting",
+        "discovery-readiness: stories: design-stale: high, certain, subject and next step",
+        "discovery-readiness: delivery refuses design-stale without exporting",
+        "discovery-readiness: both refuses design-stale without exporting",
+        "discovery-readiness: changed bytes and version labels leave content current",
+        "discovery-readiness: content-only freshness permits every exit"
+      ],
+      "readiness": {
+        "tally": "45/64 passed",
+        "fails": [
+          "prd: stories-stale: high, certain, subject and next step",
+          "team refuses stories-stale without exporting",
+          "delivery refuses stories-stale without exporting",
+          "both refuses stories-stale without exporting",
+          "prototype: stories-stale: high, certain, subject and next step",
+          "team refuses stories-stale without exporting",
+          "delivery refuses stories-stale without exporting",
+          "both refuses stories-stale without exporting",
+          "prd: design-stale: high, certain, subject and next step",
+          "delivery refuses design-stale without exporting",
+          "both refuses design-stale without exporting",
+          "prototype: design-stale: high, certain, subject and next step",
+          "delivery refuses design-stale without exporting",
+          "both refuses design-stale without exporting",
+          "stories: design-stale: high, certain, subject and next step",
+          "delivery refuses design-stale without exporting",
+          "both refuses design-stale without exporting",
+          "changed bytes and version labels leave content current",
+          "content-only freshness permits every exit"
+        ],
+        "details": {
+          "team refuses stories-stale without exporting": "export succeeded",
+          "delivery refuses stories-stale without exporting": "export succeeded",
+          "both refuses stories-stale without exporting": "export succeeded",
+          "delivery refuses design-stale without exporting": "export succeeded",
+          "both refuses design-stale without exporting": "export succeeded"
+        },
+        "error": null,
+        "tally_inside_npm_run_evals": "45/64 passed"
+      },
+      "evals_summary": "18/19 suites passed",
+      "suites_not_pass": {
+        "discovery-readiness": {
+          "status": "FAIL",
+          "note": "45/64 passed",
+          "fails": [
+            "prd: stories-stale: high, certain, subject and next step",
+            "team refuses stories-stale without exporting",
+            "delivery refuses stories-stale without exporting",
+            "both refuses stories-stale without exporting",
+            "prototype: stories-stale: high, certain, subject and next step",
+            "team refuses stories-stale without exporting",
+            "delivery refuses stories-stale without exporting",
+            "both refuses stories-stale without exporting",
+            "prd: design-stale: high, certain, subject and next step",
+            "delivery refuses design-stale without exporting",
+            "both refuses design-stale without exporting",
+            "prototype: design-stale: high, certain, subject and next step",
+            "delivery refuses design-stale without exporting",
+            "both refuses design-stale without exporting",
+            "stories: design-stale: high, certain, subject and next step",
+            "delivery refuses design-stale without exporting",
+            "both refuses design-stale without exporting",
+            "changed bytes and version labels leave content current",
+            "content-only freshness permits every exit"
+          ],
+          "error": null
+        }
+      },
+      "reference_failures_now_passing": {},
+      "restored": {
+        "diff_is_reference": true,
+        "readiness": "64/64 passed"
+      },
+      "seconds": 1741.5
+    },
+    {
+      "id": "A06",
+      "wrong_behavior": "readiness matches an agreement by PRD version label instead of the PRD and prototype hashes",
+      "source": "design \u00a75 'Matching ids or labels never make an artifact current'",
+      "files": [
+        "discovery/export/index.mjs"
+      ],
+      "patches": [
+        {
+          "file": "discovery/export/index.mjs",
+          "old": "  const gap = agreementGap(prd, proto);\n",
+          "new": "  const gap = (prd.agreements ?? []).some((a) => a.prd_version === prd.meta.version) ? null : agreementGap(prd, proto);\n"
+        }
+      ],
+      "rejected": true,
+      "failing": "discovery-readiness: prd: agreement-stale: high, certain, subject and next step; discovery-readiness: team refuses agreement-stale without exporting; discovery-readiness: delivery refuses agreement-stale without exporting; discovery-readiness: both refuses agreement-stale without exporting; discovery-readiness: prototype: agreement-stale: high, certain, subject and next step; discovery-readiness: team refuses agreement-stale without exporting; discovery-readiness: delivery refuses agreement-stale without exporting; discovery-readiness: both refuses agreement-stale without exporting",
+      "failing_checks": [
+        "discovery-readiness: prd: agreement-stale: high, certain, subject and next step",
+        "discovery-readiness: team refuses agreement-stale without exporting",
+        "discovery-readiness: delivery refuses agreement-stale without exporting",
+        "discovery-readiness: both refuses agreement-stale without exporting",
+        "discovery-readiness: prototype: agreement-stale: high, certain, subject and next step",
+        "discovery-readiness: team refuses agreement-stale without exporting",
+        "discovery-readiness: delivery refuses agreement-stale without exporting",
+        "discovery-readiness: both refuses agreement-stale without exporting"
+      ],
+      "readiness": {
+        "tally": "56/64 passed",
+        "fails": [
+          "prd: agreement-stale: high, certain, subject and next step",
+          "team refuses agreement-stale without exporting",
+          "delivery refuses agreement-stale without exporting",
+          "both refuses agreement-stale without exporting",
+          "prototype: agreement-stale: high, certain, subject and next step",
+          "team refuses agreement-stale without exporting",
+          "delivery refuses agreement-stale without exporting",
+          "both refuses agreement-stale without exporting"
+        ],
+        "details": {
+          "team refuses agreement-stale without exporting": "export: the record does not add up \u2014 every join is green before anything leaves",
+          "delivery refuses agreement-stale without exporting": "export: the record does not add up \u2014 every join is green before anything leaves",
+          "both refuses agreement-stale without exporting": "export: the record does not add up \u2014 every join is green before anything leaves"
+        },
+        "error": null,
+        "tally_inside_npm_run_evals": "56/64 passed"
+      },
+      "evals_summary": "18/19 suites passed",
+      "suites_not_pass": {
+        "discovery-readiness": {
+          "status": "FAIL",
+          "note": "56/64 passed",
+          "fails": [
+            "prd: agreement-stale: high, certain, subject and next step",
+            "team refuses agreement-stale without exporting",
+            "delivery refuses agreement-stale without exporting",
+            "both refuses agreement-stale without exporting",
+            "prototype: agreement-stale: high, certain, subject and next step",
+            "team refuses agreement-stale without exporting",
+            "delivery refuses agreement-stale without exporting",
+            "both refuses agreement-stale without exporting"
+          ],
+          "error": null
+        }
+      },
+      "reference_failures_now_passing": {},
+      "restored": {
+        "diff_is_reference": true,
+        "readiness": "64/64 passed"
+      },
+      "seconds": 1741.5
+    },
+    {
+      "id": "A07",
+      "wrong_behavior": "design-stale is reported for every exit, so a team cannot take a stale design",
+      "source": "design \u00a77 'blocks the team exit on a stale design'",
+      "files": [
+        "discovery/export/index.mjs"
+      ],
+      "patches": [
+        {
+          "file": "discovery/export/index.mjs",
+          "old": "if (badge.design?.stale && exit !== \"team\") f(\"design-stale\"",
+          "new": "if (badge.design?.stale) f(\"design-stale\""
+        }
+      ],
+      "rejected": true,
+      "failing": "discovery-readiness: team carries the old design with stale trace evidence; discovery-readiness: prototype: team accepts stale design without rewriting it; discovery-readiness: stories: team accepts stale design without rewriting it",
+      "failing_checks": [
+        "discovery-readiness: team carries the old design with stale trace evidence",
+        "discovery-readiness: prototype: team accepts stale design without rewriting it",
+        "discovery-readiness: stories: team accepts stale design without rewriting it"
+      ],
+      "readiness": {
+        "tally": "61/64 passed",
+        "fails": [
+          "team carries the old design with stale trace evidence",
+          "prototype: team accepts stale design without rewriting it",
+          "stories: team accepts stale design without rewriting it"
+        ],
+        "details": {},
+        "error": null,
+        "tally_inside_npm_run_evals": "61/64 passed"
+      },
+      "evals_summary": "18/19 suites passed",
+      "suites_not_pass": {
+        "discovery-readiness": {
+          "status": "FAIL",
+          "note": "61/64 passed",
+          "fails": [
+            "team carries the old design with stale trace evidence",
+            "prototype: team accepts stale design without rewriting it",
+            "stories: team accepts stale design without rewriting it"
+          ],
+          "error": null
+        }
+      },
+      "reference_failures_now_passing": {},
+      "restored": {
+        "diff_is_reference": true,
+        "readiness": "64/64 passed"
+      },
+      "seconds": 1741.4
+    },
+    {
+      "id": "A08",
+      "wrong_behavior": "design-stale blocks only delivery; the 'both' exit lets a stale design through",
+      "source": "design \u00a75 table ('only delivery and both')",
+      "files": [
+        "discovery/export/index.mjs"
+      ],
+      "patches": [
+        {
+          "file": "discovery/export/index.mjs",
+          "old": "if (badge.design?.stale && exit !== \"team\") f(\"design-stale\"",
+          "new": "if (badge.design?.stale && exit !== \"team\" && exit !== \"both\") f(\"design-stale\""
+        }
+      ],
+      "rejected": true,
+      "failing": "discovery-readiness: both refuses design-stale without exporting; discovery-readiness: both refuses design-stale without exporting; discovery-readiness: both refuses design-stale without exporting",
+      "failing_checks": [
+        "discovery-readiness: both refuses design-stale without exporting",
+        "discovery-readiness: both refuses design-stale without exporting",
+        "discovery-readiness: both refuses design-stale without exporting"
+      ],
+      "readiness": {
+        "tally": "61/64 passed",
+        "fails": [
+          "both refuses design-stale without exporting",
+          "both refuses design-stale without exporting",
+          "both refuses design-stale without exporting"
+        ],
+        "details": {
+          "both refuses design-stale without exporting": "export succeeded"
+        },
+        "error": null,
+        "tally_inside_npm_run_evals": "61/64 passed"
+      },
+      "evals_summary": "18/19 suites passed",
+      "suites_not_pass": {
+        "discovery-readiness": {
+          "status": "FAIL",
+          "note": "61/64 passed",
+          "fails": [
+            "both refuses design-stale without exporting",
+            "both refuses design-stale without exporting",
+            "both refuses design-stale without exporting"
+          ],
+          "error": null
+        }
+      },
+      "reference_failures_now_passing": {},
+      "restored": {
+        "diff_is_reference": true,
+        "readiness": "64/64 passed"
+      },
+      "seconds": 852.0
+    },
+    {
+      "id": "A09",
+      "wrong_behavior": "exportHandoff does not pass the exit to readinessOf, so a team is judged as Delivery",
+      "source": "design \u00a75 table (Blocks column) \u2014 wiring",
+      "files": [
+        "discovery/export/index.mjs"
+      ],
+      "patches": [
+        {
+          "file": "discovery/export/index.mjs",
+          "old": "  const verdict = readinessOf({ prd, proto, stories, design, exit });",
+          "new": "  const verdict = readinessOf({ prd, proto, stories, design });"
+        }
+      ],
+      "rejected": true,
+      "failing": "discovery-readiness: team carries the old design with stale trace evidence; discovery-readiness: prototype: team accepts stale design without rewriting it; discovery-readiness: stories: team accepts stale design without rewriting it",
+      "failing_checks": [
+        "discovery-readiness: team carries the old design with stale trace evidence",
+        "discovery-readiness: prototype: team accepts stale design without rewriting it",
+        "discovery-readiness: stories: team accepts stale design without rewriting it"
+      ],
+      "readiness": {
+        "tally": "61/64 passed",
+        "fails": [
+          "team carries the old design with stale trace evidence",
+          "prototype: team accepts stale design without rewriting it",
+          "stories: team accepts stale design without rewriting it"
+        ],
+        "details": {},
+        "error": null,
+        "tally_inside_npm_run_evals": "61/64 passed"
+      },
+      "evals_summary": "18/19 suites passed",
+      "suites_not_pass": {
+        "discovery-readiness": {
+          "status": "FAIL",
+          "note": "61/64 passed",
+          "fails": [
+            "team carries the old design with stale trace evidence",
+            "prototype: team accepts stale design without rewriting it",
+            "stories: team accepts stale design without rewriting it"
+          ],
+          "error": null
+        }
+      },
+      "reference_failures_now_passing": {},
+      "restored": {
+        "diff_is_reference": true,
+        "readiness": "64/64 passed"
+      },
+      "seconds": 862.4
+    },
+    {
+      "id": "A10",
+      "wrong_behavior": "readiness(root) with no exit reads as the team's gate and omits design-stale",
+      "source": "reference observation 1 (readiness with no exit is unspecified by the design)",
+      "files": [
+        "discovery/export/index.mjs"
+      ],
+      "patches": [
+        {
+          "file": "discovery/export/index.mjs",
+          "old": "if (badge.design?.stale && exit !== \"team\") f(\"design-stale\"",
+          "new": "if (badge.design?.stale && exit && exit !== \"team\") f(\"design-stale\""
+        }
+      ],
+      "rejected": true,
+      "failing": "discovery-readiness: prd: design-stale: high, certain, subject and next step; discovery-readiness: prototype: design-stale: high, certain, subject and next step; discovery-readiness: stories: design-stale: high, certain, subject and next step",
+      "failing_checks": [
+        "discovery-readiness: prd: design-stale: high, certain, subject and next step",
+        "discovery-readiness: prototype: design-stale: high, certain, subject and next step",
+        "discovery-readiness: stories: design-stale: high, certain, subject and next step"
+      ],
+      "readiness": {
+        "tally": "61/64 passed",
+        "fails": [
+          "prd: design-stale: high, certain, subject and next step",
+          "prototype: design-stale: high, certain, subject and next step",
+          "stories: design-stale: high, certain, subject and next step"
+        ],
+        "details": {},
+        "error": null,
+        "tally_inside_npm_run_evals": "61/64 passed"
+      },
+      "evals_summary": "18/19 suites passed",
+      "suites_not_pass": {
+        "discovery-readiness": {
+          "status": "FAIL",
+          "note": "61/64 passed",
+          "fails": [
+            "prd: design-stale: high, certain, subject and next step",
+            "prototype: design-stale: high, certain, subject and next step",
+            "stories: design-stale: high, certain, subject and next step"
+          ],
+          "error": null
+        }
+      },
+      "reference_failures_now_passing": {},
+      "restored": {
+        "diff_is_reference": true,
+        "readiness": "64/64 passed"
+      },
+      "seconds": 851.8
+    },
+    {
+      "id": "A11",
+      "wrong_behavior": "checkDesign is skipped for the team exit, so screen-undesigned no longer blocks a team",
+      "source": "design \u00a75 'A stale design must still match, even for a team'",
+      "files": [
+        "discovery/export/index.mjs"
+      ],
+      "patches": [
+        {
+          "file": "discovery/export/index.mjs",
+          "old": "  if (proto && stories && design) joins.push(checkDesign(proto, stories, design));",
+          "new": "  if (proto && stories && design && exit !== \"team\") joins.push(checkDesign(proto, stories, design));"
+        }
+      ],
+      "rejected": true,
+      "failing": "discovery-readiness: team refuses screen-undesigned without exporting",
+      "failing_checks": [
+        "discovery-readiness: team refuses screen-undesigned without exporting"
+      ],
+      "readiness": {
+        "tally": "63/64 passed",
+        "fails": [
+          "team refuses screen-undesigned without exporting"
+        ],
+        "details": {
+          "team refuses screen-undesigned without exporting": "export succeeded"
+        },
+        "error": null,
+        "tally_inside_npm_run_evals": "63/64 passed"
+      },
+      "evals_summary": "18/19 suites passed",
+      "suites_not_pass": {
+        "discovery-readiness": {
+          "status": "FAIL",
+          "note": "63/64 passed",
+          "fails": [
+            "team refuses screen-undesigned without exporting"
+          ],
+          "error": null
+        }
+      },
+      "reference_failures_now_passing": {},
+      "restored": {
+        "diff_is_reference": true,
+        "readiness": "64/64 passed"
+      },
+      "seconds": 19.3
+    },
+    {
+      "id": "A12",
+      "wrong_behavior": "readiness picks no-agreement whenever no agreement names this PRD hash (write() says agreement-stale)",
+      "source": "design \u00a75 'Which agreement finding. It uses the same rule as write()'",
+      "files": [
+        "discovery/export/index.mjs"
+      ],
+      "patches": [
+        {
+          "file": "discovery/export/index.mjs",
+          "old": "  if (gap) f(gap.rule, prd.id,",
+          "new": "  if (gap) f((prd.agreements ?? []).some((a) => a.prd_hash === prd.meta.content_hash) ? \"agreement-stale\" : \"no-agreement\", prd.id,"
+        }
+      ],
+      "rejected": true,
+      "failing": "discovery-readiness: prd: agreement-stale: high, certain, subject and next step; discovery-readiness: team refuses agreement-stale without exporting; discovery-readiness: delivery refuses agreement-stale without exporting; discovery-readiness: both refuses agreement-stale without exporting",
+      "failing_checks": [
+        "discovery-readiness: prd: agreement-stale: high, certain, subject and next step",
+        "discovery-readiness: team refuses agreement-stale without exporting",
+        "discovery-readiness: delivery refuses agreement-stale without exporting",
+        "discovery-readiness: both refuses agreement-stale without exporting"
+      ],
+      "readiness": {
+        "tally": "60/64 passed",
+        "fails": [
+          "prd: agreement-stale: high, certain, subject and next step",
+          "team refuses agreement-stale without exporting",
+          "delivery refuses agreement-stale without exporting",
+          "both refuses agreement-stale without exporting"
+        ],
+        "details": {
+          "team refuses agreement-stale without exporting": "export: the record does not add up \u2014 every join is green before anything leaves",
+          "delivery refuses agreement-stale without exporting": "export: the record does not add up \u2014 every join is green before anything leaves",
+          "both refuses agreement-stale without exporting": "export: the record does not add up \u2014 every join is green before anything leaves"
+        },
+        "error": null,
+        "tally_inside_npm_run_evals": "60/64 passed"
+      },
+      "evals_summary": "18/19 suites passed",
+      "suites_not_pass": {
+        "discovery-readiness": {
+          "status": "FAIL",
+          "note": "60/64 passed",
+          "fails": [
+            "prd: agreement-stale: high, certain, subject and next step",
+            "team refuses agreement-stale without exporting",
+            "delivery refuses agreement-stale without exporting",
+            "both refuses agreement-stale without exporting"
+          ],
+          "error": null
+        }
+      },
+      "reference_failures_now_passing": {},
+      "restored": {
+        "diff_is_reference": true,
+        "readiness": "64/64 passed"
+      },
+      "seconds": 19.3
+    },
+    {
+      "id": "A13",
+      "wrong_behavior": "freshness findings are medium severity (the verdict advises instead of blocking)",
+      "source": "design \u00a75 'Each is high and certain'",
+      "files": [
+        "discovery/export/index.mjs"
+      ],
+      "patches": [
+        {
+          "file": "discovery/export/index.mjs",
+          "old": "const f = (rule, subject, summary, evidence, remedy) => findings.push({ severity: \"high\", confidence: \"certain\", rule, subject, summary, evidence, remedy });",
+          "new": "const f = (rule, subject, summary, evidence, remedy) => findings.push({ severity: \"medium\", confidence: \"certain\", rule, subject, summary, evidence, remedy });"
+        }
+      ],
+      "rejected": true,
+      "failing": "discovery-readiness: prototype only: no-agreement: high, certain, subject and next step; discovery-readiness: none: no-agreement: high, certain, subject and next step; discovery-readiness: team refuses no-agreement without exporting; discovery-readiness: delivery refuses no-agreement without exporting; discovery-readiness: both refuses no-agreement without exporting; discovery-readiness: prd: agreement-stale: high, certain, subject and next step; discovery-readiness: team refuses agreement-stale without exporting; discovery-readiness: delivery refuses agreement-stale without exporting; discovery-readiness: both refuses agreement-stale without exporting; discovery-readiness: prototype: agreement-stale: high, certain, subject and next step; discovery-readiness: team refuses agreement-stale without exporting; discovery-readiness: delivery refuses agreement-stale without exporting; discovery-readiness: both refuses agreement-stale without exporting; discovery-readiness: prd: stories-stale: high, certain, subject and next step; discovery-readiness: team refuses stories-stale without exporting; discovery-readiness: delivery refuses stories-stale without exporting; discovery-readiness: both refuses stories-stale without exporting; discovery-readiness: prototype: stories-stale: high, certain, subject and next step; discovery-readiness: team refuses stories-stale without exporting; discovery-readiness: delivery refuses stories-stale without exporting; discovery-readiness: both refuses stories-stale without exporting; discovery-readiness: prd: design-stale: high, certain, subject and next step; discovery-readiness: delivery refuses design-stale without exporting; discovery-readiness: both refuses design-stale without exporting; discovery-readiness: prototype: design-stale: high, certain, subject and next step; discovery-readiness: delivery refuses design-stale without exporting; discovery-readiness: both refuses design-stale without exporting; discovery-readiness: stories: design-stale: high, certain, subject and next step; discovery-readiness: delivery refuses design-stale without exporting; discovery-readiness: both refuses design-stale without exporting",
+      "failing_checks": [
+        "discovery-readiness: prototype only: no-agreement: high, certain, subject and next step",
+        "discovery-readiness: none: no-agreement: high, certain, subject and next step",
+        "discovery-readiness: team refuses no-agreement without exporting",
+        "discovery-readiness: delivery refuses no-agreement without exporting",
+        "discovery-readiness: both refuses no-agreement without exporting",
+        "discovery-readiness: prd: agreement-stale: high, certain, subject and next step",
+        "discovery-readiness: team refuses agreement-stale without exporting",
+        "discovery-readiness: delivery refuses agreement-stale without exporting",
+        "discovery-readiness: both refuses agreement-stale without exporting",
+        "discovery-readiness: prototype: agreement-stale: high, certain, subject and next step",
+        "discovery-readiness: team refuses agreement-stale without exporting",
+        "discovery-readiness: delivery refuses agreement-stale without exporting",
+        "discovery-readiness: both refuses agreement-stale without exporting",
+        "discovery-readiness: prd: stories-stale: high, certain, subject and next step",
+        "discovery-readiness: team refuses stories-stale without exporting",
+        "discovery-readiness: delivery refuses stories-stale without exporting",
+        "discovery-readiness: both refuses stories-stale without exporting",
+        "discovery-readiness: prototype: stories-stale: high, certain, subject and next step",
+        "discovery-readiness: team refuses stories-stale without exporting",
+        "discovery-readiness: delivery refuses stories-stale without exporting",
+        "discovery-readiness: both refuses stories-stale without exporting",
+        "discovery-readiness: prd: design-stale: high, certain, subject and next step",
+        "discovery-readiness: delivery refuses design-stale without exporting",
+        "discovery-readiness: both refuses design-stale without exporting",
+        "discovery-readiness: prototype: design-stale: high, certain, subject and next step",
+        "discovery-readiness: delivery refuses design-stale without exporting",
+        "discovery-readiness: both refuses design-stale without exporting",
+        "discovery-readiness: stories: design-stale: high, certain, subject and next step",
+        "discovery-readiness: delivery refuses design-stale without exporting",
+        "discovery-readiness: both refuses design-stale without exporting"
+      ],
+      "readiness": {
+        "tally": "34/64 passed",
+        "fails": [
+          "prototype only: no-agreement: high, certain, subject and next step",
+          "none: no-agreement: high, certain, subject and next step",
+          "team refuses no-agreement without exporting",
+          "delivery refuses no-agreement without exporting",
+          "both refuses no-agreement without exporting",
+          "prd: agreement-stale: high, certain, subject and next step",
+          "team refuses agreement-stale without exporting",
+          "delivery refuses agreement-stale without exporting",
+          "both refuses agreement-stale without exporting",
+          "prototype: agreement-stale: high, certain, subject and next step",
+          "team refuses agreement-stale without exporting",
+          "delivery refuses agreement-stale without exporting",
+          "both refuses agreement-stale without exporting",
+          "prd: stories-stale: high, certain, subject and next step",
+          "team refuses stories-stale without exporting",
+          "delivery refuses stories-stale without exporting",
+          "both refuses stories-stale without exporting",
+          "prototype: stories-stale: high, certain, subject and next step",
+          "team refuses stories-stale without exporting",
+          "delivery refuses stories-stale without exporting",
+          "both refuses stories-stale without exporting",
+          "prd: design-stale: high, certain, subject and next step",
+          "delivery refuses design-stale without exporting",
+          "both refuses design-stale without exporting",
+          "prototype: design-stale: high, certain, subject and next step",
+          "delivery refuses design-stale without exporting",
+          "both refuses design-stale without exporting",
+          "stories: design-stale: high, certain, subject and next step",
+          "delivery refuses design-stale without exporting",
+          "both refuses design-stale without exporting"
+        ],
+        "details": {
+          "prototype only: no-agreement: high, certain, subject and next step": "{\"severity\":\"medium\",\"confidence\":\"certain\",\"rule\":\"no-agreement\",\"subject\":\"prd-dock\",\"summary\":\"No agreement of the PM's covers this PRD and its prototype.\",\"evidence\":\"`/agreements`: the PM has not agreed this revision.\",\"remedy\":\"Rebuil",
+          "none: no-agreement: high, certain, subject and next step": "{\"severity\":\"medium\",\"confidence\":\"certain\",\"rule\":\"no-agreement\",\"subject\":\"prd-dock\",\"summary\":\"No agreement of the PM's covers this PRD and its prototype.\",\"evidence\":\"`/agreements`: the PM has not agreed this revision.\",\"remedy\":\"Rebuil",
+          "team refuses no-agreement without exporting": "export succeeded",
+          "delivery refuses no-agreement without exporting": "export succeeded",
+          "both refuses no-agreement without exporting": "export succeeded",
+          "prd: agreement-stale: high, certain, subject and next step": "{\"severity\":\"medium\",\"confidence\":\"certain\",\"rule\":\"agreement-stale\",\"subject\":\"prd-dock\",\"summary\":\"No agreement of the PM's covers this PRD and its prototype.\",\"evidence\":\"`/agreements`: AGR-1 agreed to a revision that is no longer on the",
+          "team refuses agreement-stale without exporting": "export succeeded",
+          "delivery refuses agreement-stale without exporting": "export succeeded",
+          "both refuses agreement-stale without exporting": "export succeeded",
+          "prototype: agreement-stale: high, certain, subject and next step": "{\"severity\":\"medium\",\"confidence\":\"certain\",\"rule\":\"agreement-stale\",\"subject\":\"prd-dock\",\"summary\":\"No agreement of the PM's covers this PRD and its prototype.\",\"evidence\":\"`/agreements`: AGR-1 agreed to a revision that is no longer on the",
+          "prd: stories-stale: high, certain, subject and next step": "{\"severity\":\"medium\",\"confidence\":\"certain\",\"rule\":\"stories-stale\",\"subject\":\"stories-dock\",\"summary\":\"stories-dock was written from another PRD or prototype.\",\"evidence\":\"`/traces/prd` no longer match by content hash.\",\"remedy\":\"Write the",
+          "team refuses stories-stale without exporting": "export succeeded",
+          "delivery refuses stories-stale without exporting": "export succeeded",
+          "both refuses stories-stale without exporting": "export succeeded",
+          "prototype: stories-stale: high, certain, subject and next step": "{\"severity\":\"medium\",\"confidence\":\"certain\",\"rule\":\"stories-stale\",\"subject\":\"stories-dock\",\"summary\":\"stories-dock was written from another PRD or prototype.\",\"evidence\":\"`/traces/prototype` no longer match by content hash.\",\"remedy\":\"Writ",
+          "prd: design-stale: high, certain, subject and next step": "{\"severity\":\"medium\",\"confidence\":\"certain\",\"rule\":\"design-stale\",\"subject\":\"design-dock\",\"summary\":\"design-dock was written from other stories, prototype or PRD.\",\"evidence\":\"`/traces/prd` no longer match by content hash.\",\"remedy\":\"Regene",
+          "delivery refuses design-stale without exporting": "export succeeded",
+          "both refuses design-stale without exporting": "export succeeded",
+          "prototype: design-stale: high, certain, subject and next step": "{\"severity\":\"medium\",\"confidence\":\"certain\",\"rule\":\"design-stale\",\"subject\":\"design-dock\",\"summary\":\"design-dock was written from other stories, prototype or PRD.\",\"evidence\":\"`/traces/prototype` no longer match by content hash.\",\"remedy\":\"",
+          "stories: design-stale: high, certain, subject and next step": "{\"severity\":\"medium\",\"confidence\":\"certain\",\"rule\":\"design-stale\",\"subject\":\"design-dock\",\"summary\":\"design-dock was written from other stories, prototype or PRD.\",\"evidence\":\"`/traces/stories` no longer match by content hash.\",\"remedy\":\"Re"
+        },
+        "error": null,
+        "tally_inside_npm_run_evals": "34/64 passed"
+      },
+      "evals_summary": "18/19 suites passed",
+      "suites_not_pass": {
+        "discovery-readiness": {
+          "status": "FAIL",
+          "note": "34/64 passed",
+          "fails": [
+            "prototype only: no-agreement: high, certain, subject and next step",
+            "none: no-agreement: high, certain, subject and next step",
+            "team refuses no-agreement without exporting",
+            "delivery refuses no-agreement without exporting",
+            "both refuses no-agreement without exporting",
+            "prd: agreement-stale: high, certain, subject and next step",
+            "team refuses agreement-stale without exporting",
+            "delivery refuses agreement-stale without exporting",
+            "both refuses agreement-stale without exporting",
+            "prototype: agreement-stale: high, certain, subject and next step",
+            "team refuses agreement-stale without exporting",
+            "delivery refuses agreement-stale without exporting",
+            "both refuses agreement-stale without exporting",
+            "prd: stories-stale: high, certain, subject and next step",
+            "team refuses stories-stale without exporting",
+            "delivery refuses stories-stale without exporting",
+            "both refuses stories-stale without exporting",
+            "prototype: stories-stale: high, certain, subject and next step",
+            "team refuses stories-stale without exporting",
+            "delivery refuses stories-stale without exporting",
+            "both refuses stories-stale without exporting",
+            "prd: design-stale: high, certain, subject and next step",
+            "delivery refuses design-stale without exporting",
+            "both refuses design-stale without exporting",
+            "prototype: design-stale: high, certain, subject and next step",
+            "delivery refuses design-stale without exporting",
+            "both refuses design-stale without exporting",
+            "stories: design-stale: high, certain, subject and next step",
+            "delivery refuses design-stale without exporting",
+            "both refuses design-stale without exporting"
+          ],
+          "error": null
+        }
+      },
+      "reference_failures_now_passing": {},
+      "restored": {
+        "diff_is_reference": true,
+        "readiness": "64/64 passed"
+      },
+      "seconds": 19.2
+    },
+    {
+      "id": "A14",
+      "wrong_behavior": "freshness findings are high but only 'likely' (the verdict advises instead of blocking)",
+      "source": "design \u00a75 'Each is high and certain'",
+      "files": [
+        "discovery/export/index.mjs"
+      ],
+      "patches": [
+        {
+          "file": "discovery/export/index.mjs",
+          "old": "const f = (rule, subject, summary, evidence, remedy) => findings.push({ severity: \"high\", confidence: \"certain\", rule, subject, summary, evidence, remedy });",
+          "new": "const f = (rule, subject, summary, evidence, remedy) => findings.push({ severity: \"high\", confidence: \"likely\", rule, subject, summary, evidence, remedy });"
+        }
+      ],
+      "rejected": true,
+      "failing": "discovery-readiness: prototype only: no-agreement: high, certain, subject and next step; discovery-readiness: none: no-agreement: high, certain, subject and next step; discovery-readiness: team refuses no-agreement without exporting; discovery-readiness: delivery refuses no-agreement without exporting; discovery-readiness: both refuses no-agreement without exporting; discovery-readiness: prd: agreement-stale: high, certain, subject and next step; discovery-readiness: team refuses agreement-stale without exporting; discovery-readiness: delivery refuses agreement-stale without exporting; discovery-readiness: both refuses agreement-stale without exporting; discovery-readiness: prototype: agreement-stale: high, certain, subject and next step; discovery-readiness: team refuses agreement-stale without exporting; discovery-readiness: delivery refuses agreement-stale without exporting; discovery-readiness: both refuses agreement-stale without exporting; discovery-readiness: prd: stories-stale: high, certain, subject and next step; discovery-readiness: team refuses stories-stale without exporting; discovery-readiness: delivery refuses stories-stale without exporting; discovery-readiness: both refuses stories-stale without exporting; discovery-readiness: prototype: stories-stale: high, certain, subject and next step; discovery-readiness: team refuses stories-stale without exporting; discovery-readiness: delivery refuses stories-stale without exporting; discovery-readiness: both refuses stories-stale without exporting; discovery-readiness: prd: design-stale: high, certain, subject and next step; discovery-readiness: delivery refuses design-stale without exporting; discovery-readiness: both refuses design-stale without exporting; discovery-readiness: prototype: design-stale: high, certain, subject and next step; discovery-readiness: delivery refuses design-stale without exporting; discovery-readiness: both refuses design-stale without exporting; discovery-readiness: stories: design-stale: high, certain, subject and next step; discovery-readiness: delivery refuses design-stale without exporting; discovery-readiness: both refuses design-stale without exporting",
+      "failing_checks": [
+        "discovery-readiness: prototype only: no-agreement: high, certain, subject and next step",
+        "discovery-readiness: none: no-agreement: high, certain, subject and next step",
+        "discovery-readiness: team refuses no-agreement without exporting",
+        "discovery-readiness: delivery refuses no-agreement without exporting",
+        "discovery-readiness: both refuses no-agreement without exporting",
+        "discovery-readiness: prd: agreement-stale: high, certain, subject and next step",
+        "discovery-readiness: team refuses agreement-stale without exporting",
+        "discovery-readiness: delivery refuses agreement-stale without exporting",
+        "discovery-readiness: both refuses agreement-stale without exporting",
+        "discovery-readiness: prototype: agreement-stale: high, certain, subject and next step",
+        "discovery-readiness: team refuses agreement-stale without exporting",
+        "discovery-readiness: delivery refuses agreement-stale without exporting",
+        "discovery-readiness: both refuses agreement-stale without exporting",
+        "discovery-readiness: prd: stories-stale: high, certain, subject and next step",
+        "discovery-readiness: team refuses stories-stale without exporting",
+        "discovery-readiness: delivery refuses stories-stale without exporting",
+        "discovery-readiness: both refuses stories-stale without exporting",
+        "discovery-readiness: prototype: stories-stale: high, certain, subject and next step",
+        "discovery-readiness: team refuses stories-stale without exporting",
+        "discovery-readiness: delivery refuses stories-stale without exporting",
+        "discovery-readiness: both refuses stories-stale without exporting",
+        "discovery-readiness: prd: design-stale: high, certain, subject and next step",
+        "discovery-readiness: delivery refuses design-stale without exporting",
+        "discovery-readiness: both refuses design-stale without exporting",
+        "discovery-readiness: prototype: design-stale: high, certain, subject and next step",
+        "discovery-readiness: delivery refuses design-stale without exporting",
+        "discovery-readiness: both refuses design-stale without exporting",
+        "discovery-readiness: stories: design-stale: high, certain, subject and next step",
+        "discovery-readiness: delivery refuses design-stale without exporting",
+        "discovery-readiness: both refuses design-stale without exporting"
+      ],
+      "readiness": {
+        "tally": "34/64 passed",
+        "fails": [
+          "prototype only: no-agreement: high, certain, subject and next step",
+          "none: no-agreement: high, certain, subject and next step",
+          "team refuses no-agreement without exporting",
+          "delivery refuses no-agreement without exporting",
+          "both refuses no-agreement without exporting",
+          "prd: agreement-stale: high, certain, subject and next step",
+          "team refuses agreement-stale without exporting",
+          "delivery refuses agreement-stale without exporting",
+          "both refuses agreement-stale without exporting",
+          "prototype: agreement-stale: high, certain, subject and next step",
+          "team refuses agreement-stale without exporting",
+          "delivery refuses agreement-stale without exporting",
+          "both refuses agreement-stale without exporting",
+          "prd: stories-stale: high, certain, subject and next step",
+          "team refuses stories-stale without exporting",
+          "delivery refuses stories-stale without exporting",
+          "both refuses stories-stale without exporting",
+          "prototype: stories-stale: high, certain, subject and next step",
+          "team refuses stories-stale without exporting",
+          "delivery refuses stories-stale without exporting",
+          "both refuses stories-stale without exporting",
+          "prd: design-stale: high, certain, subject and next step",
+          "delivery refuses design-stale without exporting",
+          "both refuses design-stale without exporting",
+          "prototype: design-stale: high, certain, subject and next step",
+          "delivery refuses design-stale without exporting",
+          "both refuses design-stale without exporting",
+          "stories: design-stale: high, certain, subject and next step",
+          "delivery refuses design-stale without exporting",
+          "both refuses design-stale without exporting"
+        ],
+        "details": {
+          "prototype only: no-agreement: high, certain, subject and next step": "{\"severity\":\"high\",\"confidence\":\"likely\",\"rule\":\"no-agreement\",\"subject\":\"prd-dock\",\"summary\":\"No agreement of the PM's covers this PRD and its prototype.\",\"evidence\":\"`/agreements`: the PM has not agreed this revision.\",\"remedy\":\"Rebuild t",
+          "none: no-agreement: high, certain, subject and next step": "{\"severity\":\"high\",\"confidence\":\"likely\",\"rule\":\"no-agreement\",\"subject\":\"prd-dock\",\"summary\":\"No agreement of the PM's covers this PRD and its prototype.\",\"evidence\":\"`/agreements`: the PM has not agreed this revision.\",\"remedy\":\"Rebuild t",
+          "team refuses no-agreement without exporting": "export succeeded",
+          "delivery refuses no-agreement without exporting": "export succeeded",
+          "both refuses no-agreement without exporting": "export succeeded",
+          "prd: agreement-stale: high, certain, subject and next step": "{\"severity\":\"high\",\"confidence\":\"likely\",\"rule\":\"agreement-stale\",\"subject\":\"prd-dock\",\"summary\":\"No agreement of the PM's covers this PRD and its prototype.\",\"evidence\":\"`/agreements`: AGR-1 agreed to a revision that is no longer on the re",
+          "team refuses agreement-stale without exporting": "export succeeded",
+          "delivery refuses agreement-stale without exporting": "export succeeded",
+          "both refuses agreement-stale without exporting": "export succeeded",
+          "prototype: agreement-stale: high, certain, subject and next step": "{\"severity\":\"high\",\"confidence\":\"likely\",\"rule\":\"agreement-stale\",\"subject\":\"prd-dock\",\"summary\":\"No agreement of the PM's covers this PRD and its prototype.\",\"evidence\":\"`/agreements`: AGR-1 agreed to a revision that is no longer on the re",
+          "prd: stories-stale: high, certain, subject and next step": "{\"severity\":\"high\",\"confidence\":\"likely\",\"rule\":\"stories-stale\",\"subject\":\"stories-dock\",\"summary\":\"stories-dock was written from another PRD or prototype.\",\"evidence\":\"`/traces/prd` no longer match by content hash.\",\"remedy\":\"Write the sto",
+          "team refuses stories-stale without exporting": "export succeeded",
+          "delivery refuses stories-stale without exporting": "export succeeded",
+          "both refuses stories-stale without exporting": "export succeeded",
+          "prototype: stories-stale: high, certain, subject and next step": "{\"severity\":\"high\",\"confidence\":\"likely\",\"rule\":\"stories-stale\",\"subject\":\"stories-dock\",\"summary\":\"stories-dock was written from another PRD or prototype.\",\"evidence\":\"`/traces/prototype` no longer match by content hash.\",\"remedy\":\"Write t",
+          "prd: design-stale: high, certain, subject and next step": "{\"severity\":\"high\",\"confidence\":\"likely\",\"rule\":\"design-stale\",\"subject\":\"design-dock\",\"summary\":\"design-dock was written from other stories, prototype or PRD.\",\"evidence\":\"`/traces/prd` no longer match by content hash.\",\"remedy\":\"Regenerat",
+          "delivery refuses design-stale without exporting": "export succeeded",
+          "both refuses design-stale without exporting": "export succeeded",
+          "prototype: design-stale: high, certain, subject and next step": "{\"severity\":\"high\",\"confidence\":\"likely\",\"rule\":\"design-stale\",\"subject\":\"design-dock\",\"summary\":\"design-dock was written from other stories, prototype or PRD.\",\"evidence\":\"`/traces/prototype` no longer match by content hash.\",\"remedy\":\"Reg",
+          "stories: design-stale: high, certain, subject and next step": "{\"severity\":\"high\",\"confidence\":\"likely\",\"rule\":\"design-stale\",\"subject\":\"design-dock\",\"summary\":\"design-dock was written from other stories, prototype or PRD.\",\"evidence\":\"`/traces/stories` no longer match by content hash.\",\"remedy\":\"Regen"
+        },
+        "error": null,
+        "tally_inside_npm_run_evals": "34/64 passed"
+      },
+      "evals_summary": "18/19 suites passed",
+      "suites_not_pass": {
+        "discovery-readiness": {
+          "status": "FAIL",
+          "note": "34/64 passed",
+          "fails": [
+            "prototype only: no-agreement: high, certain, subject and next step",
+            "none: no-agreement: high, certain, subject and next step",
+            "team refuses no-agreement without exporting",
+            "delivery refuses no-agreement without exporting",
+            "both refuses no-agreement without exporting",
+            "prd: agreement-stale: high, certain, subject and next step",
+            "team refuses agreement-stale without exporting",
+            "delivery refuses agreement-stale without exporting",
+            "both refuses agreement-stale without exporting",
+            "prototype: agreement-stale: high, certain, subject and next step",
+            "team refuses agreement-stale without exporting",
+            "delivery refuses agreement-stale without exporting",
+            "both refuses agreement-stale without exporting",
+            "prd: stories-stale: high, certain, subject and next step",
+            "team refuses stories-stale without exporting",
+            "delivery refuses stories-stale without exporting",
+            "both refuses stories-stale without exporting",
+            "prototype: stories-stale: high, certain, subject and next step",
+            "team refuses stories-stale without exporting",
+            "delivery refuses stories-stale without exporting",
+            "both refuses stories-stale without exporting",
+            "prd: design-stale: high, certain, subject and next step",
+            "delivery refuses design-stale without exporting",
+            "both refuses design-stale without exporting",
+            "prototype: design-stale: high, certain, subject and next step",
+            "delivery refuses design-stale without exporting",
+            "both refuses design-stale without exporting",
+            "stories: design-stale: high, certain, subject and next step",
+            "delivery refuses design-stale without exporting",
+            "both refuses design-stale without exporting"
+          ],
+          "error": null
+        }
+      },
+      "reference_failures_now_passing": {},
+      "restored": {
+        "diff_is_reference": true,
+        "readiness": "64/64 passed"
+      },
+      "seconds": 19.1
+    },
+    {
+      "id": "A15",
+      "wrong_behavior": "every freshness remedy restates the problem (the summary) and names no next step",
+      "source": "design \u00a75 'its remedy names the next step'",
+      "files": [
+        "discovery/export/index.mjs"
+      ],
+      "patches": [
+        {
+          "file": "discovery/export/index.mjs",
+          "old": "const f = (rule, subject, summary, evidence, remedy) => findings.push({ severity: \"high\", confidence: \"certain\", rule, subject, summary, evidence, remedy });",
+          "new": "const f = (rule, subject, summary, evidence, remedy) => findings.push({ severity: \"high\", confidence: \"certain\", rule, subject, summary, evidence, remedy: summary });"
+        }
+      ],
+      "rejected": true,
+      "failing": "discovery-readiness: prototype only: no-agreement: high, certain, subject and next step; discovery-readiness: none: no-agreement: high, certain, subject and next step; discovery-readiness: prd: agreement-stale: high, certain, subject and next step; discovery-readiness: prototype: agreement-stale: high, certain, subject and next step; discovery-readiness: prd: stories-stale: high, certain, subject and next step; discovery-readiness: prototype: stories-stale: high, certain, subject and next step; discovery-readiness: prd: design-stale: high, certain, subject and next step; discovery-readiness: prototype: design-stale: high, certain, subject and next step; discovery-readiness: stories: design-stale: high, certain, subject and next step",
+      "failing_checks": [
+        "discovery-readiness: prototype only: no-agreement: high, certain, subject and next step",
+        "discovery-readiness: none: no-agreement: high, certain, subject and next step",
+        "discovery-readiness: prd: agreement-stale: high, certain, subject and next step",
+        "discovery-readiness: prototype: agreement-stale: high, certain, subject and next step",
+        "discovery-readiness: prd: stories-stale: high, certain, subject and next step",
+        "discovery-readiness: prototype: stories-stale: high, certain, subject and next step",
+        "discovery-readiness: prd: design-stale: high, certain, subject and next step",
+        "discovery-readiness: prototype: design-stale: high, certain, subject and next step",
+        "discovery-readiness: stories: design-stale: high, certain, subject and next step"
+      ],
+      "readiness": {
+        "tally": "55/64 passed",
+        "fails": [
+          "prototype only: no-agreement: high, certain, subject and next step",
+          "none: no-agreement: high, certain, subject and next step",
+          "prd: agreement-stale: high, certain, subject and next step",
+          "prototype: agreement-stale: high, certain, subject and next step",
+          "prd: stories-stale: high, certain, subject and next step",
+          "prototype: stories-stale: high, certain, subject and next step",
+          "prd: design-stale: high, certain, subject and next step",
+          "prototype: design-stale: high, certain, subject and next step",
+          "stories: design-stale: high, certain, subject and next step"
+        ],
+        "details": {
+          "prototype only: no-agreement: high, certain, subject and next step": "{\"severity\":\"high\",\"confidence\":\"certain\",\"rule\":\"no-agreement\",\"subject\":\"prd-dock\",\"summary\":\"No agreement of the PM's covers this PRD and its prototype.\",\"evidence\":\"`/agreements`: the PM has not agreed this revision.\",\"remedy\":\"No agree",
+          "none: no-agreement: high, certain, subject and next step": "{\"severity\":\"high\",\"confidence\":\"certain\",\"rule\":\"no-agreement\",\"subject\":\"prd-dock\",\"summary\":\"No agreement of the PM's covers this PRD and its prototype.\",\"evidence\":\"`/agreements`: the PM has not agreed this revision.\",\"remedy\":\"No agree",
+          "prd: agreement-stale: high, certain, subject and next step": "{\"severity\":\"high\",\"confidence\":\"certain\",\"rule\":\"agreement-stale\",\"subject\":\"prd-dock\",\"summary\":\"No agreement of the PM's covers this PRD and its prototype.\",\"evidence\":\"`/agreements`: AGR-1 agreed to a revision that is no longer on the r",
+          "prototype: agreement-stale: high, certain, subject and next step": "{\"severity\":\"high\",\"confidence\":\"certain\",\"rule\":\"agreement-stale\",\"subject\":\"prd-dock\",\"summary\":\"No agreement of the PM's covers this PRD and its prototype.\",\"evidence\":\"`/agreements`: AGR-1 agreed to a revision that is no longer on the r",
+          "prd: stories-stale: high, certain, subject and next step": "{\"severity\":\"high\",\"confidence\":\"certain\",\"rule\":\"stories-stale\",\"subject\":\"stories-dock\",\"summary\":\"stories-dock was written from another PRD or prototype.\",\"evidence\":\"`/traces/prd` no longer match by content hash.\",\"remedy\":\"stories-dock",
+          "prototype: stories-stale: high, certain, subject and next step": "{\"severity\":\"high\",\"confidence\":\"certain\",\"rule\":\"stories-stale\",\"subject\":\"stories-dock\",\"summary\":\"stories-dock was written from another PRD or prototype.\",\"evidence\":\"`/traces/prototype` no longer match by content hash.\",\"remedy\":\"storie",
+          "prd: design-stale: high, certain, subject and next step": "{\"severity\":\"high\",\"confidence\":\"certain\",\"rule\":\"design-stale\",\"subject\":\"design-dock\",\"summary\":\"design-dock was written from other stories, prototype or PRD.\",\"evidence\":\"`/traces/prd` no longer match by content hash.\",\"remedy\":\"design-d",
+          "prototype: design-stale: high, certain, subject and next step": "{\"severity\":\"high\",\"confidence\":\"certain\",\"rule\":\"design-stale\",\"subject\":\"design-dock\",\"summary\":\"design-dock was written from other stories, prototype or PRD.\",\"evidence\":\"`/traces/prototype` no longer match by content hash.\",\"remedy\":\"de",
+          "stories: design-stale: high, certain, subject and next step": "{\"severity\":\"high\",\"confidence\":\"certain\",\"rule\":\"design-stale\",\"subject\":\"design-dock\",\"summary\":\"design-dock was written from other stories, prototype or PRD.\",\"evidence\":\"`/traces/stories` no longer match by content hash.\",\"remedy\":\"desi"
+        },
+        "error": null,
+        "tally_inside_npm_run_evals": "55/64 passed"
+      },
+      "evals_summary": "18/19 suites passed",
+      "suites_not_pass": {
+        "discovery-readiness": {
+          "status": "FAIL",
+          "note": "55/64 passed",
+          "fails": [
+            "prototype only: no-agreement: high, certain, subject and next step",
+            "none: no-agreement: high, certain, subject and next step",
+            "prd: agreement-stale: high, certain, subject and next step",
+            "prototype: agreement-stale: high, certain, subject and next step",
+            "prd: stories-stale: high, certain, subject and next step",
+            "prototype: stories-stale: high, certain, subject and next step",
+            "prd: design-stale: high, certain, subject and next step",
+            "prototype: design-stale: high, certain, subject and next step",
+            "stories: design-stale: high, certain, subject and next step"
+          ],
+          "error": null
+        }
+      },
+      "reference_failures_now_passing": {},
+      "restored": {
+        "diff_is_reference": true,
+        "readiness": "64/64 passed"
+      },
+      "seconds": 19.2
+    },
+    {
+      "id": "A16",
+      "wrong_behavior": "agreement remedy drops the rebuild step: 'Agree to the PRD and the prototype.'",
+      "source": "design \u00a75 table (remedy: 'rebuild the prototype if it traces an older PRD, then agree')",
+      "files": [
+        "discovery/export/index.mjs"
+      ],
+      "patches": [
+        {
+          "file": "discovery/export/index.mjs",
+          "old": "\"Rebuild the prototype if it traces an older PRD, then agree to the PRD and the prototype.\"",
+          "new": "\"Agree to the PRD and the prototype.\""
+        }
+      ],
+      "rejected": true,
+      "failing": "discovery-readiness: prd: agreement-stale: high, certain, subject and next step",
+      "failing_checks": [
+        "discovery-readiness: prd: agreement-stale: high, certain, subject and next step"
+      ],
+      "readiness": {
+        "tally": "63/64 passed",
+        "fails": [
+          "prd: agreement-stale: high, certain, subject and next step"
+        ],
+        "details": {
+          "prd: agreement-stale: high, certain, subject and next step": "{\"severity\":\"high\",\"confidence\":\"certain\",\"rule\":\"agreement-stale\",\"subject\":\"prd-dock\",\"summary\":\"No agreement of the PM's covers this PRD and its prototype.\",\"evidence\":\"`/agreements`: AGR-1 agreed to a revision that is no longer on the r"
+        },
+        "error": null,
+        "tally_inside_npm_run_evals": "63/64 passed"
+      },
+      "evals_summary": "18/19 suites passed",
+      "suites_not_pass": {
+        "discovery-readiness": {
+          "status": "FAIL",
+          "note": "63/64 passed",
+          "fails": [
+            "prd: agreement-stale: high, certain, subject and next step"
+          ],
+          "error": null
+        }
+      },
+      "reference_failures_now_passing": {},
+      "restored": {
+        "diff_is_reference": true,
+        "readiness": "64/64 passed"
+      },
+      "seconds": 19.1
+    },
+    {
+      "id": "A17",
+      "wrong_behavior": "the agreement finding is raised only once stories exist; a prototype with no agreement and no stories reads as ready",
+      "source": "design \u00a75 table (When: 'a prototype exists and no agreement covers ...')",
+      "files": [
+        "discovery/export/index.mjs"
+      ],
+      "patches": [
+        {
+          "file": "discovery/export/index.mjs",
+          "old": "  if (gap) f(gap.rule, prd.id,",
+          "new": "  if (gap && stories) f(gap.rule, prd.id,"
+        }
+      ],
+      "rejected": true,
+      "failing": "discovery-readiness: prototype only: no-agreement: high, certain, subject and next step",
+      "failing_checks": [
+        "discovery-readiness: prototype only: no-agreement: high, certain, subject and next step"
+      ],
+      "readiness": {
+        "tally": "63/64 passed",
+        "fails": [
+          "prototype only: no-agreement: high, certain, subject and next step"
+        ],
+        "details": {},
+        "error": null,
+        "tally_inside_npm_run_evals": "63/64 passed"
+      },
+      "evals_summary": "18/19 suites passed",
+      "suites_not_pass": {
+        "discovery-readiness": {
+          "status": "FAIL",
+          "note": "63/64 passed",
+          "fails": [
+            "prototype only: no-agreement: high, certain, subject and next step"
+          ],
+          "error": null
+        }
+      },
+      "reference_failures_now_passing": {},
+      "restored": {
+        "diff_is_reference": true,
+        "readiness": "64/64 passed"
+      },
+      "seconds": 19.0
+    },
+    {
+      "id": "A18",
+      "wrong_behavior": "the shared agreement rule ignores the prototype hash (write() and readiness both accept an agreement to an older prototype)",
+      "source": "design \u00a75 'The one check is shared between the two'; design \u00a77 'ignores the prototype hash'",
+      "files": [
+        "discovery/record/index.mjs"
+      ],
+      "patches": [
+        {
+          "file": "discovery/record/index.mjs",
+          "old": "a.prd_hash === prd.meta.content_hash && a.prototype_hash === proto?.meta?.content_hash",
+          "new": "a.prd_hash === prd.meta.content_hash"
+        }
+      ],
+      "rejected": true,
+      "failing": "discovery-readiness: prototype: agreement-stale: high, certain, subject and next step; discovery-readiness: prototype: write shares the agreement rule before any call; discovery-readiness: team refuses agreement-stale without exporting; discovery-readiness: delivery refuses agreement-stale without exporting; discovery-readiness: both refuses agreement-stale without exporting; discovery-decisions: a rebuild that changes what the prototype shows voids the agreement too: stories are refused until the PM agrees to it",
+      "failing_checks": [
+        "discovery-readiness: prototype: agreement-stale: high, certain, subject and next step",
+        "discovery-readiness: prototype: write shares the agreement rule before any call",
+        "discovery-readiness: team refuses agreement-stale without exporting",
+        "discovery-readiness: delivery refuses agreement-stale without exporting",
+        "discovery-readiness: both refuses agreement-stale without exporting",
+        "discovery-decisions: a rebuild that changes what the prototype shows voids the agreement too: stories are refused until the PM agrees to it"
+      ],
+      "readiness": {
+        "tally": "59/64 passed",
+        "fails": [
+          "prototype: agreement-stale: high, certain, subject and next step",
+          "prototype: write shares the agreement rule before any call",
+          "team refuses agreement-stale without exporting",
+          "delivery refuses agreement-stale without exporting",
+          "both refuses agreement-stale without exporting"
+        ],
+        "details": {
+          "team refuses agreement-stale without exporting": "export succeeded",
+          "delivery refuses agreement-stale without exporting": "export: the record does not add up \u2014 every join is green before anything leaves",
+          "both refuses agreement-stale without exporting": "export: the record does not add up \u2014 every join is green before anything leaves"
+        },
+        "error": null,
+        "tally_inside_npm_run_evals": "59/64 passed"
+      },
+      "evals_summary": "17/19 suites passed",
+      "suites_not_pass": {
+        "discovery-decisions": {
+          "status": "FAIL",
+          "note": "21/22 passed",
+          "fails": [
+            "a rebuild that changes what the prototype shows voids the agreement too: stories are refused until the PM agrees to it"
+          ],
+          "error": null
+        },
+        "discovery-readiness": {
+          "status": "FAIL",
+          "note": "59/64 passed",
+          "fails": [
+            "prototype: agreement-stale: high, certain, subject and next step",
+            "prototype: write shares the agreement rule before any call",
+            "team refuses agreement-stale without exporting",
+            "delivery refuses agreement-stale without exporting",
+            "both refuses agreement-stale without exporting"
+          ],
+          "error": null
+        }
+      },
+      "reference_failures_now_passing": {},
+      "restored": {
+        "diff_is_reference": true,
+        "readiness": "64/64 passed"
+      },
+      "seconds": 19.0
+    },
+    {
+      "id": "A19",
+      "wrong_behavior": "a team exit skips the agreement and stories-stale checks too (team takes everything as it stands)",
+      "source": "design \u00a75 table (agreement and stories rows block 'every exit')",
+      "files": [
+        "discovery/export/index.mjs"
+      ],
+      "patches": [
+        {
+          "file": "discovery/export/index.mjs",
+          "old": "  const gap = agreementGap(prd, proto);\n",
+          "new": "  const gap = exit === \"team\" ? null : agreementGap(prd, proto);\n"
+        },
+        {
+          "file": "discovery/export/index.mjs",
+          "old": "if (badge.stories?.stale) f(\"stories-stale\"",
+          "new": "if (badge.stories?.stale && exit !== \"team\") f(\"stories-stale\""
+        }
+      ],
+      "rejected": true,
+      "failing": "discovery-readiness: team refuses no-agreement without exporting; discovery-readiness: team refuses agreement-stale without exporting; discovery-readiness: team refuses agreement-stale without exporting; discovery-readiness: team refuses stories-stale without exporting; discovery-readiness: team refuses stories-stale without exporting",
+      "failing_checks": [
+        "discovery-readiness: team refuses no-agreement without exporting",
+        "discovery-readiness: team refuses agreement-stale without exporting",
+        "discovery-readiness: team refuses agreement-stale without exporting",
+        "discovery-readiness: team refuses stories-stale without exporting",
+        "discovery-readiness: team refuses stories-stale without exporting"
+      ],
+      "readiness": {
+        "tally": "59/64 passed",
+        "fails": [
+          "team refuses no-agreement without exporting",
+          "team refuses agreement-stale without exporting",
+          "team refuses agreement-stale without exporting",
+          "team refuses stories-stale without exporting",
+          "team refuses stories-stale without exporting"
+        ],
+        "details": {
+          "team refuses no-agreement without exporting": "export succeeded",
+          "team refuses agreement-stale without exporting": "export succeeded",
+          "team refuses stories-stale without exporting": "export succeeded"
+        },
+        "error": null,
+        "tally_inside_npm_run_evals": "59/64 passed"
+      },
+      "evals_summary": "18/19 suites passed",
+      "suites_not_pass": {
+        "discovery-readiness": {
+          "status": "FAIL",
+          "note": "59/64 passed",
+          "fails": [
+            "team refuses no-agreement without exporting",
+            "team refuses agreement-stale without exporting",
+            "team refuses agreement-stale without exporting",
+            "team refuses stories-stale without exporting",
+            "team refuses stories-stale without exporting"
+          ],
+          "error": null
+        }
+      },
+      "reference_failures_now_passing": {},
+      "restored": {
+        "diff_is_reference": true,
+        "readiness": "64/64 passed"
+      },
+      "seconds": 19.0
+    },
+    {
+      "id": "A22",
+      "wrong_behavior": "stories/design count as current while every screen id they reference still exists in the prototype (id joins, not hashes)",
+      "source": "design \u00a77 'accepts unchanged ids as current'; design \u00a75 'Matching ids or labels never make an artifact current'",
+      "files": [
+        "discovery/export/index.mjs"
+      ],
+      "patches": [
+        {
+          "file": "discovery/export/index.mjs",
+          "old": "if (badge.stories?.stale) f(\"stories-stale\"",
+          "new": "if (badge.stories?.stale && stories.stories.some((s) => (s.screen_refs ?? []).some((r) => !proto.screens.some((p) => p.id === r)))) f(\"stories-stale\""
+        },
+        {
+          "file": "discovery/export/index.mjs",
+          "old": "if (badge.design?.stale && exit !== \"team\") f(\"design-stale\"",
+          "new": "if (badge.design?.stale && design.screens.some((s) => !proto.screens.some((p) => p.id === s.screen_ref)) && exit !== \"team\") f(\"design-stale\""
+        }
+      ],
+      "rejected": true,
+      "failing": "discovery-readiness: prd: stories-stale: high, certain, subject and next step; discovery-readiness: team refuses stories-stale without exporting; discovery-readiness: delivery refuses stories-stale without exporting; discovery-readiness: both refuses stories-stale without exporting; discovery-readiness: prototype: stories-stale: high, certain, subject and next step; discovery-readiness: team refuses stories-stale without exporting; discovery-readiness: delivery refuses stories-stale without exporting; discovery-readiness: both refuses stories-stale without exporting; discovery-readiness: prd: design-stale: high, certain, subject and next step; discovery-readiness: delivery refuses design-stale without exporting; discovery-readiness: both refuses design-stale without exporting; discovery-readiness: prototype: design-stale: high, certain, subject and next step; discovery-readiness: delivery refuses design-stale without exporting; discovery-readiness: both refuses design-stale without exporting; discovery-readiness: stories: design-stale: high, certain, subject and next step; discovery-readiness: delivery refuses design-stale without exporting; discovery-readiness: both refuses design-stale without exporting",
+      "failing_checks": [
+        "discovery-readiness: prd: stories-stale: high, certain, subject and next step",
+        "discovery-readiness: team refuses stories-stale without exporting",
+        "discovery-readiness: delivery refuses stories-stale without exporting",
+        "discovery-readiness: both refuses stories-stale without exporting",
+        "discovery-readiness: prototype: stories-stale: high, certain, subject and next step",
+        "discovery-readiness: team refuses stories-stale without exporting",
+        "discovery-readiness: delivery refuses stories-stale without exporting",
+        "discovery-readiness: both refuses stories-stale without exporting",
+        "discovery-readiness: prd: design-stale: high, certain, subject and next step",
+        "discovery-readiness: delivery refuses design-stale without exporting",
+        "discovery-readiness: both refuses design-stale without exporting",
+        "discovery-readiness: prototype: design-stale: high, certain, subject and next step",
+        "discovery-readiness: delivery refuses design-stale without exporting",
+        "discovery-readiness: both refuses design-stale without exporting",
+        "discovery-readiness: stories: design-stale: high, certain, subject and next step",
+        "discovery-readiness: delivery refuses design-stale without exporting",
+        "discovery-readiness: both refuses design-stale without exporting"
+      ],
+      "readiness": {
+        "tally": "47/64 passed",
+        "fails": [
+          "prd: stories-stale: high, certain, subject and next step",
+          "team refuses stories-stale without exporting",
+          "delivery refuses stories-stale without exporting",
+          "both refuses stories-stale without exporting",
+          "prototype: stories-stale: high, certain, subject and next step",
+          "team refuses stories-stale without exporting",
+          "delivery refuses stories-stale without exporting",
+          "both refuses stories-stale without exporting",
+          "prd: design-stale: high, certain, subject and next step",
+          "delivery refuses design-stale without exporting",
+          "both refuses design-stale without exporting",
+          "prototype: design-stale: high, certain, subject and next step",
+          "delivery refuses design-stale without exporting",
+          "both refuses design-stale without exporting",
+          "stories: design-stale: high, certain, subject and next step",
+          "delivery refuses design-stale without exporting",
+          "both refuses design-stale without exporting"
+        ],
+        "details": {
+          "team refuses stories-stale without exporting": "export succeeded",
+          "delivery refuses stories-stale without exporting": "export succeeded",
+          "both refuses stories-stale without exporting": "export succeeded",
+          "delivery refuses design-stale without exporting": "export succeeded",
+          "both refuses design-stale without exporting": "export succeeded"
+        },
+        "error": null,
+        "tally_inside_npm_run_evals": "47/64 passed"
+      },
+      "evals_summary": "18/19 suites passed",
+      "suites_not_pass": {
+        "discovery-readiness": {
+          "status": "FAIL",
+          "note": "47/64 passed",
+          "fails": [
+            "prd: stories-stale: high, certain, subject and next step",
+            "team refuses stories-stale without exporting",
+            "delivery refuses stories-stale without exporting",
+            "both refuses stories-stale without exporting",
+            "prototype: stories-stale: high, certain, subject and next step",
+            "team refuses stories-stale without exporting",
+            "delivery refuses stories-stale without exporting",
+            "both refuses stories-stale without exporting",
+            "prd: design-stale: high, certain, subject and next step",
+            "delivery refuses design-stale without exporting",
+            "both refuses design-stale without exporting",
+            "prototype: design-stale: high, certain, subject and next step",
+            "delivery refuses design-stale without exporting",
+            "both refuses design-stale without exporting",
+            "stories: design-stale: high, certain, subject and next step",
+            "delivery refuses design-stale without exporting",
+            "both refuses design-stale without exporting"
+          ],
+          "error": null
+        }
+      },
+      "reference_failures_now_passing": {},
+      "restored": {
+        "diff_is_reference": true,
+        "readiness": "64/64 passed"
+      },
+      "seconds": 18.5
+    },
+    {
+      "id": "A23",
+      "wrong_behavior": "readiness reports one code, agreement-stale, for every agreement gap (write() still says no-agreement when none was recorded)",
+      "source": "design \u00a75 'Which agreement finding. It uses the same rule as write()'",
+      "files": [
+        "discovery/export/index.mjs"
+      ],
+      "patches": [
+        {
+          "file": "discovery/export/index.mjs",
+          "old": "  if (gap) f(gap.rule, prd.id,",
+          "new": "  if (gap) f(\"agreement-stale\", prd.id,"
+        }
+      ],
+      "rejected": true,
+      "failing": "discovery-readiness: prototype only: no-agreement: high, certain, subject and next step; discovery-readiness: none: no-agreement: high, certain, subject and next step; discovery-readiness: team refuses no-agreement without exporting; discovery-readiness: delivery refuses no-agreement without exporting; discovery-readiness: both refuses no-agreement without exporting",
+      "failing_checks": [
+        "discovery-readiness: prototype only: no-agreement: high, certain, subject and next step",
+        "discovery-readiness: none: no-agreement: high, certain, subject and next step",
+        "discovery-readiness: team refuses no-agreement without exporting",
+        "discovery-readiness: delivery refuses no-agreement without exporting",
+        "discovery-readiness: both refuses no-agreement without exporting"
+      ],
+      "readiness": {
+        "tally": "59/64 passed",
+        "fails": [
+          "prototype only: no-agreement: high, certain, subject and next step",
+          "none: no-agreement: high, certain, subject and next step",
+          "team refuses no-agreement without exporting",
+          "delivery refuses no-agreement without exporting",
+          "both refuses no-agreement without exporting"
+        ],
+        "details": {
+          "team refuses no-agreement without exporting": "export: the record does not add up \u2014 every join is green before anything leaves",
+          "delivery refuses no-agreement without exporting": "export: the record does not add up \u2014 every join is green before anything leaves",
+          "both refuses no-agreement without exporting": "export: the record does not add up \u2014 every join is green before anything leaves"
+        },
+        "error": null,
+        "tally_inside_npm_run_evals": "59/64 passed"
+      },
+      "evals_summary": "18/19 suites passed",
+      "suites_not_pass": {
+        "discovery-readiness": {
+          "status": "FAIL",
+          "note": "59/64 passed",
+          "fails": [
+            "prototype only: no-agreement: high, certain, subject and next step",
+            "none: no-agreement: high, certain, subject and next step",
+            "team refuses no-agreement without exporting",
+            "delivery refuses no-agreement without exporting",
+            "both refuses no-agreement without exporting"
+          ],
+          "error": null
+        }
+      },
+      "reference_failures_now_passing": {},
+      "restored": {
+        "diff_is_reference": true,
+        "readiness": "64/64 passed"
+      },
+      "seconds": 18.5
+    },
+    {
+      "id": "A24",
+      "wrong_behavior": "write() refuses agreement-stale for every gap, so the stories door and readiness disagree when no agreement was ever recorded",
+      "source": "design \u00a75 'The one check is shared between the two' (write() side)",
+      "files": [
+        "discovery/stories/index.mjs"
+      ],
+      "patches": [
+        {
+          "file": "discovery/stories/index.mjs",
+          "old": "if (gap?.rule === \"no-agreement\") throw new Refused(gap.rule,",
+          "new": "if (gap?.rule === \"no-agreement\") throw new Refused(\"agreement-stale\","
+        }
+      ],
+      "rejected": true,
+      "failing": "discovery-readiness: none: write shares the agreement rule before any call; discovery-decisions: agreement is attributed, and without it stories are refused before the writer runs \u2014 no call, no backlog",
+      "failing_checks": [
+        "discovery-readiness: none: write shares the agreement rule before any call",
+        "discovery-decisions: agreement is attributed, and without it stories are refused before the writer runs \u2014 no call, no backlog"
+      ],
+      "readiness": {
+        "tally": "63/64 passed",
+        "fails": [
+          "none: write shares the agreement rule before any call"
+        ],
+        "details": {},
+        "error": null,
+        "tally_inside_npm_run_evals": "63/64 passed"
+      },
+      "evals_summary": "17/19 suites passed",
+      "suites_not_pass": {
+        "discovery-decisions": {
+          "status": "FAIL",
+          "note": "21/22 passed",
+          "fails": [
+            "agreement is attributed, and without it stories are refused before the writer runs \u2014 no call, no backlog"
+          ],
+          "error": null
+        },
+        "discovery-readiness": {
+          "status": "FAIL",
+          "note": "63/64 passed",
+          "fails": [
+            "none: write shares the agreement rule before any call"
+          ],
+          "error": null
+        }
+      },
+      "reference_failures_now_passing": {},
+      "restored": {
+        "diff_is_reference": true,
+        "readiness": "64/64 passed"
+      },
+      "seconds": 18.9
+    },
+    {
+      "id": "A25",
+      "wrong_behavior": "a team export re-stamps the stale design's traces to the current record inside the handoff, hiding that it is stale",
+      "source": "design \u00a75 'carries the design marked stale'; 'a team takes a stale design as it stands'",
+      "files": [
+        "discovery/export/index.mjs"
+      ],
+      "patches": [
+        {
+          "file": "discovery/export/index.mjs",
+          "old": "contract: compile(prd), prototype: proto, stories, design, items: [],",
+          "new": "contract: compile(prd), prototype: proto, stories, design: design && exit === \"team\" ? { ...design, traces: { prd: { version: prd.meta.version, content_hash: prd.meta.content_hash }, prototype: { content_hash: proto.meta.content_hash }, stories: { content_hash: stories.meta.content_hash } } } : design, items: [],"
+        }
+      ],
+      "rejected": true,
+      "failing": "discovery-readiness: team carries the old design with stale trace evidence",
+      "failing_checks": [
+        "discovery-readiness: team carries the old design with stale trace evidence"
+      ],
+      "readiness": {
+        "tally": "63/64 passed",
+        "fails": [
+          "team carries the old design with stale trace evidence"
+        ],
+        "details": {},
+        "error": null,
+        "tally_inside_npm_run_evals": "63/64 passed"
+      },
+      "evals_summary": "18/19 suites passed",
+      "suites_not_pass": {
+        "discovery-readiness": {
+          "status": "FAIL",
+          "note": "63/64 passed",
+          "fails": [
+            "team carries the old design with stale trace evidence"
+          ],
+          "error": null
+        }
+      },
+      "reference_failures_now_passing": {},
+      "restored": {
+        "diff_is_reference": true,
+        "readiness": "64/64 passed"
+      },
+      "seconds": 19.1
+    },
+    {
+      "id": "A26",
+      "wrong_behavior": "freshness is checked only at the export door (an exit named); readiness(root), the console's gate view, omits it",
+      "source": "design \u00a75 '`readinessOf()` gains findings' (the gate, not only the door)",
+      "files": [
+        "discovery/export/index.mjs"
+      ],
+      "patches": [
+        {
+          "file": "discovery/export/index.mjs",
+          "old": "  if (proto) joins.push(checkPrototype(prd, proto), checkFreshness({ prd, proto, stories, design, exit }));",
+          "new": "  if (proto) joins.push(checkPrototype(prd, proto));\n  if (proto && exit) joins.push(checkFreshness({ prd, proto, stories, design, exit }));"
+        }
+      ],
+      "rejected": true,
+      "failing": "discovery-readiness: prototype only: no-agreement: high, certain, subject and next step; discovery-readiness: none: no-agreement: high, certain, subject and next step; discovery-readiness: prd: agreement-stale: high, certain, subject and next step; discovery-readiness: prototype: agreement-stale: high, certain, subject and next step; discovery-readiness: prd: stories-stale: high, certain, subject and next step; discovery-readiness: prototype: stories-stale: high, certain, subject and next step; discovery-readiness: prd: design-stale: high, certain, subject and next step; discovery-readiness: prototype: design-stale: high, certain, subject and next step; discovery-readiness: stories: design-stale: high, certain, subject and next step",
+      "failing_checks": [
+        "discovery-readiness: prototype only: no-agreement: high, certain, subject and next step",
+        "discovery-readiness: none: no-agreement: high, certain, subject and next step",
+        "discovery-readiness: prd: agreement-stale: high, certain, subject and next step",
+        "discovery-readiness: prototype: agreement-stale: high, certain, subject and next step",
+        "discovery-readiness: prd: stories-stale: high, certain, subject and next step",
+        "discovery-readiness: prototype: stories-stale: high, certain, subject and next step",
+        "discovery-readiness: prd: design-stale: high, certain, subject and next step",
+        "discovery-readiness: prototype: design-stale: high, certain, subject and next step",
+        "discovery-readiness: stories: design-stale: high, certain, subject and next step"
+      ],
+      "readiness": {
+        "tally": "55/64 passed",
+        "fails": [
+          "prototype only: no-agreement: high, certain, subject and next step",
+          "none: no-agreement: high, certain, subject and next step",
+          "prd: agreement-stale: high, certain, subject and next step",
+          "prototype: agreement-stale: high, certain, subject and next step",
+          "prd: stories-stale: high, certain, subject and next step",
+          "prototype: stories-stale: high, certain, subject and next step",
+          "prd: design-stale: high, certain, subject and next step",
+          "prototype: design-stale: high, certain, subject and next step",
+          "stories: design-stale: high, certain, subject and next step"
+        ],
+        "details": {},
+        "error": null,
+        "tally_inside_npm_run_evals": "55/64 passed"
+      },
+      "evals_summary": "18/19 suites passed",
+      "suites_not_pass": {
+        "discovery-readiness": {
+          "status": "FAIL",
+          "note": "55/64 passed",
+          "fails": [
+            "prototype only: no-agreement: high, certain, subject and next step",
+            "none: no-agreement: high, certain, subject and next step",
+            "prd: agreement-stale: high, certain, subject and next step",
+            "prototype: agreement-stale: high, certain, subject and next step",
+            "prd: stories-stale: high, certain, subject and next step",
+            "prototype: stories-stale: high, certain, subject and next step",
+            "prd: design-stale: high, certain, subject and next step",
+            "prototype: design-stale: high, certain, subject and next step",
+            "stories: design-stale: high, certain, subject and next step"
+          ],
+          "error": null
+        }
+      },
+      "reference_failures_now_passing": {},
+      "restored": {
+        "diff_is_reference": true,
+        "readiness": "64/64 passed"
+      },
+      "seconds": 19.0
+    },
+    {
+      "id": "A27",
+      "wrong_behavior": "every freshness finding names prd.id as its subject, not the stale stories or design",
+      "source": "design \u00a75 table (Subject: stories.id, design.id)",
+      "files": [
+        "discovery/export/index.mjs"
+      ],
+      "patches": [
+        {
+          "file": "discovery/export/index.mjs",
+          "old": "f(\"stories-stale\", stories.id,",
+          "new": "f(\"stories-stale\", prd.id,"
+        },
+        {
+          "file": "discovery/export/index.mjs",
+          "old": "f(\"design-stale\", design.id,",
+          "new": "f(\"design-stale\", prd.id,"
+        }
+      ],
+      "rejected": true,
+      "failing": "discovery-readiness: prd: stories-stale: high, certain, subject and next step; discovery-readiness: prototype: stories-stale: high, certain, subject and next step; discovery-readiness: prd: design-stale: high, certain, subject and next step; discovery-readiness: prototype: design-stale: high, certain, subject and next step; discovery-readiness: stories: design-stale: high, certain, subject and next step",
+      "failing_checks": [
+        "discovery-readiness: prd: stories-stale: high, certain, subject and next step",
+        "discovery-readiness: prototype: stories-stale: high, certain, subject and next step",
+        "discovery-readiness: prd: design-stale: high, certain, subject and next step",
+        "discovery-readiness: prototype: design-stale: high, certain, subject and next step",
+        "discovery-readiness: stories: design-stale: high, certain, subject and next step"
+      ],
+      "readiness": {
+        "tally": "59/64 passed",
+        "fails": [
+          "prd: stories-stale: high, certain, subject and next step",
+          "prototype: stories-stale: high, certain, subject and next step",
+          "prd: design-stale: high, certain, subject and next step",
+          "prototype: design-stale: high, certain, subject and next step",
+          "stories: design-stale: high, certain, subject and next step"
+        ],
+        "details": {
+          "prd: stories-stale: high, certain, subject and next step": "{\"severity\":\"high\",\"confidence\":\"certain\",\"rule\":\"stories-stale\",\"subject\":\"prd-dock\",\"summary\":\"stories-dock was written from another PRD or prototype.\",\"evidence\":\"`/traces/prd` no longer match by content hash.\",\"remedy\":\"Write the storie",
+          "prototype: stories-stale: high, certain, subject and next step": "{\"severity\":\"high\",\"confidence\":\"certain\",\"rule\":\"stories-stale\",\"subject\":\"prd-dock\",\"summary\":\"stories-dock was written from another PRD or prototype.\",\"evidence\":\"`/traces/prototype` no longer match by content hash.\",\"remedy\":\"Write the",
+          "prd: design-stale: high, certain, subject and next step": "{\"severity\":\"high\",\"confidence\":\"certain\",\"rule\":\"design-stale\",\"subject\":\"prd-dock\",\"summary\":\"design-dock was written from other stories, prototype or PRD.\",\"evidence\":\"`/traces/prd` no longer match by content hash.\",\"remedy\":\"Regenerate",
+          "prototype: design-stale: high, certain, subject and next step": "{\"severity\":\"high\",\"confidence\":\"certain\",\"rule\":\"design-stale\",\"subject\":\"prd-dock\",\"summary\":\"design-dock was written from other stories, prototype or PRD.\",\"evidence\":\"`/traces/prototype` no longer match by content hash.\",\"remedy\":\"Regen",
+          "stories: design-stale: high, certain, subject and next step": "{\"severity\":\"high\",\"confidence\":\"certain\",\"rule\":\"design-stale\",\"subject\":\"prd-dock\",\"summary\":\"design-dock was written from other stories, prototype or PRD.\",\"evidence\":\"`/traces/stories` no longer match by content hash.\",\"remedy\":\"Regener"
+        },
+        "error": null,
+        "tally_inside_npm_run_evals": "59/64 passed"
+      },
+      "evals_summary": "18/19 suites passed",
+      "suites_not_pass": {
+        "discovery-readiness": {
+          "status": "FAIL",
+          "note": "59/64 passed",
+          "fails": [
+            "prd: stories-stale: high, certain, subject and next step",
+            "prototype: stories-stale: high, certain, subject and next step",
+            "prd: design-stale: high, certain, subject and next step",
+            "prototype: design-stale: high, certain, subject and next step",
+            "stories: design-stale: high, certain, subject and next step"
+          ],
+          "error": null
+        }
+      },
+      "reference_failures_now_passing": {},
+      "restored": {
+        "diff_is_reference": true,
+        "readiness": "64/64 passed"
+      },
+      "seconds": 19.1
+    },
+    {
+      "id": "A28",
+      "wrong_behavior": "design-stale remedy names the wrong next step: re-review and re-sign the design (a sign-off never changes its traces)",
+      "source": "design \u00a75 table (design-stale remedy: 'regenerate the design')",
+      "files": [
+        "discovery/export/index.mjs"
+      ],
+      "patches": [
+        {
+          "file": "discovery/export/index.mjs",
+          "old": "\"Regenerate the design, then review and sign it.\"",
+          "new": "\"Review the design again and sign it.\""
+        }
+      ],
+      "rejected": true,
+      "failing": "discovery-readiness: prd: design-stale: high, certain, subject and next step; discovery-readiness: prototype: design-stale: high, certain, subject and next step; discovery-readiness: stories: design-stale: high, certain, subject and next step",
+      "failing_checks": [
+        "discovery-readiness: prd: design-stale: high, certain, subject and next step",
+        "discovery-readiness: prototype: design-stale: high, certain, subject and next step",
+        "discovery-readiness: stories: design-stale: high, certain, subject and next step"
+      ],
+      "readiness": {
+        "tally": "61/64 passed",
+        "fails": [
+          "prd: design-stale: high, certain, subject and next step",
+          "prototype: design-stale: high, certain, subject and next step",
+          "stories: design-stale: high, certain, subject and next step"
+        ],
+        "details": {
+          "prd: design-stale: high, certain, subject and next step": "{\"severity\":\"high\",\"confidence\":\"certain\",\"rule\":\"design-stale\",\"subject\":\"design-dock\",\"summary\":\"design-dock was written from other stories, prototype or PRD.\",\"evidence\":\"`/traces/prd` no longer match by content hash.\",\"remedy\":\"Review t",
+          "prototype: design-stale: high, certain, subject and next step": "{\"severity\":\"high\",\"confidence\":\"certain\",\"rule\":\"design-stale\",\"subject\":\"design-dock\",\"summary\":\"design-dock was written from other stories, prototype or PRD.\",\"evidence\":\"`/traces/prototype` no longer match by content hash.\",\"remedy\":\"Re",
+          "stories: design-stale: high, certain, subject and next step": "{\"severity\":\"high\",\"confidence\":\"certain\",\"rule\":\"design-stale\",\"subject\":\"design-dock\",\"summary\":\"design-dock was written from other stories, prototype or PRD.\",\"evidence\":\"`/traces/stories` no longer match by content hash.\",\"remedy\":\"Revi"
+        },
+        "error": null,
+        "tally_inside_npm_run_evals": "61/64 passed"
+      },
+      "evals_summary": "18/19 suites passed",
+      "suites_not_pass": {
+        "discovery-readiness": {
+          "status": "FAIL",
+          "note": "61/64 passed",
+          "fails": [
+            "prd: design-stale: high, certain, subject and next step",
+            "prototype: design-stale: high, certain, subject and next step",
+            "stories: design-stale: high, certain, subject and next step"
+          ],
+          "error": null
+        }
+      },
+      "reference_failures_now_passing": {},
+      "restored": {
+        "diff_is_reference": true,
+        "readiness": "64/64 passed"
+      },
+      "seconds": 19.3
+    },
+    {
+      "id": "A29",
+      "wrong_behavior": "design-stale is keyed on the sign-off (signed on this exact version) instead of the design's traces",
+      "source": "design \u00a75 table (design-stale: 'the design traces other stories, prototype or PRD')",
+      "files": [
+        "discovery/export/index.mjs"
+      ],
+      "patches": [
+        {
+          "file": "discovery/export/index.mjs",
+          "old": "if (badge.design?.stale && exit !== \"team\") f(\"design-stale\"",
+          "new": "if (badge.design && !badge.design.signed && exit !== \"team\") f(\"design-stale\""
+        }
+      ],
+      "rejected": true,
+      "failing": "discovery-readiness: prd: design-stale: high, certain, subject and next step; discovery-readiness: delivery refuses design-stale without exporting; discovery-readiness: both refuses design-stale without exporting; discovery-readiness: prototype: design-stale: high, certain, subject and next step; discovery-readiness: delivery refuses design-stale without exporting; discovery-readiness: both refuses design-stale without exporting; discovery-readiness: stories: design-stale: high, certain, subject and next step; discovery-readiness: delivery refuses design-stale without exporting; discovery-readiness: both refuses design-stale without exporting; coherence: the export view carries the ready gate recomputed live, the exits, and no handoff yet; seam: Delivery with an unsigned design is refused \u2014 the user's ruling: if it goes to Delivery it is signed; seam: both exits together are held to the same signature",
+      "failing_checks": [
+        "discovery-readiness: prd: design-stale: high, certain, subject and next step",
+        "discovery-readiness: delivery refuses design-stale without exporting",
+        "discovery-readiness: both refuses design-stale without exporting",
+        "discovery-readiness: prototype: design-stale: high, certain, subject and next step",
+        "discovery-readiness: delivery refuses design-stale without exporting",
+        "discovery-readiness: both refuses design-stale without exporting",
+        "discovery-readiness: stories: design-stale: high, certain, subject and next step",
+        "discovery-readiness: delivery refuses design-stale without exporting",
+        "discovery-readiness: both refuses design-stale without exporting",
+        "coherence: the export view carries the ready gate recomputed live, the exits, and no handoff yet",
+        "seam: Delivery with an unsigned design is refused \u2014 the user's ruling: if it goes to Delivery it is signed",
+        "seam: both exits together are held to the same signature"
+      ],
+      "readiness": {
+        "tally": "55/64 passed",
+        "fails": [
+          "prd: design-stale: high, certain, subject and next step",
+          "delivery refuses design-stale without exporting",
+          "both refuses design-stale without exporting",
+          "prototype: design-stale: high, certain, subject and next step",
+          "delivery refuses design-stale without exporting",
+          "both refuses design-stale without exporting",
+          "stories: design-stale: high, certain, subject and next step",
+          "delivery refuses design-stale without exporting",
+          "both refuses design-stale without exporting"
+        ],
+        "details": {
+          "delivery refuses design-stale without exporting": "export succeeded",
+          "both refuses design-stale without exporting": "export succeeded"
+        },
+        "error": null,
+        "tally_inside_npm_run_evals": "55/64 passed"
+      },
+      "evals_summary": "16/19 suites passed",
+      "suites_not_pass": {
+        "coherence": {
+          "status": "FAIL",
+          "note": "201/202 passed",
+          "fails": [
+            "the export view carries the ready gate recomputed live, the exits, and no handoff yet"
+          ],
+          "error": null
+        },
+        "discovery-readiness": {
+          "status": "FAIL",
+          "note": "55/64 passed",
+          "fails": [
+            "prd: design-stale: high, certain, subject and next step",
+            "delivery refuses design-stale without exporting",
+            "both refuses design-stale without exporting",
+            "prototype: design-stale: high, certain, subject and next step",
+            "delivery refuses design-stale without exporting",
+            "both refuses design-stale without exporting",
+            "stories: design-stale: high, certain, subject and next step",
+            "delivery refuses design-stale without exporting",
+            "both refuses design-stale without exporting"
+          ],
+          "error": null
+        },
+        "seam": {
+          "status": "FAIL",
+          "note": "147/149 passed",
+          "fails": [
+            "Delivery with an unsigned design is refused \u2014 the user's ruling: if it goes to Delivery it is signed",
+            "both exits together are held to the same signature"
+          ],
+          "error": null
+        }
+      },
+      "reference_failures_now_passing": {},
+      "restored": {
+        "diff_is_reference": true,
+        "readiness": "64/64 passed"
+      },
+      "seconds": 19.3
+    },
+    {
+      "id": "H01",
+      "wrong_behavior": "stories write keeps no history copy; a refresh destroys the old backlog",
+      "source": "design \u00a77 'a refresh destroys the old stories'",
+      "files": [
+        "discovery/stories/index.mjs"
+      ],
+      "patches": [
+        {
+          "file": "discovery/stories/index.mjs",
+          "old": "  keepOutgoing(root, \"stories\", STORIES_FILE);\n",
+          "new": ""
+        },
+        {
+          "file": "discovery/stories/index.mjs",
+          "old": "freshVerdict, keepOutgoing, traceOf",
+          "new": "freshVerdict, traceOf"
+        }
+      ],
+      "rejected": true,
+      "failing": "discovery-readiness: current stories are archived under an unchanged agreement; discovery-readiness: stories: D05 refresh retains the outgoing bytes; discovery-readiness: stories: both outgoing copies survive the second refresh",
+      "failing_checks": [
+        "discovery-readiness: current stories are archived under an unchanged agreement",
+        "discovery-readiness: stories: D05 refresh retains the outgoing bytes",
+        "discovery-readiness: stories: both outgoing copies survive the second refresh"
+      ],
+      "readiness": {
+        "tally": "61/64 passed",
+        "fails": [
+          "current stories are archived under an unchanged agreement",
+          "stories: D05 refresh retains the outgoing bytes",
+          "stories: both outgoing copies survive the second refresh"
+        ],
+        "details": {},
+        "error": null,
+        "tally_inside_npm_run_evals": "61/64 passed"
+      },
+      "evals_summary": "18/19 suites passed",
+      "suites_not_pass": {
+        "discovery-readiness": {
+          "status": "FAIL",
+          "note": "61/64 passed",
+          "fails": [
+            "current stories are archived under an unchanged agreement",
+            "stories: D05 refresh retains the outgoing bytes",
+            "stories: both outgoing copies survive the second refresh"
+          ],
+          "error": null
+        }
+      },
+      "reference_failures_now_passing": {},
+      "restored": {
+        "diff_is_reference": true,
+        "readiness": "64/64 passed"
+      },
+      "seconds": 19.6
+    },
+    {
+      "id": "H02",
+      "wrong_behavior": "the design writer keeps no history copy",
+      "source": "design \u00a75 'History. Before write or the design writer overwrites its record'",
+      "files": [
+        "discovery/design/index.mjs"
+      ],
+      "patches": [
+        {
+          "file": "discovery/design/index.mjs",
+          "old": "  keepOutgoing(root, \"design\", DESIGN_FILE);\n",
+          "new": ""
+        },
+        {
+          "file": "discovery/design/index.mjs",
+          "old": "freshVerdict, keepOutgoing, traceOf",
+          "new": "freshVerdict, traceOf"
+        }
+      ],
+      "rejected": true,
+      "failing": "discovery-readiness: unsigned current design is archived on rewrite; discovery-readiness: design: D05 refresh retains the outgoing bytes; discovery-readiness: design: both outgoing copies survive the second refresh",
+      "failing_checks": [
+        "discovery-readiness: unsigned current design is archived on rewrite",
+        "discovery-readiness: design: D05 refresh retains the outgoing bytes",
+        "discovery-readiness: design: both outgoing copies survive the second refresh"
+      ],
+      "readiness": {
+        "tally": "61/64 passed",
+        "fails": [
+          "unsigned current design is archived on rewrite",
+          "design: D05 refresh retains the outgoing bytes",
+          "design: both outgoing copies survive the second refresh"
+        ],
+        "details": {},
+        "error": null,
+        "tally_inside_npm_run_evals": "61/64 passed"
+      },
+      "evals_summary": "18/19 suites passed",
+      "suites_not_pass": {
+        "discovery-readiness": {
+          "status": "FAIL",
+          "note": "61/64 passed",
+          "fails": [
+            "unsigned current design is archived on rewrite",
+            "design: D05 refresh retains the outgoing bytes",
+            "design: both outgoing copies survive the second refresh"
+          ],
+          "error": null
+        }
+      },
+      "reference_failures_now_passing": {},
+      "restored": {
+        "diff_is_reference": true,
+        "readiness": "64/64 passed"
+      },
+      "seconds": 19.8
+    },
+    {
+      "id": "H03",
+      "wrong_behavior": "history keyed by the document's content hash instead of the sha256 of the saved bytes",
+      "source": "design \u00a75 'The key is the whole file, not the content hash'",
+      "files": [
+        "discovery/record/index.mjs"
+      ],
+      "patches": [
+        {
+          "file": "discovery/record/index.mjs",
+          "old": "createHash(\"sha256\").update(saved).digest(\"hex\").slice(0, 12)",
+          "new": "JSON.parse(saved).meta.content_hash.slice(0, 12)"
+        },
+        {
+          "file": "discovery/record/index.mjs",
+          "old": "import { createHash } from \"node:crypto\";\n",
+          "new": ""
+        }
+      ],
+      "rejected": true,
+      "failing": "discovery-readiness: current stories are archived under an unchanged agreement; discovery-readiness: unsigned current design is archived on rewrite; discovery-readiness: stories: D05 refresh retains the outgoing bytes; discovery-readiness: stories: both outgoing copies survive the second refresh; discovery-readiness: design: D05 refresh retains the outgoing bytes; discovery-readiness: design: both outgoing copies survive the second refresh; discovery-readiness: prototype JSON/HTML pair is archived before the builder overwrites HTML; discovery-readiness: archived HTML matches the outgoing record file_hash",
+      "failing_checks": [
+        "discovery-readiness: current stories are archived under an unchanged agreement",
+        "discovery-readiness: unsigned current design is archived on rewrite",
+        "discovery-readiness: stories: D05 refresh retains the outgoing bytes",
+        "discovery-readiness: stories: both outgoing copies survive the second refresh",
+        "discovery-readiness: design: D05 refresh retains the outgoing bytes",
+        "discovery-readiness: design: both outgoing copies survive the second refresh",
+        "discovery-readiness: prototype JSON/HTML pair is archived before the builder overwrites HTML",
+        "discovery-readiness: archived HTML matches the outgoing record file_hash"
+      ],
+      "readiness": {
+        "tally": "56/64 passed",
+        "fails": [
+          "current stories are archived under an unchanged agreement",
+          "unsigned current design is archived on rewrite",
+          "stories: D05 refresh retains the outgoing bytes",
+          "stories: both outgoing copies survive the second refresh",
+          "design: D05 refresh retains the outgoing bytes",
+          "design: both outgoing copies survive the second refresh",
+          "prototype JSON/HTML pair is archived before the builder overwrites HTML",
+          "archived HTML matches the outgoing record file_hash"
+        ],
+        "details": {},
+        "error": null,
+        "tally_inside_npm_run_evals": "56/64 passed"
+      },
+      "evals_summary": "18/19 suites passed",
+      "suites_not_pass": {
+        "discovery-readiness": {
+          "status": "FAIL",
+          "note": "56/64 passed",
+          "fails": [
+            "current stories are archived under an unchanged agreement",
+            "unsigned current design is archived on rewrite",
+            "stories: D05 refresh retains the outgoing bytes",
+            "stories: both outgoing copies survive the second refresh",
+            "design: D05 refresh retains the outgoing bytes",
+            "design: both outgoing copies survive the second refresh",
+            "prototype JSON/HTML pair is archived before the builder overwrites HTML",
+            "archived HTML matches the outgoing record file_hash"
+          ],
+          "error": null
+        }
+      },
+      "reference_failures_now_passing": {},
+      "restored": {
+        "diff_is_reference": true,
+        "readiness": "64/64 passed"
+      },
+      "seconds": 19.8
+    },
+    {
+      "id": "H04",
+      "wrong_behavior": "history key uses the first 16 hex of the sha256, not 12",
+      "source": "design \u00a75 'first 12 of the sha256'",
+      "files": [
+        "discovery/record/index.mjs"
+      ],
+      "patches": [
+        {
+          "file": "discovery/record/index.mjs",
+          "old": "createHash(\"sha256\").update(saved).digest(\"hex\").slice(0, 12)",
+          "new": "createHash(\"sha256\").update(saved).digest(\"hex\").slice(0, 16)"
+        }
+      ],
+      "rejected": true,
+      "failing": "discovery-readiness: current stories are archived under an unchanged agreement; discovery-readiness: unsigned current design is archived on rewrite; discovery-readiness: stories: D05 refresh retains the outgoing bytes; discovery-readiness: stories: both outgoing copies survive the second refresh; discovery-readiness: design: D05 refresh retains the outgoing bytes; discovery-readiness: design: both outgoing copies survive the second refresh; discovery-readiness: prototype JSON/HTML pair is archived before the builder overwrites HTML; discovery-readiness: archived HTML matches the outgoing record file_hash",
+      "failing_checks": [
+        "discovery-readiness: current stories are archived under an unchanged agreement",
+        "discovery-readiness: unsigned current design is archived on rewrite",
+        "discovery-readiness: stories: D05 refresh retains the outgoing bytes",
+        "discovery-readiness: stories: both outgoing copies survive the second refresh",
+        "discovery-readiness: design: D05 refresh retains the outgoing bytes",
+        "discovery-readiness: design: both outgoing copies survive the second refresh",
+        "discovery-readiness: prototype JSON/HTML pair is archived before the builder overwrites HTML",
+        "discovery-readiness: archived HTML matches the outgoing record file_hash"
+      ],
+      "readiness": {
+        "tally": "56/64 passed",
+        "fails": [
+          "current stories are archived under an unchanged agreement",
+          "unsigned current design is archived on rewrite",
+          "stories: D05 refresh retains the outgoing bytes",
+          "stories: both outgoing copies survive the second refresh",
+          "design: D05 refresh retains the outgoing bytes",
+          "design: both outgoing copies survive the second refresh",
+          "prototype JSON/HTML pair is archived before the builder overwrites HTML",
+          "archived HTML matches the outgoing record file_hash"
+        ],
+        "details": {},
+        "error": null,
+        "tally_inside_npm_run_evals": "56/64 passed"
+      },
+      "evals_summary": "18/19 suites passed",
+      "suites_not_pass": {
+        "discovery-readiness": {
+          "status": "FAIL",
+          "note": "56/64 passed",
+          "fails": [
+            "current stories are archived under an unchanged agreement",
+            "unsigned current design is archived on rewrite",
+            "stories: D05 refresh retains the outgoing bytes",
+            "stories: both outgoing copies survive the second refresh",
+            "design: D05 refresh retains the outgoing bytes",
+            "design: both outgoing copies survive the second refresh",
+            "prototype JSON/HTML pair is archived before the builder overwrites HTML",
+            "archived HTML matches the outgoing record file_hash"
+          ],
+          "error": null
+        }
+      },
+      "reference_failures_now_passing": {},
+      "restored": {
+        "diff_is_reference": true,
+        "readiness": "64/64 passed"
+      },
+      "seconds": 19.3
+    },
+    {
+      "id": "H05",
+      "wrong_behavior": "history copy is the record re-serialized as compact JSON, not the saved bytes",
+      "source": "design \u00a75 'sha256 of the saved file's bytes'",
+      "files": [
+        "discovery/record/index.mjs"
+      ],
+      "patches": [
+        {
+          "file": "discovery/record/index.mjs",
+          "old": "  const saved = readFileSync(join(root, file));",
+          "new": "  const saved = Buffer.from(JSON.stringify(JSON.parse(readFileSync(join(root, file), \"utf8\"))));"
+        }
+      ],
+      "rejected": true,
+      "failing": "discovery-readiness: current stories are archived under an unchanged agreement; discovery-readiness: unsigned current design is archived on rewrite; discovery-readiness: stories: D05 refresh retains the outgoing bytes; discovery-readiness: stories: both outgoing copies survive the second refresh; discovery-readiness: design: D05 refresh retains the outgoing bytes; discovery-readiness: design: both outgoing copies survive the second refresh; discovery-readiness: prototype JSON/HTML pair is archived before the builder overwrites HTML; discovery-readiness: archived HTML matches the outgoing record file_hash",
+      "failing_checks": [
+        "discovery-readiness: current stories are archived under an unchanged agreement",
+        "discovery-readiness: unsigned current design is archived on rewrite",
+        "discovery-readiness: stories: D05 refresh retains the outgoing bytes",
+        "discovery-readiness: stories: both outgoing copies survive the second refresh",
+        "discovery-readiness: design: D05 refresh retains the outgoing bytes",
+        "discovery-readiness: design: both outgoing copies survive the second refresh",
+        "discovery-readiness: prototype JSON/HTML pair is archived before the builder overwrites HTML",
+        "discovery-readiness: archived HTML matches the outgoing record file_hash"
+      ],
+      "readiness": {
+        "tally": "56/64 passed",
+        "fails": [
+          "current stories are archived under an unchanged agreement",
+          "unsigned current design is archived on rewrite",
+          "stories: D05 refresh retains the outgoing bytes",
+          "stories: both outgoing copies survive the second refresh",
+          "design: D05 refresh retains the outgoing bytes",
+          "design: both outgoing copies survive the second refresh",
+          "prototype JSON/HTML pair is archived before the builder overwrites HTML",
+          "archived HTML matches the outgoing record file_hash"
+        ],
+        "details": {},
+        "error": null,
+        "tally_inside_npm_run_evals": "56/64 passed"
+      },
+      "evals_summary": "18/19 suites passed",
+      "suites_not_pass": {
+        "discovery-readiness": {
+          "status": "FAIL",
+          "note": "56/64 passed",
+          "fails": [
+            "current stories are archived under an unchanged agreement",
+            "unsigned current design is archived on rewrite",
+            "stories: D05 refresh retains the outgoing bytes",
+            "stories: both outgoing copies survive the second refresh",
+            "design: D05 refresh retains the outgoing bytes",
+            "design: both outgoing copies survive the second refresh",
+            "prototype JSON/HTML pair is archived before the builder overwrites HTML",
+            "archived HTML matches the outgoing record file_hash"
+          ],
+          "error": null
+        }
+      },
+      "reference_failures_now_passing": {},
+      "restored": {
+        "diff_is_reference": true,
+        "readiness": "64/64 passed"
+      },
+      "seconds": 19.3
+    },
+    {
+      "id": "H06",
+      "wrong_behavior": "prototype JSON/HTML pair archived after the builder call, when the HTML is already overwritten",
+      "source": "design \u00a75 'copied as a pair before the builder call'",
+      "files": [
+        "discovery/prototype/index.mjs"
+      ],
+      "patches": [
+        {
+          "file": "discovery/prototype/index.mjs",
+          "old": "  keepOutgoing(root, \"prototype\", PROTOTYPE_FILE, HTML_FILE);\n",
+          "new": ""
+        },
+        {
+          "file": "discovery/prototype/index.mjs",
+          "old": "  const target = resolve(root, HTML_FILE);",
+          "new": "  keepOutgoing(root, \"prototype\", PROTOTYPE_FILE, HTML_FILE);\n  const target = resolve(root, HTML_FILE);"
+        }
+      ],
+      "rejected": true,
+      "failing": "discovery-readiness: prototype JSON/HTML pair is archived before the builder overwrites HTML; discovery-readiness: archived HTML matches the outgoing record file_hash",
+      "failing_checks": [
+        "discovery-readiness: prototype JSON/HTML pair is archived before the builder overwrites HTML",
+        "discovery-readiness: archived HTML matches the outgoing record file_hash"
+      ],
+      "readiness": {
+        "tally": "62/64 passed",
+        "fails": [
+          "prototype JSON/HTML pair is archived before the builder overwrites HTML",
+          "archived HTML matches the outgoing record file_hash"
+        ],
+        "details": {},
+        "error": null,
+        "tally_inside_npm_run_evals": "62/64 passed"
+      },
+      "evals_summary": "18/19 suites passed",
+      "suites_not_pass": {
+        "discovery-readiness": {
+          "status": "FAIL",
+          "note": "62/64 passed",
+          "fails": [
+            "prototype JSON/HTML pair is archived before the builder overwrites HTML",
+            "archived HTML matches the outgoing record file_hash"
+          ],
+          "error": null
+        }
+      },
+      "reference_failures_now_passing": {},
+      "restored": {
+        "diff_is_reference": true,
+        "readiness": "64/64 passed"
+      },
+      "seconds": 19.3
+    },
+    {
+      "id": "H07",
+      "wrong_behavior": "prototype history keeps the JSON only, not the HTML",
+      "source": "design \u00a75 'the outgoing JSON and HTML are copied as a pair'",
+      "files": [
+        "discovery/prototype/index.mjs"
+      ],
+      "patches": [
+        {
+          "file": "discovery/prototype/index.mjs",
+          "old": "  keepOutgoing(root, \"prototype\", PROTOTYPE_FILE, HTML_FILE);\n",
+          "new": "  keepOutgoing(root, \"prototype\", PROTOTYPE_FILE);\n"
+        }
+      ],
+      "rejected": true,
+      "failing": "discovery-readiness: prototype JSON/HTML pair is archived before the builder overwrites HTML; discovery-readiness: archived HTML matches the outgoing record file_hash",
+      "failing_checks": [
+        "discovery-readiness: prototype JSON/HTML pair is archived before the builder overwrites HTML",
+        "discovery-readiness: archived HTML matches the outgoing record file_hash"
+      ],
+      "readiness": {
+        "tally": "62/64 passed",
+        "fails": [
+          "prototype JSON/HTML pair is archived before the builder overwrites HTML",
+          "archived HTML matches the outgoing record file_hash"
+        ],
+        "details": {},
+        "error": null,
+        "tally_inside_npm_run_evals": "62/64 passed"
+      },
+      "evals_summary": "18/19 suites passed",
+      "suites_not_pass": {
+        "discovery-readiness": {
+          "status": "FAIL",
+          "note": "62/64 passed",
+          "fails": [
+            "prototype JSON/HTML pair is archived before the builder overwrites HTML",
+            "archived HTML matches the outgoing record file_hash"
+          ],
+          "error": null
+        }
+      },
+      "reference_failures_now_passing": {},
+      "restored": {
+        "diff_is_reference": true,
+        "readiness": "64/64 passed"
+      },
+      "seconds": 19.8
+    },
+    {
+      "id": "H08",
+      "wrong_behavior": "the archived HTML is keyed by its own bytes rather than beside the record under the record's key",
+      "source": "design \u00a75 'copied as a pair'; design \u00a77 'archived HTML matches the old record's file_hash'",
+      "files": [
+        "discovery/record/index.mjs"
+      ],
+      "patches": [
+        {
+          "file": "discovery/record/index.mjs",
+          "old": "copyFileSync(join(root, beside), join(root, `${key}${extname(beside)}`));",
+          "new": "copyFileSync(join(root, beside), join(root, HISTORY, `${kind}-${createHash(\"sha256\").update(readFileSync(join(root, beside))).digest(\"hex\").slice(0, 12)}${extname(beside)}`));"
+        }
+      ],
+      "rejected": true,
+      "failing": "discovery-readiness: prototype JSON/HTML pair is archived before the builder overwrites HTML; discovery-readiness: archived HTML matches the outgoing record file_hash",
+      "failing_checks": [
+        "discovery-readiness: prototype JSON/HTML pair is archived before the builder overwrites HTML",
+        "discovery-readiness: archived HTML matches the outgoing record file_hash"
+      ],
+      "readiness": {
+        "tally": "62/64 passed",
+        "fails": [
+          "prototype JSON/HTML pair is archived before the builder overwrites HTML",
+          "archived HTML matches the outgoing record file_hash"
+        ],
+        "details": {},
+        "error": null,
+        "tally_inside_npm_run_evals": "62/64 passed"
+      },
+      "evals_summary": "18/19 suites passed",
+      "suites_not_pass": {
+        "discovery-readiness": {
+          "status": "FAIL",
+          "note": "62/64 passed",
+          "fails": [
+            "prototype JSON/HTML pair is archived before the builder overwrites HTML",
+            "archived HTML matches the outgoing record file_hash"
+          ],
+          "error": null
+        }
+      },
+      "reference_failures_now_passing": {},
+      "restored": {
+        "diff_is_reference": true,
+        "readiness": "64/64 passed"
+      },
+      "seconds": 425.4
+    },
+    {
+      "id": "H09",
+      "wrong_behavior": "history keeps only the newest copy per kind; the second refresh deletes the first copy",
+      "source": "design \u00a75 'two refreshes ... keep both copies'; task list 'second refresh loses the first copy'",
+      "files": [
+        "discovery/record/index.mjs"
+      ],
+      "patches": [
+        {
+          "file": "discovery/record/index.mjs",
+          "old": "import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from \"node:fs\";",
+          "new": "import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from \"node:fs\";"
+        },
+        {
+          "file": "discovery/record/index.mjs",
+          "old": "  mkdirSync(join(root, HISTORY), { recursive: true });\n",
+          "new": "  mkdirSync(join(root, HISTORY), { recursive: true });\n  for (const f of readdirSync(join(root, HISTORY))) if (f.startsWith(`${kind}-`)) rmSync(join(root, HISTORY, f));\n"
+        }
+      ],
+      "rejected": true,
+      "failing": "discovery-readiness: stories: D05 refresh retains the outgoing bytes; discovery-readiness: stories: both outgoing copies survive the second refresh; discovery-readiness: design: D05 refresh retains the outgoing bytes; discovery-readiness: design: both outgoing copies survive the second refresh",
+      "failing_checks": [
+        "discovery-readiness: stories: D05 refresh retains the outgoing bytes",
+        "discovery-readiness: stories: both outgoing copies survive the second refresh",
+        "discovery-readiness: design: D05 refresh retains the outgoing bytes",
+        "discovery-readiness: design: both outgoing copies survive the second refresh"
+      ],
+      "readiness": {
+        "tally": "60/64 passed",
+        "fails": [
+          "stories: D05 refresh retains the outgoing bytes",
+          "stories: both outgoing copies survive the second refresh",
+          "design: D05 refresh retains the outgoing bytes",
+          "design: both outgoing copies survive the second refresh"
+        ],
+        "details": {},
+        "error": null,
+        "tally_inside_npm_run_evals": "60/64 passed"
+      },
+      "evals_summary": "18/19 suites passed",
+      "suites_not_pass": {
+        "discovery-readiness": {
+          "status": "FAIL",
+          "note": "60/64 passed",
+          "fails": [
+            "stories: D05 refresh retains the outgoing bytes",
+            "stories: both outgoing copies survive the second refresh",
+            "design: D05 refresh retains the outgoing bytes",
+            "design: both outgoing copies survive the second refresh"
+          ],
+          "error": null
+        }
+      },
+      "reference_failures_now_passing": {},
+      "restored": {
+        "diff_is_reference": true,
+        "readiness": "64/64 passed"
+      },
+      "seconds": 425.4
+    },
+    {
+      "id": "H10",
+      "wrong_behavior": "history keeps only the first copy per kind; later outgoing copies are dropped",
+      "source": "design \u00a75 'two refreshes ... keep both copies'",
+      "files": [
+        "discovery/record/index.mjs"
+      ],
+      "patches": [
+        {
+          "file": "discovery/record/index.mjs",
+          "old": "import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from \"node:fs\";",
+          "new": "import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from \"node:fs\";"
+        },
+        {
+          "file": "discovery/record/index.mjs",
+          "old": "  mkdirSync(join(root, HISTORY), { recursive: true });\n",
+          "new": "  mkdirSync(join(root, HISTORY), { recursive: true });\n  if (readdirSync(join(root, HISTORY)).some((f) => f.startsWith(`${kind}-`))) return key;\n"
+        }
+      ],
+      "rejected": true,
+      "failing": "discovery-readiness: stories: both outgoing copies survive the second refresh; discovery-readiness: design: both outgoing copies survive the second refresh",
+      "failing_checks": [
+        "discovery-readiness: stories: both outgoing copies survive the second refresh",
+        "discovery-readiness: design: both outgoing copies survive the second refresh"
+      ],
+      "readiness": {
+        "tally": "62/64 passed",
+        "fails": [
+          "stories: both outgoing copies survive the second refresh",
+          "design: both outgoing copies survive the second refresh"
+        ],
+        "details": {},
+        "error": null,
+        "tally_inside_npm_run_evals": "62/64 passed"
+      },
+      "evals_summary": "18/19 suites passed",
+      "suites_not_pass": {
+        "discovery-readiness": {
+          "status": "FAIL",
+          "note": "62/64 passed",
+          "fails": [
+            "stories: both outgoing copies survive the second refresh",
+            "design: both outgoing copies survive the second refresh"
+          ],
+          "error": null
+        }
+      },
+      "reference_failures_now_passing": {},
+      "restored": {
+        "diff_is_reference": true,
+        "readiness": "64/64 passed"
+      },
+      "seconds": 426.7
+    },
+    {
+      "id": "H11",
+      "wrong_behavior": "a copy whose key already exists is never overwritten (reference overwrites); under whole-file keys the same key means the same bytes",
+      "source": "task list 'history copy overwrites an earlier copy with the same key' (equivalence probe)",
+      "files": [
+        "discovery/record/index.mjs"
+      ],
+      "patches": [
+        {
+          "file": "discovery/record/index.mjs",
+          "old": "  writeFileSync(join(root, `${key}.json`), saved);",
+          "new": "  if (!existsSync(join(root, `${key}.json`))) writeFileSync(join(root, `${key}.json`), saved);"
+        }
+      ],
+      "rejected": false,
+      "failing": "none",
+      "failing_checks": [],
+      "readiness": {
+        "tally": "64/64 passed",
+        "fails": [],
+        "details": {},
+        "error": null,
+        "tally_inside_npm_run_evals": "64/64 passed"
+      },
+      "evals_summary": "19/19 suites passed",
+      "suites_not_pass": {},
+      "reference_failures_now_passing": {},
+      "restored": {
+        "diff_is_reference": true,
+        "readiness": "64/64 passed"
+      },
+      "seconds": 19.7
+    },
+    {
+      "id": "H12",
+      "wrong_behavior": "stories history copy taken after saveDoc, so it archives the incoming backlog",
+      "source": "design \u00a75 'Before write ... overwrites its record, the outgoing file is copied'",
+      "files": [
+        "discovery/stories/index.mjs"
+      ],
+      "patches": [
+        {
+          "file": "discovery/stories/index.mjs",
+          "old": "  keepOutgoing(root, \"stories\", STORIES_FILE);\n  saveDoc(root, STORIES_FILE, \"story\", doc);\n",
+          "new": "  saveDoc(root, STORIES_FILE, \"story\", doc);\n  keepOutgoing(root, \"stories\", STORIES_FILE);\n"
+        }
+      ],
+      "rejected": true,
+      "failing": "discovery-readiness: stories: D05 refresh retains the outgoing bytes; discovery-readiness: stories: both outgoing copies survive the second refresh",
+      "failing_checks": [
+        "discovery-readiness: stories: D05 refresh retains the outgoing bytes",
+        "discovery-readiness: stories: both outgoing copies survive the second refresh"
+      ],
+      "readiness": {
+        "tally": "62/64 passed",
+        "fails": [
+          "stories: D05 refresh retains the outgoing bytes",
+          "stories: both outgoing copies survive the second refresh"
+        ],
+        "details": {},
+        "error": null,
+        "tally_inside_npm_run_evals": "62/64 passed"
+      },
+      "evals_summary": "18/19 suites passed",
+      "suites_not_pass": {
+        "discovery-readiness": {
+          "status": "FAIL",
+          "note": "62/64 passed",
+          "fails": [
+            "stories: D05 refresh retains the outgoing bytes",
+            "stories: both outgoing copies survive the second refresh"
+          ],
+          "error": null
+        }
+      },
+      "reference_failures_now_passing": {},
+      "restored": {
+        "diff_is_reference": true,
+        "readiness": "64/64 passed"
+      },
+      "seconds": 20.0
+    },
+    {
+      "id": "H13",
+      "wrong_behavior": "stories history files are named by the schema id, discovery/history/story-<key>.json",
+      "source": "design \u00a75 '<kind>' (unspecified; probe of test strictness)",
+      "files": [
+        "discovery/stories/index.mjs"
+      ],
+      "patches": [
+        {
+          "file": "discovery/stories/index.mjs",
+          "old": "  keepOutgoing(root, \"stories\", STORIES_FILE);\n",
+          "new": "  keepOutgoing(root, \"story\", STORIES_FILE);\n"
+        }
+      ],
+      "rejected": true,
+      "failing": "discovery-readiness: current stories are archived under an unchanged agreement; discovery-readiness: stories: D05 refresh retains the outgoing bytes; discovery-readiness: stories: both outgoing copies survive the second refresh",
+      "failing_checks": [
+        "discovery-readiness: current stories are archived under an unchanged agreement",
+        "discovery-readiness: stories: D05 refresh retains the outgoing bytes",
+        "discovery-readiness: stories: both outgoing copies survive the second refresh"
+      ],
+      "readiness": {
+        "tally": "61/64 passed",
+        "fails": [
+          "current stories are archived under an unchanged agreement",
+          "stories: D05 refresh retains the outgoing bytes",
+          "stories: both outgoing copies survive the second refresh"
+        ],
+        "details": {},
+        "error": null,
+        "tally_inside_npm_run_evals": "61/64 passed"
+      },
+      "evals_summary": "18/19 suites passed",
+      "suites_not_pass": {
+        "discovery-readiness": {
+          "status": "FAIL",
+          "note": "61/64 passed",
+          "fails": [
+            "current stories are archived under an unchanged agreement",
+            "stories: D05 refresh retains the outgoing bytes",
+            "stories: both outgoing copies survive the second refresh"
+          ],
+          "error": null
+        }
+      },
+      "reference_failures_now_passing": {},
+      "restored": {
+        "diff_is_reference": true,
+        "readiness": "64/64 passed"
+      },
+      "seconds": 19.5
+    },
+    {
+      "id": "H14",
+      "wrong_behavior": "stories history copy skipped when the backlog's content is unchanged (only traces moved)",
+      "source": "design \u00a75 'two refreshes with equal content but different traces ... keep both copies'",
+      "files": [
+        "discovery/stories/index.mjs"
+      ],
+      "patches": [
+        {
+          "file": "discovery/stories/index.mjs",
+          "old": "  keepOutgoing(root, \"stories\", STORIES_FILE);\n",
+          "new": "  if (JSON.stringify(prior?.stories) !== JSON.stringify(doc.stories)) keepOutgoing(root, \"stories\", STORIES_FILE);\n"
+        }
+      ],
+      "rejected": true,
+      "failing": "discovery-readiness: current stories are archived under an unchanged agreement; discovery-readiness: stories: D05 refresh retains the outgoing bytes; discovery-readiness: stories: both outgoing copies survive the second refresh",
+      "failing_checks": [
+        "discovery-readiness: current stories are archived under an unchanged agreement",
+        "discovery-readiness: stories: D05 refresh retains the outgoing bytes",
+        "discovery-readiness: stories: both outgoing copies survive the second refresh"
+      ],
+      "readiness": {
+        "tally": "61/64 passed",
+        "fails": [
+          "current stories are archived under an unchanged agreement",
+          "stories: D05 refresh retains the outgoing bytes",
+          "stories: both outgoing copies survive the second refresh"
+        ],
+        "details": {},
+        "error": null,
+        "tally_inside_npm_run_evals": "61/64 passed"
+      },
+      "evals_summary": "18/19 suites passed",
+      "suites_not_pass": {
+        "discovery-readiness": {
+          "status": "FAIL",
+          "note": "61/64 passed",
+          "fails": [
+            "current stories are archived under an unchanged agreement",
+            "stories: D05 refresh retains the outgoing bytes",
+            "stories: both outgoing copies survive the second refresh"
+          ],
+          "error": null
+        }
+      },
+      "reference_failures_now_passing": {},
+      "restored": {
+        "diff_is_reference": true,
+        "readiness": "64/64 passed"
+      },
+      "seconds": 19.4
+    },
+    {
+      "id": "H15",
+      "wrong_behavior": "the design writer keeps the outgoing design only when it was signed; an unsigned draft is overwritten with no copy",
+      "source": "design \u00a75 'Before ... the design writer overwrites its record, the outgoing file is copied' (unconditional)",
+      "files": [
+        "discovery/design/index.mjs"
+      ],
+      "patches": [
+        {
+          "file": "discovery/design/index.mjs",
+          "old": "  keepOutgoing(root, \"design\", DESIGN_FILE);\n",
+          "new": "  if (isSigned(prior)) keepOutgoing(root, \"design\", DESIGN_FILE);\n"
+        }
+      ],
+      "rejected": true,
+      "failing": "discovery-readiness: unsigned current design is archived on rewrite",
+      "failing_checks": [
+        "discovery-readiness: unsigned current design is archived on rewrite"
+      ],
+      "readiness": {
+        "tally": "63/64 passed",
+        "fails": [
+          "unsigned current design is archived on rewrite"
+        ],
+        "details": {},
+        "error": null,
+        "tally_inside_npm_run_evals": "63/64 passed"
+      },
+      "evals_summary": "18/19 suites passed",
+      "suites_not_pass": {
+        "discovery-readiness": {
+          "status": "FAIL",
+          "note": "63/64 passed",
+          "fails": [
+            "unsigned current design is archived on rewrite"
+          ],
+          "error": null
+        }
+      },
+      "reference_failures_now_passing": {},
+      "restored": {
+        "diff_is_reference": true,
+        "readiness": "64/64 passed"
+      },
+      "seconds": 19.6
+    },
+    {
+      "id": "H16",
+      "wrong_behavior": "stories and design keep the outgoing copy only when it is stale; a rewrite under the same PRD/prototype/stories loses the old one",
+      "source": "design \u00a75 'Before write or the design writer overwrites its record, the outgoing file is copied' (unconditional)",
+      "files": [
+        "discovery/design/index.mjs",
+        "discovery/stories/index.mjs"
+      ],
+      "patches": [
+        {
+          "file": "discovery/stories/index.mjs",
+          "old": "  keepOutgoing(root, \"stories\", STORIES_FILE);\n",
+          "new": "  if (prior && (prior.traces.prd.content_hash !== prd.meta.content_hash || prior.traces.prototype?.content_hash !== proto.meta.content_hash)) keepOutgoing(root, \"stories\", STORIES_FILE);\n"
+        },
+        {
+          "file": "discovery/design/index.mjs",
+          "old": "  keepOutgoing(root, \"design\", DESIGN_FILE);\n",
+          "new": "  if (prior && (prior.traces.prd.content_hash !== prd.meta.content_hash || prior.traces.prototype?.content_hash !== proto.meta.content_hash || prior.traces.stories?.content_hash !== stories.meta.content_hash)) keepOutgoing(root, \"design\", DESIGN_FILE);\n"
+        }
+      ],
+      "rejected": true,
+      "failing": "discovery-readiness: current stories are archived under an unchanged agreement; discovery-readiness: unsigned current design is archived on rewrite",
+      "failing_checks": [
+        "discovery-readiness: current stories are archived under an unchanged agreement",
+        "discovery-readiness: unsigned current design is archived on rewrite"
+      ],
+      "readiness": {
+        "tally": "62/64 passed",
+        "fails": [
+          "current stories are archived under an unchanged agreement",
+          "unsigned current design is archived on rewrite"
+        ],
+        "details": {},
+        "error": null,
+        "tally_inside_npm_run_evals": "62/64 passed"
+      },
+      "evals_summary": "18/19 suites passed",
+      "suites_not_pass": {
+        "discovery-readiness": {
+          "status": "FAIL",
+          "note": "62/64 passed",
+          "fails": [
+            "current stories are archived under an unchanged agreement",
+            "unsigned current design is archived on rewrite"
+          ],
+          "error": null
+        }
+      },
+      "reference_failures_now_passing": {},
+      "restored": {
+        "diff_is_reference": true,
+        "readiness": "64/64 passed"
+      },
+      "seconds": 20.6
+    },
+    {
+      "id": "H17",
+      "wrong_behavior": "design history copy taken after saveDoc, so it archives the incoming design",
+      "source": "design \u00a75 'Before ... the design writer overwrites its record, the outgoing file is copied'",
+      "files": [
+        "discovery/design/index.mjs"
+      ],
+      "patches": [
+        {
+          "file": "discovery/design/index.mjs",
+          "old": "  keepOutgoing(root, \"design\", DESIGN_FILE);\n  saveDoc(root, DESIGN_FILE, \"design\", doc);\n",
+          "new": "  saveDoc(root, DESIGN_FILE, \"design\", doc);\n  keepOutgoing(root, \"design\", DESIGN_FILE);\n"
+        }
+      ],
+      "rejected": true,
+      "failing": "discovery-readiness: design: D05 refresh retains the outgoing bytes; discovery-readiness: design: both outgoing copies survive the second refresh",
+      "failing_checks": [
+        "discovery-readiness: design: D05 refresh retains the outgoing bytes",
+        "discovery-readiness: design: both outgoing copies survive the second refresh"
+      ],
+      "readiness": {
+        "tally": "62/64 passed",
+        "fails": [
+          "design: D05 refresh retains the outgoing bytes",
+          "design: both outgoing copies survive the second refresh"
+        ],
+        "details": {},
+        "error": null,
+        "tally_inside_npm_run_evals": "62/64 passed"
+      },
+      "evals_summary": "18/19 suites passed",
+      "suites_not_pass": {
+        "discovery-readiness": {
+          "status": "FAIL",
+          "note": "62/64 passed",
+          "fails": [
+            "design: D05 refresh retains the outgoing bytes",
+            "design: both outgoing copies survive the second refresh"
+          ],
+          "error": null
+        }
+      },
+      "reference_failures_now_passing": {},
+      "restored": {
+        "diff_is_reference": true,
+        "readiness": "64/64 passed"
+      },
+      "seconds": 18.9
+    },
+    {
+      "id": "H18",
+      "wrong_behavior": "history keyed by kind only (discovery/history/<kind>.json), so every copy overwrites the one before",
+      "source": "task list 'history copy overwrites an earlier copy with the same key'",
+      "files": [
+        "discovery/record/index.mjs"
+      ],
+      "patches": [
+        {
+          "file": "discovery/record/index.mjs",
+          "old": "${kind}-${createHash(\"sha256\").update(saved).digest(\"hex\").slice(0, 12)}",
+          "new": "${kind}"
+        }
+      ],
+      "rejected": true,
+      "failing": "discovery-readiness: current stories are archived under an unchanged agreement; discovery-readiness: unsigned current design is archived on rewrite; discovery-readiness: stories: D05 refresh retains the outgoing bytes; discovery-readiness: stories: both outgoing copies survive the second refresh; discovery-readiness: design: D05 refresh retains the outgoing bytes; discovery-readiness: design: both outgoing copies survive the second refresh; discovery-readiness: prototype JSON/HTML pair is archived before the builder overwrites HTML; discovery-readiness: archived HTML matches the outgoing record file_hash; coherence: real tree: no module imports a name it never uses",
+      "failing_checks": [
+        "discovery-readiness: current stories are archived under an unchanged agreement",
+        "discovery-readiness: unsigned current design is archived on rewrite",
+        "discovery-readiness: stories: D05 refresh retains the outgoing bytes",
+        "discovery-readiness: stories: both outgoing copies survive the second refresh",
+        "discovery-readiness: design: D05 refresh retains the outgoing bytes",
+        "discovery-readiness: design: both outgoing copies survive the second refresh",
+        "discovery-readiness: prototype JSON/HTML pair is archived before the builder overwrites HTML",
+        "discovery-readiness: archived HTML matches the outgoing record file_hash",
+        "coherence: real tree: no module imports a name it never uses"
+      ],
+      "readiness": {
+        "tally": "56/64 passed",
+        "fails": [
+          "current stories are archived under an unchanged agreement",
+          "unsigned current design is archived on rewrite",
+          "stories: D05 refresh retains the outgoing bytes",
+          "stories: both outgoing copies survive the second refresh",
+          "design: D05 refresh retains the outgoing bytes",
+          "design: both outgoing copies survive the second refresh",
+          "prototype JSON/HTML pair is archived before the builder overwrites HTML",
+          "archived HTML matches the outgoing record file_hash"
+        ],
+        "details": {},
+        "error": null,
+        "tally_inside_npm_run_evals": "56/64 passed"
+      },
+      "evals_summary": "17/19 suites passed",
+      "suites_not_pass": {
+        "coherence": {
+          "status": "FAIL",
+          "note": "201/202 passed",
+          "fails": [
+            "real tree: no module imports a name it never uses"
+          ],
+          "error": null
+        },
+        "discovery-readiness": {
+          "status": "FAIL",
+          "note": "56/64 passed",
+          "fails": [
+            "current stories are archived under an unchanged agreement",
+            "unsigned current design is archived on rewrite",
+            "stories: D05 refresh retains the outgoing bytes",
+            "stories: both outgoing copies survive the second refresh",
+            "design: D05 refresh retains the outgoing bytes",
+            "design: both outgoing copies survive the second refresh",
+            "prototype JSON/HTML pair is archived before the builder overwrites HTML",
+            "archived HTML matches the outgoing record file_hash"
+          ],
+          "error": null
+        }
+      },
+      "reference_failures_now_passing": {},
+      "restored": {
+        "diff_is_reference": true,
+        "readiness": "64/64 passed"
+      },
+      "seconds": 18.7
+    }
+  ]
+}

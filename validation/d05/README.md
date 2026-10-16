@@ -9,7 +9,8 @@ This folder holds Claude's reference implementation of D05 as a patch, the mutat
 | `reference.diff` | Claude's reference D05, a patch to production code only (5 files under `discovery/`; nothing under `evals/`, no SPEC) |
 | `mutants.py` | the runner; it applies the reference, then each wrong version, in its own detached worktree |
 | `manifest.json` | the 47 cases: `id`, `wrong_behavior`, `source` (the design clause), and the exact `patches` (old → new text in the named file) |
-| `results-claude-0456fec.json` | Claude's run against `0456fec` |
+| `results-claude-0456fec.json` | Claude's first run against `0456fec` |
+| `results-claude-0456fec-strict.json` | the rerun under the stricter rules below |
 
 ## Pinned versions
 
@@ -33,9 +34,19 @@ python3 validation/d05/mutants.py -j 3
 # The case list:      python3 validation/d05/mutants.py --manifest
 ```
 
-The runner aborts if the reference does not pass discovery-readiness 64/64 and every suite. A case counts as **rejected** when discovery-readiness fails, when a suite that passes on the reference fails, or when a suite shows a FAIL label the reference does not. After each case the runner restores the files, checks that `git diff` is byte-identical to `reference.diff`, and reruns discovery-readiness on the restored tree.
+The runner aborts unless the reference passes discovery-readiness 64/64 **and** every suite. A case is classified this way:
+- **Rejected:** at least one assertion that passes on the reference fails on the case. That means a FAIL label in discovery-readiness, or a FAIL label in another suite that the reference doesn't show.
+- **Survived:** no check fails.
+- **Runtime error:** a crash, abort or timeout with no failed assertion. This is reported, not counted as a rejection.
+- **Harness error:**
+  - the patch's anchor text doesn't occur exactly once;
+  - a patched file doesn't parse (`node --check`);
+  - a file under `evals/` changed;
+  - or the restore fails, meaning `git diff` isn't byte-identical to `reference.diff` afterwards, or discovery-readiness doesn't pass 64/64 on the restored tree.
 
-**Checking that a case fails for the intended reason.** Each result records the failing checks under `failing`. A rejection whose only failures are unrelated suites, or a syntax error, would be suspect. Each patch was checked with `node --check` when it was written.
+Each result lists the failing checks under `failing_checks`, so it's possible to confirm that a case failed for the intended reason.
+
+*(Revised after ChatGPT's independent run on #65. The first version of the runner checked only the readiness tally of the baseline, recorded the restore without enforcing it, and counted an abort with no failed assertion as a rejection. ChatGPT checked that none of this affected the 46/47 result. `results-claude-0456fec-strict.json` is a rerun under these rules.)*
 
 ## Claude's results at `0456fec`
 
@@ -91,13 +102,17 @@ The runner aborts if the reference does not pass discovery-readiness 64/64 and e
 | H17 | rejected | design history copy taken after saveDoc, so it archives the incoming design |
 | H18 | rejected | history keyed by kind only (discovery/history/<kind>.json), so every copy overwrites the one before |
 
-## H11: why it's equivalent
+## H11: equivalent only under one assumption
 
-H11 never overwrites a history copy whose key already exists, while the reference overwrites. The key is the first 12 hex digits of the sha256 of the outgoing file's whole bytes. So a copy under an existing key holds the same bytes, unless two different files share a 48-bit prefix, and skipping or overwriting leaves an identical file.
+H11 never overwrites a history copy whose key already exists, while the reference overwrites. The key is the first 12 hex digits of the sha256 of the outgoing file's whole bytes.
 
-The versions of "a second refresh loses the first copy" that do lose data are separate cases, and all were rejected:
+**H11 is equivalent only when every file under `discovery/history/` was written by the copy step.** In that case, a file under an existing key already holds the same bytes, apart from a 48-bit prefix collision, so skipping and overwriting leave the same file.
+
+**The assumption doesn't always hold.** ChatGPT's independent run (#65) showed that if an archived file is altered or corrupted beforehand, the two behave differently. The reference repairs the archived JSON by overwriting it. H11 keeps the corrupted JSON, while still replacing the HTML of a prototype pair.
+
+**Why it isn't a test gap:** §5 doesn't require recovering a corrupted archive. The implementation follows the reference and overwrites.
+
+**The data-losing versions are caught.** The forms of "a second refresh loses the first copy" that actually lose data are separate cases, and all are rejected:
 - H03: keyed by content hash;
 - H09: deletes the older copies;
 - H10: keeps only the first copy.
-
-A test could tell H11 apart only by forcing a prefix collision, which isn't feasible.

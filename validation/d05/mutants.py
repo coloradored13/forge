@@ -339,6 +339,8 @@ def run_one(m, keep=False):
             open(os.path.join(wt, f), "w").write(s)
         restored_diff = sh(["git", "diff"], cwd=wt).stdout == open(REF_DIFF).read()
         restored_readiness = run_readiness(wt)["tally"] if m.get("patches") else readiness["tally"]
+        if not restored_diff or restored_readiness != f"{READINESS_COUNT}/{READINESS_COUNT} passed":
+            raise RuntimeError(f"restoration failed: diff_is_reference={restored_diff}, readiness={restored_readiness}")
     finally:
         if not keep:
             drop_worktree(wt)
@@ -407,6 +409,9 @@ def main():
         + f"  ({base['seconds']} s)")
     if base["readiness"]["tally"] != f"{READINESS_COUNT}/{READINESS_COUNT} passed":
         sys.exit("reference does not pass discovery-readiness; aborting")
+    not_green = [n for n, r in base["evals"]["rows"].items() if r["status"] != "PASS"]
+    if not_green or base["evals"]["summary"] == "TIMEOUT":
+        sys.exit(f"reference does not pass every suite ({', '.join(not_green) or 'TIMEOUT'}); aborting")
 
     results = {}
     def work(m):
@@ -435,7 +440,15 @@ def main():
             row.update(rejected=None, failing=f"HARNESS ERROR: {r['harness_error']}")
         else:
             failing, gained, in_suite_tally = judge(r, base)
-            row.update(rejected=bool(failing), failing="; ".join(failing) if failing else "none",
+            # A rejection needs assertion evidence: a FAIL label in discovery-readiness, or a FAIL label
+            # in another suite that the reference does not show. A crash, abort or timeout with no such
+            # label is reported as a runtime error, not counted as a rejection.
+            asserted = bool(r["readiness"]["fails"]) or any(
+                Counter(x["fails"]) - Counter(base["evals"]["rows"].get(n, {}).get("fails", []))
+                for n, x in r["evals"]["rows"].items() if n != "discovery-readiness")
+            verdict = bool(failing) if (asserted or not failing) else None
+            row.update(rejected=verdict, failing=("; ".join(failing) if failing else "none") if verdict is not None
+                       else "RUNTIME ERROR (no assertion failed): " + "; ".join(failing),
                        failing_checks=failing,
                        readiness=dict(tally=r["readiness"]["tally"], fails=r["readiness"]["fails"],
                                       details=r["readiness"]["details"], error=r["readiness"]["error"],
@@ -449,18 +462,18 @@ def main():
     out = dict(
         generated=time.strftime("%Y-%m-%dT%H:%M:%S%z"), base=BASE, base_commit=head,
         reference_diff=REF_DIFF, harness=os.path.abspath(__file__),
-        rule="rejected = a check that passes on the reference fails on the mutant (discovery-readiness standalone run, or any suite of npm run evals compared with the reference run)",
+        rule="rejected = an assertion that passes on the reference fails on the mutant (discovery-readiness standalone run, or a new FAIL label in any suite of npm run evals); a crash, abort or timeout with no failed assertion is a runtime error, not a rejection; a failed restoration is a harness error",
         reference=dict(readiness=base["readiness"]["tally"], evals_summary=base["evals"]["summary"],
                        suites={n: dict(status=x["status"], note=x["note"], fails=x["fails"], error=x["error"])
                                for n, x in base["evals"]["rows"].items()},
                        seconds=base["seconds"]),
         totals=dict(mutants=len(rows), rejected=sum(1 for x in rows if x["rejected"]),
                     survived=[x["id"] for x in rows if x["rejected"] is False],
-                    harness_errors=[x["id"] for x in rows if x["rejected"] is None]),
+                    harness_or_runtime_errors=[x["id"] for x in rows if x["rejected"] is None]),
         mutants=rows)
     json.dump(out, open(OUT, "w"), indent=2)
     log(f"\n{out['totals']['rejected']}/{len(rows)} rejected; survived: {out['totals']['survived']}; "
-        f"harness errors: {out['totals']['harness_errors']}\nwrote {OUT}")
+        f"harness or runtime errors: {out['totals']['harness_or_runtime_errors']}\nwrote {OUT}")
 
 
 if __name__ == "__main__":
