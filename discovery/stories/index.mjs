@@ -15,7 +15,7 @@ import { funnelPath } from "../../shared/funnel.mjs";
 import { scopeOf } from "../../shared/scope.mjs";
 import { loadProject, ledgerPath } from "../setup/index.mjs";
 import { loadPrd, existingIds, PRD_FILE } from "../workshop/index.mjs";
-import { Refused, readDoc, saveDoc, saveVerdict, freshVerdict, keepOutgoing, traceOf, rulingsOf, agreementGap, insideRequirements, renderRequirement, renderPrd, renderPrototype, renderStories, PROTOTYPE_FILE, STORIES_FILE } from "../record/index.mjs";
+import { Refused, readDoc, saveDoc, saveVerdict, freshVerdict, keepOutgoing, traceOf, rulingsOf, agreementGap, pendingReactions, recoveryOf, insideRequirements, renderRequirement, renderPrd, renderPrototype, renderStories, PROTOTYPE_FILE, STORIES_FILE } from "../record/index.mjs";
 
 const PROMPTS = join(dirname(fileURLToPath(import.meta.url)), "prompts");
 export const GATE = "story-arithmetic";
@@ -29,7 +29,8 @@ export function loadStories(root) { return readDoc(root, STORIES_FILE); }
 /**
  * Write or rewrite the backlog. Refused before the line is drawn and before a prototype
  * exists — the stories claim screens, so there must be screens to claim. Refused, before
- * any call, while the prototype asks a blocking question the PM has not answered, and
+ * any call, while a reaction's proposed change still waits on the PM, while the prototype
+ * asks a blocking question the PM has not answered, and
  * without the PM's agreement to this exact PRD and prototype. The composer has no write
  * surface; what it returns is validated, its ids must survive from the previous backlog,
  * and the arithmetic is checked and filed beside it; the backlog it replaces is kept in
@@ -43,6 +44,8 @@ export async function write({ root, notes, onEvent, _query, _sleep }) {
   if (!scope) throw new Refused("no-line", "stories: the MVP line is not drawn — a backlog is what is inside it");
   const proto = readDoc(root, PROTOTYPE_FILE);
   if (!proto) throw new Refused("no-prototype", "stories: there is no prototype — stories claim the screens they happen on, so build it first");
+  const pending = pendingReactions(prd);
+  if (pending.length) throw new Refused("reaction-pending", `stories: the PM's reaction is still waiting on its proposed change, so the backlog is not written on the old meaning — ${pending.map((r) => `${r.id} (${r.proposal}): ${recoveryOf(prd, r)}`).join(" ")}`, pending);
   const asked = (proto.open_questions ?? []).filter((q) => q.blocking && q.status !== "answered");
   if (asked.length) throw new Refused("blocking-question", `stories: the prototype asks what the PM must decide first — ${asked.map((q) => `${q.id ?? "(no id; rebuild the prototype)"} "${q.question}"`).join("; ")}. Answer it through the answer door, then agree the revision.`, asked);
   const gap = agreementGap(prd, proto);

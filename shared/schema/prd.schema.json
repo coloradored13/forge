@@ -383,6 +383,33 @@
         }
       }
     },
+    "reactions": {
+      "type": "array",
+      "x-runner": true,
+      "description": "The PM's plain-language reactions to the prototype they were viewing, each with at most one proposed change. While a reaction's amendment is still proposed it holds the backlog and every exit. Outside the content hash; append-only; written by the react door.",
+      "items": {
+        "type": "object",
+        "required": ["id", "by", "at", "text", "seen", "proposal", "screens", "note"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string", "pattern": "^RX-\\d+$" },
+          "by": { "type": "string" },
+          "at": { "type": "string" },
+          "text": { "type": "string", "description": "What the PM said, verbatim." },
+          "pq": { "type": "string", "pattern": "^PQ-\\d+$", "description": "The prototype question the reaction answers, when it answers one." },
+          "seen": {
+            "type": "object",
+            "required": ["prd_hash", "prototype_hash"],
+            "additionalProperties": false,
+            "description": "The revision the PM was viewing.",
+            "properties": { "prd_hash": { "type": "string" }, "prototype_hash": { "type": "string" } }
+          },
+          "proposal": { "type": ["string", "null"], "pattern": "^AMD-\\d+$", "description": "The amendment proposed for it, or null when the editor judged it presentation only." },
+          "screens": { "type": "array", "items": { "type": "string" }, "description": "The prototype screens that show what it targets." },
+          "note": { "type": "string" }
+        }
+      }
+    },
     "sections": {
       "type": "object",
       "x-runner": true,
