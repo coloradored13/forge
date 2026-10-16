@@ -20,7 +20,7 @@
     "traces": {
       "type": "object",
       "x-runner": true,
-      "description": "What these stories were written from. Either hash moving makes the stories stale — the badge, not a block.",
+      "description": "What these stories were written from. Either hash moving makes the stories stale, and stale stories hold every export (D05).",
       "required": ["prd", "prototype"],
       "additionalProperties": false,
       "properties": {

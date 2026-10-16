@@ -20,7 +20,7 @@
     "traces": {
       "type": "object",
       "x-runner": true,
-      "description": "What this design was written from. Any hash moving makes the design stale — the badge, not a block.",
+      "description": "What this design was written from. Any hash moving makes the design stale, and a stale design does not go to Delivery (D05).",
       "required": ["prd", "prototype", "stories"],
       "additionalProperties": false,
       "properties": {

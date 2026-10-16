@@ -64,7 +64,7 @@ function checkFreshness({ prd, proto, stories, design, exit }) {
   const findings = [];
   const f = (rule, subject, summary, evidence, remedy) => findings.push({ severity: "high", confidence: "certain", rule, subject, summary, evidence, remedy });
   const badge = stalenessOf({ prd, proto, stories, design });
-  const moved = (b) => `${["prd", "prototype", "stories"].filter((k) => b[`${k}_moved`]).map((k) => `\`/traces/${k}\``).join(", ")} no longer match by content hash${b.since.length ? `; since then ${b.since.join(", ")}` : ""}.`;
+  const moved = (b) => `${["prd", "prototype", "stories"].filter((k) => b[`${k}_moved`]).map((k) => `\`/traces/${k}\``).join(", ")}: the content hash differs${b.since.length ? `; since then ${b.since.join(", ")}` : ""}.`;
   const gap = agreementGap(prd, proto);
   if (gap) f(gap.rule, prd.id, "No agreement of the PM's covers this PRD and its prototype.", `\`/agreements\`: ${gap.why}.`, "Rebuild the prototype if it traces an older PRD, then agree to the PRD and the prototype.");
   if (badge.stories?.stale) f("stories-stale", stories.id, `${stories.id} was written from another PRD or prototype.`, moved(badge.stories), "Write the stories again under the current agreement.");
