@@ -17,7 +17,7 @@ import { totals } from "../../shared/agent-call/ledger.mjs";
 import { handoffFile, latestHandoff, itemsOf, designMoved } from "../../shared/handoff.mjs";
 import { loadProject, ledgerPath, exec } from "../setup/index.mjs";
 import { loadPrd, savePrd, PRD_FILE } from "../workshop/index.mjs";
-import { Refused, readDoc, saveDoc, saveVerdict, isSigned, agreementGap, stalenessOf, renderPrd, renderPrototype, renderStories, renderStandard, renderDesign, PROTOTYPE_FILE, STORIES_FILE, DESIGN_FILE } from "../record/index.mjs";
+import { Refused, readDoc, saveDoc, saveVerdict, isSigned, agreementGap, pendingReactions, recoveryOf, stalenessOf, renderPrd, renderPrototype, renderStories, renderStandard, renderDesign, PROTOTYPE_FILE, STORIES_FILE, DESIGN_FILE } from "../record/index.mjs";
 import { checkPrototype } from "../prototype/index.mjs";
 import { checkStories } from "../stories/index.mjs";
 import { checkDesign } from "../design/index.mjs";
@@ -40,7 +40,7 @@ export function readiness(root, exit) {
 }
 
 export function readinessOf({ prd, proto, stories, design, exit }) {
-  const joins = [checkScope(prd)];
+  const joins = [checkScope(prd), checkReactions(prd)];
   if (proto) joins.push(checkPrototype(prd, proto), checkFreshness({ prd, proto, stories, design, exit }));
   if (proto && stories) joins.push(checkStories(prd, proto, stories));
   if (proto && stories && design) joins.push(checkDesign(proto, stories, design));
@@ -52,6 +52,13 @@ export function readinessOf({ prd, proto, stories, design, exit }) {
     checked: joins.reduce((n, j) => n + j.checked, 0), skipped: 0,
     judged: docs.map(([doc, path]) => pin({ id: doc.id, path, doc })),
   };
+}
+
+/** While a reaction's proposed change is undecided nothing leaves: a finding on the PRD alone, so it shows with or without a prototype, naming the recovery the PM still has. */
+function checkReactions(prd) {
+  const findings = pendingReactions(prd).map((r) => ({ severity: "high", confidence: "certain", rule: "reaction-pending", subject: prd.id,
+    summary: `${r.id}'s proposed change ${r.proposal} is still undecided.`, evidence: `\`/reactions\`: ${r.id} proposes ${r.proposal}, still proposed.`, remedy: recoveryOf(prd, r) }));
+  return { findings, checked: 1 };
 }
 
 /**

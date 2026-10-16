@@ -17,7 +17,7 @@ import { loadPrd, savePrd } from "../discovery/workshop/index.mjs";
 import { Refused, readDoc, readVerdict, staleness, REVIEWS } from "../discovery/record/index.mjs";
 import { answer, propose, approve, reject, forbiddenTargets, radiusOf, introducedBy, auditOf, AUDIT_GATE } from "../discovery/doors/index.mjs";
 
-const { check, done } = suite("amendment-audit · R4 the radius is approved, not just the edit", 52);
+const { check, done } = suite("amendment-audit · R4 the radius is approved, not just the edit", 53);
 
 const refusal = (fn) => { try { fn(); return null; } catch (e) { return e; } };
 const same = (a, b) => a.length === b.length && [...a].sort().join(" ") === [...b].sort().join(" ");
@@ -29,7 +29,7 @@ const TO = "A dock lead records an exception at the kiosk against a delivery.";
 await withRoot({}, (parent) => {
   const root = seedProject(parent);
   const runner = Object.entries(load("prd").properties).filter(([, p]) => p["x-runner"]).map(([k]) => `/${k}`);
-  check(`the forbidden targets are derived from the schema's x-runner fields (${runner.length}), never listed by hand`, same(forbiddenTargets(), runner) && runner.includes("/rulings") && runner.includes("/amendments") && runner.includes("/flags"), runner.join(","));
+  check(`the forbidden targets are derived from the schema's x-runner fields (${runner.length}), never listed by hand`, same(forbiddenTargets(), runner) && runner.includes("/rulings") && runner.includes("/amendments") && runner.includes("/flags") && runner.includes("/reactions"), runner.join(","));
   for (const t of [...runner, "/"]) {
     const e = refusal(() => propose({ root, target: t === "/" ? "/" : `${t}/0`, to: "x", rationale: "r", by }));
     check(`propose refuses ${t}`, e instanceof Refused && (e.code === "forbidden-target" || e.code === "no-target"), e?.code ?? "no refusal");
