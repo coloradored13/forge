@@ -14,7 +14,7 @@ import { Refused } from "../../shared/refused.mjs";
 import { verdictFreshness } from "../../shared/judge/index.mjs";
 import { sha256 } from "../../shared/hash.mjs";
 import { roles } from "../../shared/agent-call/index.mjs";
-import { HANDOFFS, handoffFile, readHandoffs, verifyHandoff } from "../../shared/handoff.mjs";
+import { HANDOFFS, handoffFile, readHandoffs, verifyHandoff, designMoved } from "../../shared/handoff.mjs";
 
 export { Refused };
 export const RUN_FILE = join("forge", "run.json");
@@ -189,7 +189,7 @@ function needRun(root) {
   return run;
 }
 
-/** The handoff Delivery may take: present, intact, its design signed. Same three refusals at setup and at adoption — and the console asks the same question of every handoff it lists. */
+/** The handoff Delivery may take: present, intact, its design signed and current with what the snapshot carries (D05). Same refusals at setup and at adoption, before either writes — and the console asks the same question of every handoff it lists. */
 export function takeHandoff(root, version) {
   const all = readHandoffs(root);
   const h = version ? all.find((x) => x.version === version) : all.at(-1);
@@ -198,6 +198,8 @@ export function takeHandoff(root, version) {
   if (integrity.verdict === "block") throw new Refused("handoff-integrity", `handoff v${h.version} does not verify: ${integrity.findings.map((f) => `${f.subject} ${f.rule}`).join(", ")} — a snapshot is never edited; re-export`, integrity);
   const signed = Boolean(h.design?.signoff) && h.design.signoff.content_hash === h.design.meta?.content_hash;
   if (!signed) throw new Refused("design-unsigned", `handoff v${h.version} carries a design nobody signed — what Delivery builds is signed; export through the Delivery exit`, h.exit);
+  const moved = designMoved(h);
+  if (moved.length) throw new Refused("design-stale", `handoff v${h.version} carries a design written from another ${moved.join(", ")} than it holds — regenerate the design, review and sign it, then export through the Delivery exit`, moved);
   return { handoff: h, pin: { version: h.version, path: handoffFile(h.version), content_hash: h.meta.content_hash } };
 }
 
