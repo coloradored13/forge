@@ -15,7 +15,7 @@ import { funnelPath } from "../../shared/funnel.mjs";
 import { scopeOf } from "../../shared/scope.mjs";
 import { loadProject, ledgerPath } from "../setup/index.mjs";
 import { loadPrd, existingIds, PRD_FILE } from "../workshop/index.mjs";
-import { Refused, readDoc, saveDoc, saveVerdict, freshVerdict, keepOutgoing, traceOf, rulingsOf, agreementGap, pendingReactions, insideRequirements, renderRequirement, renderPrd, renderPrototype, renderStories, PROTOTYPE_FILE, STORIES_FILE } from "../record/index.mjs";
+import { Refused, readDoc, saveDoc, saveVerdict, freshVerdict, keepOutgoing, traceOf, rulingsOf, agreementGap, pendingReactions, recoveryOf, insideRequirements, renderRequirement, renderPrd, renderPrototype, renderStories, PROTOTYPE_FILE, STORIES_FILE } from "../record/index.mjs";
 
 const PROMPTS = join(dirname(fileURLToPath(import.meta.url)), "prompts");
 export const GATE = "story-arithmetic";
@@ -45,7 +45,7 @@ export async function write({ root, notes, onEvent, _query, _sleep }) {
   const proto = readDoc(root, PROTOTYPE_FILE);
   if (!proto) throw new Refused("no-prototype", "stories: there is no prototype — stories claim the screens they happen on, so build it first");
   const pending = pendingReactions(prd);
-  if (pending.length) throw new Refused("reaction-pending", `stories: the PM's reaction is still waiting on its proposed change — ${pending.map((r) => `${r.id} (${r.proposal})`).join(", ")}. Approve or reject it before the backlog is written on the old meaning.`, pending);
+  if (pending.length) throw new Refused("reaction-pending", `stories: the PM's reaction is still waiting on its proposed change, so the backlog is not written on the old meaning — ${pending.map((r) => `${r.id} (${r.proposal}): ${recoveryOf(prd, r)}`).join(" ")}`, pending);
   const asked = (proto.open_questions ?? []).filter((q) => q.blocking && q.status !== "answered");
   if (asked.length) throw new Refused("blocking-question", `stories: the prototype asks what the PM must decide first — ${asked.map((q) => `${q.id ?? "(no id; rebuild the prototype)"} "${q.question}"`).join("; ")}. Answer it through the answer door, then agree the revision.`, asked);
   const gap = agreementGap(prd, proto);
