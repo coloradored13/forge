@@ -35,7 +35,9 @@ export function fileHash(root) {
  * to hold the prototype to. The builder writes exactly one file; the record it returns
  * is validated, its screen ids must survive from the previous build, and the arithmetic
  * is checked and filed as a gate verdict beside it. The previous record and its HTML are
- * kept in the history as a pair before the call, since the builder overwrites the HTML.
+ * kept in the history as a pair before the call, since the builder overwrites the HTML —
+ * the HTML only while it is still the one the record describes, so a failed build's HTML
+ * never replaces an archived pair.
  */
 export async function generate({ root, notes, onEvent, _query, _sleep }) {
   const project = loadProject(root);
@@ -56,7 +58,7 @@ export async function generate({ root, notes, onEvent, _query, _sleep }) {
     `## Where to write\n\nWrite one file, \`${HTML_FILE}\`, relative to the project root. Nothing else — the record of screens comes back as your structured answer, not as a file.`,
   ].filter(Boolean).join("\n\n");
 
-  keepOutgoing(root, "prototype", PROTOTYPE_FILE, HTML_FILE);
+  keepOutgoing(root, "prototype", PROTOTYPE_FILE, prior && existsSync(join(root, HTML_FILE)) && fileHash(root) === prior.file_hash ? HTML_FILE : undefined);
   const res = await call({
     half: "discovery", stage: "prototype", role: "writer", kind: "writer",
     system, prompt, cwd: root, outputSchema: outputContract("prototype"),

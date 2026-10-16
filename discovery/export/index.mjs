@@ -176,13 +176,23 @@ export function designState(design) {
  * amendments in force, the backlog, the design as it stands, the prototype. Derived —
  * the snapshot is the record; this is written from it and never read back.
  */
+/** What a handoff's design was written from that differs from what the handoff carries — read from the snapshot alone, so a rendering never changes after export. */
+function designMoved(h) {
+  const t = h.design?.traces;
+  if (!t) return [];
+  return [["PRD", t.prd, h.contract.prd], ["prototype", t.prototype, h.prototype?.meta], ["backlog", t.stories, h.stories?.meta]]
+    .filter(([, traced, carried]) => traced && traced.content_hash !== carried?.content_hash).map(([name]) => name);
+}
+
 export function renderHandoff(h) {
   const c = h.contract;
+  const moved = designMoved(h);
+  const design = `${designState(h.design)}${moved.length ? ` · stale: written from another ${moved.join(", ")}` : ""}`;
   const t = h.tracker;
   const keys = t ? Object.entries(t.keys).map(([id, k]) => `${id} ${t.kind === "github" ? `#${k}` : k}`).join(", ") : "";
   const head = [
     `# ${c.title} — handoff v${h.version} (${h.exit})`,
-    `Exported ${h.exported_at} by ${h.by} · PRD v${c.prd.version} ${c.prd.content_hash.slice(0, 12)} · design: ${designState(h.design)}`,
+    `Exported ${h.exported_at} by ${h.by} · PRD v${c.prd.version} ${c.prd.content_hash.slice(0, 12)} · design: ${design}`,
     `Tracker: ${t ? `${trackerName(t)}${keys ? ` — ${keys}` : ""}` : "none — these files are the handoff"}`,
     `Discovery cost: $${h.cost.usd.toFixed(2)} over ${h.cost.calls} model calls${Object.keys(h.cost.by_stage).length ? ` (${Object.entries(h.cost.by_stage).map(([s, v]) => `${s} ${v.calls}`).join(", ")})` : ""}`,
     h.project.remote ? `Repository: ${h.project.remote}` : null,
@@ -191,7 +201,7 @@ export function renderHandoff(h) {
   if (c.rulings.length) parts.push(`## Rulings — answers on the record (R3)\n\n${c.rulings.map((r) => `- **${r.id}**${r.oq ? ` (${r.oq})` : ""} ${r.question}\n  ${r.answer}${r.criterion ? ` → ${r.criterion}` : ""} — ${r.by}, ${r.at}`).join("\n")}`);
   if (c.amendments.length) parts.push(`## Amendments approved\n\n${c.amendments.map((a) => `- **${a.id}** ${a.target}: ${a.rationale} — ${a.by}, ${a.at}`).join("\n")}`);
   parts.push(`## Backlog\n\n${renderStories(h.stories)}`);
-  parts.push(`## Design — ${designState(h.design)}\n\n${h.design ? `${renderStandard(h.design.standard)}\n\n${renderDesign(h.design)}` : "(no design yet)"}`);
+  parts.push(`## Design — ${design}\n\n${moved.length ? `This design was written from another ${moved.join(", ")} than this handoff carries. Regenerate the design, then review and sign it, before Delivery takes it.\n\n` : ""}${h.design ? `${renderStandard(h.design.standard)}\n\n${renderDesign(h.design)}` : "(no design yet)"}`);
   parts.push(`## Prototype\n\n${renderPrototype(h.prototype)}`);
   return `${parts.join("\n\n")}\n`;
 }
