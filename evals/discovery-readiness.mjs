@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 // owns: R3, R4, R14 · shared — D05: freshness gates and byte-keyed outgoing history.
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync, readdirSync, unlinkSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, unlinkSync, statSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { suite, scripted, withRoot } from "./_harness.mjs";
-import { seedProject, seedPrototype, seedStories, seedDesign, refresh, writeHtml, HTML, SCREENS, EPICS, STORIES, DESIGN } from "./_fixture.mjs";
+import { coldRoot, seedProject, seedPrototype, seedStories, seedDesign, refresh, writeHtml, HTML, SCREENS, EPICS, STORIES, DESIGN } from "./_fixture.mjs";
 import { loadPrd, savePrd } from "../discovery/workshop/index.mjs";
 import * as doors from "../discovery/doors/index.mjs";
 import { generate } from "../discovery/prototype/index.mjs";
@@ -13,7 +13,10 @@ import { write as writeDesign, review, signoff } from "../discovery/design/index
 import { readiness, exportHandoff, renderHandoff, EXITS } from "../discovery/export/index.mjs";
 import { Refused, readDoc, saveDoc, staleness, PRD_FILE, PROTOTYPE_FILE, STORIES_FILE, DESIGN_FILE, HTML_FILE } from "../discovery/record/index.mjs";
 
-const { check, done } = suite("discovery-readiness · D05 exits and outgoing history", 78);
+import { createRun, adoptHandoff, readRun, transition } from "../delivery/state/index.mjs";
+import { verifyHandoff } from "../shared/handoff.mjs";
+
+const { check, done } = suite("discovery-readiness · D05 exits and outgoing history", 92);
 const bytes = (root, file) => readFileSync(join(root, file), "utf8");
 const hash = (s) => createHash("sha256").update(s).digest("hex");
 const attempt = async (fn) => { try { return { value: await fn() }; } catch (error) { return { error }; } };
@@ -200,5 +203,39 @@ for (const prior of [false, true]) await withRoot({}, async (parent) => {
   const dir = join(root, "discovery/history"), files = existsSync(dir) ? readdirSync(dir) : [];
   check(`${prior ? "missing HTML" : "first build"}: succeeds with ${prior ? "JSON-only history" : "no history"}`, !out.error && !!readDoc(root, PROTOTYPE_FILE)
     && (prior ? files.length === 1 && kept(root, archive("prototype", saved), saved) : files.length === 0), out.error?.message);
+});
+const tree = (root) => JSON.stringify([".", ...readdirSync(root, { recursive: true })].sort().map((file) => {
+  const path = join(root, file), stat = statSync(path, { bigint: true });
+  return [file, stat.mtimeNs.toString(), stat.isDirectory() ? "directory" : hash(readFileSync(path))];
+}));
+for (const source of ["prd", "prototype", "stories"]) await withRoot({}, async (parent) => {
+  const root = await setup(parent); doors.agree({ root, by: "PM" }); await go(root, "team");
+  const design = readDoc(root, DESIGN_FILE), changed = structuredClone(design);
+  changed.traces[source].content_hash = hash(`older ${source}`); saveDoc(root, DESIGN_FILE, "design", changed);
+  const { value } = await go(root, "team"), h = value?.handoff;
+  check(`${source}: intake fixture is signed, intact and stale on exactly one trace`, !!h && verifyHandoff(h).verdict === "pass"
+    && h.design.signoff.content_hash === h.design.meta.content_hash && ["prd", "prototype", "stories"].every((key) =>
+      (h.design.traces[key].content_hash !== (key === "prd" ? h.contract.prd.content_hash : h[key].meta.content_hash)) === (key === source)));
+  saveDoc(root, DESIGN_FILE, "design", design);
+  for (const action of ["create", "adopt"]) {
+    const cold = coldRoot(parent, root, `${source}-${action}`);
+    if (action === "adopt") { createRun(cold, { by: "PM", version: 1 }); transition(cold, { stage: "intake", event: "stop", by: "PM", reason: "keep this state" }); }
+    const before = tree(cold), out = await attempt(() => action === "create" ? createRun(cold, { by: "PM", version: 2 }) : adoptHandoff(cold, { by: "PM", version: 2 }));
+    check(`${source}: ${action} refuses design-stale without filesystem changes`, out.error instanceof Refused && out.error.code === "design-stale" && tree(cold) === before, out.error?.message ?? "intake succeeded");
+  }
+});
+await withRoot({}, async (parent) => {
+  const root = await setup(parent); doors.agree({ root, by: "PM" }); const first = (await go(root, "team")).value;
+  movePrd(root); await refresh(root); const second = (await go(root, "team")).value;
+  movePrd(root); await rebuild(root); doors.agree({ root, by: "PM" }); await write({ root, _query: backlog().query });
+  check("intake controls retain two current signed snapshots while live design is stale", !!first && !!second && staleness(root).design.stale
+    && first.handoff.meta.content_hash !== second.handoff.meta.content_hash && [first, second].every(({ handoff: h }) => verifyHandoff(h).verdict === "pass" && h.design.signoff.content_hash === h.design.meta.content_hash));
+  const cold = coldRoot(parent, root); mkdirSync(join(root, ".git"), { recursive: true });
+  for (const [label, target] of [["live Discovery moved", root], ["cold snapshot only", cold]]) {
+    const created = await attempt(() => createRun(target, { by: "PM", version: 1 }));
+    check(`${label}: create accepts the older current signed team snapshot`, !!created.value && readRun(target)?.handoff.content_hash === first?.handoff.meta.content_hash, created.error?.message);
+    const adopted = await attempt(() => adoptHandoff(target, { by: "PM", version: 2 }));
+    check(`${label}: adopt accepts the current signed team snapshot`, !!adopted.value && readRun(target)?.handoff.content_hash === second?.handoff.meta.content_hash, adopted.error?.message);
+  }
 });
 done();
