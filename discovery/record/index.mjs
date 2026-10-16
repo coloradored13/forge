@@ -104,6 +104,12 @@ export function changedSince(prd, version) {
   ];
 }
 
+/** The reactions still waiting on the PM: each one whose amendment is still proposed. A reaction with no proposal never holds. */
+export function pendingReactions(prd) {
+  const proposed = new Set((prd.amendments ?? []).filter((a) => a.status === "proposed").map((a) => a.id));
+  return (prd.reactions ?? []).filter((r) => r.proposal && proposed.has(r.proposal));
+}
+
 /** The PM's agreement that covers the record as it stands — this PRD and this prototype — or null. */
 export function currentAgreement(prd, proto) {
   return (prd.agreements ?? []).findLast((a) => a.prd_hash === prd.meta.content_hash && a.prototype_hash === proto?.meta?.content_hash) ?? null;

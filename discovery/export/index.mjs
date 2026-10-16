@@ -17,7 +17,7 @@ import { totals } from "../../shared/agent-call/ledger.mjs";
 import { handoffFile, latestHandoff, itemsOf, designMoved } from "../../shared/handoff.mjs";
 import { loadProject, ledgerPath, exec } from "../setup/index.mjs";
 import { loadPrd, savePrd, PRD_FILE } from "../workshop/index.mjs";
-import { Refused, readDoc, saveDoc, saveVerdict, isSigned, agreementGap, stalenessOf, renderPrd, renderPrototype, renderStories, renderStandard, renderDesign, PROTOTYPE_FILE, STORIES_FILE, DESIGN_FILE } from "../record/index.mjs";
+import { Refused, readDoc, saveDoc, saveVerdict, isSigned, agreementGap, pendingReactions, stalenessOf, renderPrd, renderPrototype, renderStories, renderStandard, renderDesign, PROTOTYPE_FILE, STORIES_FILE, DESIGN_FILE } from "../record/index.mjs";
 import { checkPrototype } from "../prototype/index.mjs";
 import { checkStories } from "../stories/index.mjs";
 import { checkDesign } from "../design/index.mjs";
@@ -56,9 +56,10 @@ export function readinessOf({ prd, proto, stories, design, exit }) {
 
 /**
  * D05, by content hash only — a matching id or version label never makes a document
- * current. Without the PM's agreement to this PRD and prototype, or with stories written
- * from another, nothing leaves; a design written from other stories, prototype or PRD
- * does not go to Delivery, and a team takes it as it stands.
+ * current. Without the PM's agreement to this PRD and prototype, with stories written
+ * from another, or while a reaction's proposed change is undecided, nothing leaves; a
+ * design written from other stories, prototype or PRD does not go to Delivery, and a
+ * team takes it as it stands.
  */
 function checkFreshness({ prd, proto, stories, design, exit }) {
   const findings = [];
@@ -67,6 +68,7 @@ function checkFreshness({ prd, proto, stories, design, exit }) {
   const moved = (b) => `${["prd", "prototype", "stories"].filter((k) => b[`${k}_moved`]).map((k) => `\`/traces/${k}\``).join(", ")}: the content hash differs${b.since.length ? `; since then ${b.since.join(", ")}` : ""}.`;
   const gap = agreementGap(prd, proto);
   if (gap) f(gap.rule, prd.id, "No agreement of the PM's covers this PRD and its prototype.", `\`/agreements\`: ${gap.why}.`, "Rebuild the prototype if it traces an older PRD, then agree to the PRD and the prototype.");
+  for (const r of pendingReactions(prd)) f("reaction-pending", prd.id, `${r.id}'s proposed change ${r.proposal} is still undecided.`, `\`/reactions\`: ${r.id} proposes ${r.proposal}, still proposed.`, `Approve or reject ${r.proposal}, then refresh what it changes.`);
   if (badge.stories?.stale) f("stories-stale", stories.id, `${stories.id} was written from another PRD or prototype.`, moved(badge.stories), "Write the stories again under the current agreement.");
   if (badge.design?.stale && exit !== "team") f("design-stale", design.id, `${design.id} was written from other stories, prototype or PRD.`, moved(badge.design), "Regenerate the design, then review and sign it.");
   return { findings, checked: 1 + (stories ? 1 : 0) + (design ? 1 : 0) };
