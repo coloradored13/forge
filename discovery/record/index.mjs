@@ -104,6 +104,25 @@ export function changedSince(prd, version) {
   ];
 }
 
+/** The reactions still waiting on the PM: each one whose amendment is still proposed. A reaction with no proposal never holds. */
+export function pendingReactions(prd) {
+  const proposed = new Set((prd.amendments ?? []).filter((a) => a.status === "proposed").map((a) => a.id));
+  return (prd.reactions ?? []).filter((r) => r.proposal && proposed.has(r.proposal));
+}
+
+/**
+ * What the PM can do about a pending reaction: decide its amendment — or, once the PRD has
+ * moved past the version or content it was proposed against, which approve refuses, reject
+ * it and propose again. The stories door and the ready gate say the same thing.
+ */
+export function recoveryOf(prd, r) {
+  const a = (prd.amendments ?? []).find((x) => x.id === r.proposal);
+  if (a && (a.against_version !== prd.meta.version || a.against_hash !== prd.meta.content_hash)) {
+    return `${r.proposal} was proposed against PRD ${a.against_version} and can no longer be approved; reject it, then propose again against the current record.`;
+  }
+  return `Approve or reject ${r.proposal}, then refresh what it changes.`;
+}
+
 /** The PM's agreement that covers the record as it stands — this PRD and this prototype — or null. */
 export function currentAgreement(prd, proto) {
   return (prd.agreements ?? []).findLast((a) => a.prd_hash === prd.meta.content_hash && a.prototype_hash === proto?.meta?.content_hash) ?? null;
