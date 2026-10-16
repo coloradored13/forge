@@ -12,7 +12,7 @@ import { write } from "../discovery/stories/index.mjs";
 import { readiness, exportHandoff, EXITS } from "../discovery/export/index.mjs";
 import { Refused, readDoc, PRD_FILE, PROTOTYPE_FILE, STORIES_FILE } from "../discovery/record/index.mjs";
 
-const { check, done } = suite("discovery-reactions · pending proposal holds the backlog", 48);
+const { check, done } = suite("discovery-reactions · pending proposal holds the backlog", 66);
 const attempt = async (fn) => { try { return { value: await fn() }; } catch (error) { return { error }; } };
 const bytes = (root, file) => existsSync(join(root, file)) ? readFileSync(join(root, file), "utf8") : null;
 const tree = (root, dir) => !existsSync(join(root, dir)) ? null : JSON.stringify(readdirSync(join(root, dir), { recursive: true, withFileTypes: true })
@@ -33,7 +33,7 @@ await withRoot({}, async (parent) => {
     && JSON.stringify(loadPrd(root).agreements) === JSON.stringify(before.agreements), out.error?.message);
 });
 
-for (const mode of ["new", "rewrite", "combined", "no-line", "no-prototype", "approved", "rejected", "null"]) await withRoot({}, async (parent) => {
+for (const mode of ["new", "rewrite", "older-pending", "stale-seen", "combined", "no-line", "no-prototype", "approved", "rejected", "null"]) await withRoot({}, async (parent) => {
   const { disc: root } = await seedDelivery(parent);
   // AMD-1 stays proposed but has no reaction: only the referenced amendment may hold.
   doors.propose({ root, by: "PM", target: "/open_questions/0/owner", to: "someone else", rationale: "unrelated" });
@@ -43,6 +43,8 @@ for (const mode of ["new", "rewrite", "combined", "no-line", "no-prototype", "ap
   const prd = loadPrd(root), proto = readDoc(root, PROTOTYPE_FILE);
   // Direct runner seeding keeps behavioral tests reachable before the schema exists (4b's react is deferred).
   prd.reactions = [reaction(prd, proto, null, "RX-1"), reaction(prd, proto, mode === "null" ? null : amendment.id)];
+  if (mode === "older-pending") prd.reactions.push({ ...reaction(prd, proto, null, "RX-3"), at: "2026-10-16T12:01:00Z" });
+  if (mode === "stale-seen") prd.reactions[1].seen = { prd_hash: "0".repeat(64), prototype_hash: "1".repeat(64) };
   if (mode === "combined") {
     prd.agreements = [];
     proto.open_questions = [{ id: "PQ-1", question: "Who decides?", blocking: true, status: "open" }];
@@ -52,7 +54,7 @@ for (const mode of ["new", "rewrite", "combined", "no-line", "no-prototype", "ap
   put(root, PRD_FILE, JSON.stringify(prd));
   if (mode === "no-prototype") unlinkSync(join(root, PROTOTYPE_FILE));
   if (mode === "new") unlinkSync(join(root, STORIES_FILE));
-  const held = ["new", "rewrite", "combined"].includes(mode), allowed = ["approved", "rejected", "null"].includes(mode);
+  const held = ["new", "rewrite", "older-pending", "stale-seen", "combined"].includes(mode), allowed = ["approved", "rejected", "null"].includes(mode);
   const expected = held ? "reaction-pending" : mode;
   const before = tree(root, "discovery"), q = scripted({ structured: { epics: EPICS, stories: STORIES, notes: "reaction control", open_questions: [] } });
   const out = await attempt(() => write({ root, _query: q.query }));
@@ -62,7 +64,7 @@ for (const mode of ["new", "rewrite", "combined", "no-line", "no-prototype", "ap
     : q.calls.length === 0 && tree(root, "discovery") === before, `calls=${q.calls.length}`);
   if (held) check(`${mode}: refusal names the reaction and its amendment`, out.error instanceof Refused
     && /\bRX-2\b/.test(out.error.message) && /\bAMD-2\b/.test(out.error.message), out.error?.message);
-  if (!["new", "rewrite", "approved", "rejected", "null"].includes(mode)) return;
+  if (!["new", "rewrite", "older-pending", "stale-seen", "approved", "rejected", "null"].includes(mode)) return;
   for (const exit of EXITS) {
     const ready = readiness(root, exit), f = ready.findings.find((f) => f.rule === "reaction-pending");
     check(`${mode}/${exit}: readiness ${held ? "holds with an actionable finding" : "clears"}`, held
