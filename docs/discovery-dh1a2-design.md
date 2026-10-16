@@ -13,7 +13,8 @@ Status: for ChatGPT's review, as PR 1 of DH1a.2, before any tests or code. Base:
 | 1 | This design, docs only |
 | 2 | The guard (§1) |
 | 3 | D05 readiness and the history copy (§5), with the §7 suite refits and the SPEC wording |
-| 4 | Reactions (§2), including the pending-reaction hold |
+| 4a | The PRD's runner-owned `reactions` list, the pending-reaction hold in `write()`, its readiness row, and the `amendment-audit` count (split by the owner, 2026-10-16) |
+| 4b | The `react` door (§2): the editor prompt, `reaction.schema.json` and its refusals, with the `coherence` count |
 | 5 | Approval settles the linked question (§3), and the D03 journey suite (§4) |
 
 Each PR's lines count toward this milestone's estimate.
@@ -27,6 +28,27 @@ Each PR's lines count toward this milestone's estimate.
   - Tests: the guard (#61) +162 net; D05 (#65) +264 net (+299 / −35, including 19 lines of unchanged helper moves). **Total +426 of ~300 (142%), under the 1.5× line of 450.** Gross additions are 461.
   - SPEC: one row reworded word-neutrally (+1 / −1). It is documentation, not implementation.
   - The tests grew from the §7 refits, from tightening after deliberately wrong versions got through, and from the review findings D05 took on: the archived pair on a failed build, the stale marker in the team rendering, and Delivery's intake (owner, 2026-10-16). PRs 4 and 5 are re-estimated before they start.
+
+**Re-estimate for PRs 4 and 5 (agreed by the owner, 2026-10-16).** Net nonblank lines, from three independent estimates (bottom-up, by analogy with the guard and D05, and tests-first) reconciled into one. The tests grow in review, so the test figures include about 20% for tightening after deliberately wrong versions get through.
+
+| PR | Implementation | Tests | Sessions |
+|---|---|---|---|
+| 4a | ~35 | ~100 | 0.5–1 |
+| 4b | ~120 | ~230 | 1.5 |
+| 5 | ~30 (20–45) | ~260 (190–360) | 1.5 |
+| **Milestone, with the actuals** | **~273** (vs ~225 originally) | **~1,000** (vs ~300 originally) | |
+
+- Implementation was close to the original estimate. Tests were underestimated about 3×: each behavior needs a refused run, an allowed run and a no-write check, and review adds cases.
+- The 1.5× line, a gut check rather than a ceiling, is the actuals plus 1.5× of what remains: about 366 implementation and 1,281 test lines.
+- **Risks to settle as PR 4 starts:**
+  - `fieldsOf` (`shared/schema/index.mjs`) does not walk `oneOf`, so a `change` that takes one of two shapes would not have its fields described to the editor. That is 4b; it adds about 10–20 lines each of implementation and tests.
+  - Five smaller gaps (4b and 5):
+    - `react`'s prototype recheck comes before `savePrd`'s guard;
+    - `prd-changed` carries no detail, so `react` re-throws it with `{ text, pq }`;
+    - `mint`'s own refusals cannot be reached from `react`;
+    - journey step 4's expected refusal (`no-stories` or `not-ready`);
+    - a "PQ no longer open" state can only be set up by hand.
+  - Review adding scope again: D05's implementation grew 31% in review.
 
 ## 1. The guard: a late write cannot replace a PRD that moved
 
