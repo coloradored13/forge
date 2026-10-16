@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // owns: R3, R4, R14 · shared — D05: freshness gates and byte-keyed outgoing history.
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { suite, scripted, withRoot } from "./_harness.mjs";
 import { seedProject, seedPrototype, seedStories, seedDesign, refresh, writeHtml, HTML, SCREENS, EPICS, STORIES, DESIGN } from "./_fixture.mjs";
@@ -10,10 +10,10 @@ import * as doors from "../discovery/doors/index.mjs";
 import { generate } from "../discovery/prototype/index.mjs";
 import { write } from "../discovery/stories/index.mjs";
 import { write as writeDesign, review, signoff } from "../discovery/design/index.mjs";
-import { readiness, exportHandoff, EXITS } from "../discovery/export/index.mjs";
+import { readiness, exportHandoff, renderHandoff, EXITS } from "../discovery/export/index.mjs";
 import { Refused, readDoc, saveDoc, staleness, PRD_FILE, PROTOTYPE_FILE, STORIES_FILE, DESIGN_FILE, HTML_FILE } from "../discovery/record/index.mjs";
 
-const { check, done } = suite("discovery-readiness · D05 exits and outgoing history", 64);
+const { check, done } = suite("discovery-readiness · D05 exits and outgoing history", 78);
 const bytes = (root, file) => readFileSync(join(root, file), "utf8");
 const hash = (s) => createHash("sha256").update(s).digest("hex");
 const attempt = async (fn) => { try { return { value: await fn() }; } catch (error) { return { error }; } };
@@ -23,6 +23,13 @@ const allowed = async (root) => { const results = []; for (const exit of EXITS) 
 const finding = (root, rule, subject, remedy, mode) => {
   const f = readiness(root).findings.find((f) => f.rule === rule);
   check(`${mode}: ${rule}: high, certain, subject and next step`, f?.severity === "high" && f.confidence === "certain" && f.subject === subject && f.remedy !== f.summary && remedy.every((r) => r.test(f.remedy)), JSON.stringify(f));
+};
+const designMarkdown = (root, out, stale, label) => {
+  const md = out.value ? bytes(root, out.value.rendering) : "", status = md.split("\n").filter((line) => /design:|^## Design/i.test(line));
+  check(`${label}: saved Markdown retains signature and ${stale ? "warns of stale design with recovery" : "shows current design"}`,
+    status.length === 2 && status.every((line) => /signed by Designer/.test(line) && /\bstale\b/i.test(line) === stale)
+    && (!stale || md.split(/\n\s*\n/).some((p) => /(?:regenerate|rebuild|rewrite|refresh)[^.]*design/i.test(p) && /\breview\b/i.test(p) && /\bsign(?:off)?\b/i.test(p))));
+  return md;
 };
 const snapshots = (root) => {
   const dir = join(root, "discovery", "handoffs");
@@ -92,6 +99,7 @@ await withRoot({}, async (parent) => {
   check("team carries the old design with stale trace evidence", !!team.value && bytes(root, DESIGN_FILE) === oldDesign
     && JSON.stringify(team.value.handoff.design) === JSON.stringify(JSON.parse(oldDesign)) && staleness(root).design.stale
     && team.value.handoff.design.traces.prd.content_hash !== team.value.handoff.contract.prd.content_hash);
+  designMarkdown(root, team, true, "prd");
   await rebuild(root, [...SCREENS, { ...SCREENS[0], id: "SCREEN-3", name: "Night shift" }]);
   const claimed = structuredClone(STORIES); claimed[0].screen_refs.push("SCREEN-3");
   doors.agree({ root, by: "PM" });
@@ -113,13 +121,17 @@ for (const source of ["prototype", "stories"]) await withRoot({}, async (parent)
   }
   finding(root, "design-stale", readDoc(root, DESIGN_FILE).id, [/\b(regenerate|rebuild|rewrite|refresh)\b[^.]*\bdesign\b/i], source);
   await blocked(root, "design-stale", ["delivery", "both"]);
-  check(`${source}: team accepts stale design without rewriting it`, !!(await go(root, "team")).value && bytes(root, DESIGN_FILE) === old);
+  const team = await go(root, "team");
+  check(`${source}: team accepts stale design without rewriting it`, !!team.value && bytes(root, DESIGN_FILE) === old);
+  const savedMarkdown = designMarkdown(root, team, true, source);
   await refresh(root);
+  check(`${source}: old handoff rendering stays stale after live design refresh`, !!team.value && renderHandoff(team.value.handoff) === savedMarkdown);
   check(`${source}: refreshed design permits all exits`, await allowed(root));
 });
 
 await withRoot({}, async (parent) => {
   const root = await setup(parent); doors.agree({ root, by: "PM" });
+  designMarkdown(root, await go(root, "team"), false, "current");
   const old = [PRD_FILE, PROTOTYPE_FILE, STORIES_FILE, DESIGN_FILE].map((file) => bytes(root, file));
   for (const [file, kind] of [[PRD_FILE, "prd"], [PROTOTYPE_FILE, "prototype"], [STORIES_FILE, "story"]]) {
     const doc = readDoc(root, file);
@@ -167,5 +179,26 @@ await withRoot({}, async (parent) => {
   check("prototype JSON/HTML pair is archived before the builder overwrites HTML", beforeCall);
   check("archived HTML matches the outgoing record file_hash", kept(root, jsonPath, saved) && kept(root, htmlPath, html)
     && hash(bytes(root, htmlPath)) === JSON.parse(saved).file_hash && bytes(root, HTML_FILE) !== html);
+});
+for (const failure of ["ids-dropped", "model-error"]) await withRoot({}, async (parent) => {
+  const root = seedProject(parent); seedPrototype(root);
+  const saved = bytes(root, PROTOTYPE_FILE), html = bytes(root, HTML_FILE), jsonPath = archive("prototype", saved), htmlPath = jsonPath.replace(/\.json$/, ".html");
+  const failedHtml = HTML + `<!-- ${failure} -->`, q = scripted(failure === "model-error" ? { resultError: "scripted model failure" }
+    : { structured: { screens: SCREENS.slice(0, 1), uncovered: ["REQ-4"], notes: "", open_questions: [] } });
+  const failed = await attempt(() => generate({ root, _sleep: async () => {}, _query: (args) => { writeHtml(root, failedHtml); return q.query(args); } }));
+  check(`${failure}: failed builder overwrote HTML but retained the outgoing record`, q.calls.length === 1 && bytes(root, HTML_FILE) === failedHtml && bytes(root, PROTOTYPE_FILE) === saved
+    && (failure === "ids-dropped" ? failed.error instanceof Refused && failed.error.code === failure : /scripted model failure/.test(failed.error?.message)));
+  check(`${failure}: failed build already preserved the original pair`, kept(root, jsonPath, saved) && kept(root, htmlPath, html));
+  await rebuild(root, SCREENS, HTML + "<!-- successful retry -->");
+  const files = existsSync(join(root, "discovery/history")) ? readdirSync(join(root, "discovery/history")).sort() : [];
+  check(`${failure}: retry keeps exactly the original hash-matched pair`, kept(root, jsonPath, saved) && kept(root, htmlPath, html)
+    && hash(bytes(root, htmlPath)) === JSON.parse(saved).file_hash && JSON.stringify(files) === JSON.stringify([jsonPath, htmlPath].map((p) => p.split("/").at(-1)).sort()));
+});
+for (const prior of [false, true]) await withRoot({}, async (parent) => {
+  const root = seedProject(parent); if (prior) { seedPrototype(root); unlinkSync(join(root, HTML_FILE)); }
+  const saved = prior ? bytes(root, PROTOTYPE_FILE) : null, out = await attempt(() => rebuild(root));
+  const dir = join(root, "discovery/history"), files = existsSync(dir) ? readdirSync(dir) : [];
+  check(`${prior ? "missing HTML" : "first build"}: succeeds with ${prior ? "JSON-only history" : "no history"}`, !out.error && !!readDoc(root, PROTOTYPE_FILE)
+    && (prior ? files.length === 1 && kept(root, archive("prototype", saved), saved) : files.length === 0), out.error?.message);
 });
 done();
