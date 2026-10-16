@@ -337,7 +337,9 @@
           "rationale": { "type": "string" },
           "by": { "type": "string" },
           "at": { "type": "string" },
-          "origin": { "enum": ["pm", "reviewer", "delivery", "workshop"], "description": "Where the need came from. Amendments Delivery sends back are the funnel's leak (R8). A workshop amendment is an extraction that contradicted a ruled criterion, held for the PM." },
+          "origin": { "enum": ["pm", "reviewer", "delivery", "workshop", "reaction"], "description": "Where the need came from. Amendments Delivery sends back are the funnel's leak (R8). A workshop amendment is an extraction that contradicted a ruled criterion, held for the PM. A reaction amendment is the specification editor's reading of a PM's reaction to the prototype." },
+          "reaction": { "type": "string", "pattern": "^RX-\\d+$", "description": "The reaction it was minted from, when its origin is a reaction." },
+          "pq": { "type": "string", "pattern": "^PQ-\\d+$", "description": "The prototype question its reaction answers, when it answers one." },
           "material": { "type": "boolean", "description": "True when the target is under a drift-checked pointer: approving it moves the hash and bumps the minor version." },
           "radius": {
             "type": "object",
