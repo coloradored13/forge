@@ -135,7 +135,7 @@ Settles the re-estimate's risks and the 4a review's seventh. Line numbers are `m
 
 **Before the call.** Each check throws `Refused(code, message, { text, pq })`; `reaction-pending` adds `pending`.
 1. `no-author` and `no-text` run before any read, as `answer` does (doors:36-37).
-2. Read the project, `prd`, `base = prdStamp(root)` (extract's order, workshop:270-272), `proto`, `stories` (`readDoc(root, STORIES_FILE)`, for the radius, as `propose` reads it at doors:222), and `protoBase` (sha256 of `prototype.json`, null if absent).
+2. Read the project, `prd`, `base = prdStamp(root)` (extract's order, workshop:270-272), `proto`, and `protoBase` (sha256 of `prototype.json`, null if absent).
 3. `no-prototype`, then `prototype-stale` (agree's test, doors:319). Stale wins over `revision-moved` because `seen` cannot fix it.
 4. `reaction-pending` when `pendingReactions(prd)` is not empty (4a), with detail `{ text, pq, pending }` naming each reaction and its amendment. Conditions of the record come before conditions of the PM's input (`seen`, `pq`). One at a time because approving one proposal bumps the version, which leaves every other pending one unapprovable (`prd-moved`), and two additions to one requirement would get the same `AC-n` and pointer (`target-now-exists`, doors:279).
 5. `revision-moved` compares `seen` with the two content hashes, as agreements do (doors:321), not bytes. So the PM's own agreement or earlier reaction does not void their view. A missing `seen` fails here.
@@ -150,7 +150,7 @@ Settles the re-estimate's risks and the 4a review's seventh. Line numbers are `m
    - names a target that is not found (`criterionAt`) or not in `insideRequirements(prd)`;
    - gives a blank statement, or a reword identical to the current one;
    - proposes a change with a blank `rationale`. `mint` does not check this; propose does (`no-rationale`, doors:218).
-3. One `_now()` stamps both records. `mint` runs in memory with `proto` and `stories` (so the radius it mints is the one `approve` recomputes, doors:282) and gains optional `reaction` and `pq`, spread as in `answer` (doors:70). React passes `by: "editor"`, `origin: "reaction"` and the trimmed statement. An addition's `-` comes back as the index with `adds: true` (doors:243-248); §2 should say so.
+3. One `_now()` stamps both records. `mint` runs in memory with `proto` and `stories`, the stories read with `readDoc(root, STORIES_FILE)` immediately before `mint`, after the editor returns, so a story rewrite during the call is in the radius `approve` recomputes (doors:282). It is not guarded like the PRD and prototype bytes; approve's existing recomputation covers any later change, and gains optional `reaction` and `pq`, spread as in `answer` (doors:70). React passes `by: "editor"`, `origin: "reaction"` and the trimmed statement. An addition's `-` comes back as the index with `adds: true` (doors:243-248); §2 should say so.
 4. `revision-moved` if the bytes of `prototype.json` no longer match `protoBase`. Nothing is awaited before step 5.
 5. Append the reaction, then `savePrd(root, prd, { base })`. A `prd-changed` is caught and re-thrown with `{ text, pq }`.
 6. File the audit only if something was minted. This is extract's order (workshop:310-311), not propose's.
@@ -355,7 +355,7 @@ So when the prototype moved, the result is `revision-moved` whether or not the P
 32. A `BudgetError` propagates with its class and code unchanged.
 33. Make no assertion on `skeleton("reaction")`.
 34. Journey step 4 (PR 5): a backlog is seeded before the reaction. Between step 3's agree and the rewrite, `exportHandoff({ exit: "team" })` is refused `not-ready` with `stories-stale`, with no handoff written. After the rewrite it succeeds, and the contract shows the criterion and RUL-n.
-35. With a backlog on disk, the minted amendment's `radius.stories` equals what `approve` recomputes, so `approve` with that radius succeeds (no `radius-unacknowledged`).
+35. With a backlog on disk, the minted amendment's `radius.stories` equals what `approve` recomputes, so `approve` with that radius succeeds (no `radius-unacknowledged`). Interleaving: while `react` waits on the editor, a scripted story rewrite adds a story proving the target criterion, with PRD and prototype bytes unchanged. The proposal and its audit include that story, and `approve` with the displayed radius succeeds.
 36. `react` returns `{ reaction, amendment, audit, prd }`; for `change: null`, `amendment` and `audit` are null.
 
 ## 8. Notes for writing the tests
