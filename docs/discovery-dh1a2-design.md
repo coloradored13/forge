@@ -22,10 +22,11 @@ Each PR's lines count toward this milestone's estimate.
 - **Implementation:** guard ~15, react ~60, editor prompt ~15, reaction schema ~20, PRD schema additions ~20, approval settlement ~25, readiness ~30, history ~10, stories' pending-reaction check ~5, turn re-apply ~5.
 - **Tests:** new cases ~250, plus ~45 lines of edits to existing suites (§7).
 - The agreed estimate was ~200 / ~220. The increase is the guard, D05's suite refits, and the history copy.
-- **Actual so far (2026-10-15), nonblank lines added:**
-  - the guard (#61, #62): implementation +17 net, tests +162;
-  - D05 (#65 and its implementation PR): implementation +90 / −36 including the SPEC row, tests +240 including 19 lines of unchanged helper moves.
-  - Tests are at 402, past the 1.5× line, with PRs 4 and 5 still to come. They grew from the refits and from tightening after deliberately wrong versions got through. The owner treats the line as a gut check here, not a ceiling (see the plan's estimate rule), and PRs 4 and 5 are re-estimated before they start.
+- **Actual so far (2026-10-15).** Net nonblank lines, the plan's counting basis, with gross additions and SPEC reported separately:
+  - Implementation: the guard (#62) +17 net (+27 / −10); D05 (#66) +54 net (+89 / −35). **Total +71 of ~225.**
+  - Tests: the guard (#61) +162 net; D05 (#65) +192 net (+227 / −35, including 19 lines of unchanged helper moves). **Total +354 of ~300 (118%), under the 1.5× line of 450.** Gross additions are 389.
+  - SPEC: one row reworded word-neutrally (+1 / −1). It is documentation, not implementation.
+  - The tests grew from the §7 refits and from tightening after deliberately wrong versions got through. PRs 4 and 5 are re-estimated before they start.
 
 ## 1. The guard: a late write cannot replace a PRD that moved
 
