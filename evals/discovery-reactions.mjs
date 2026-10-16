@@ -12,7 +12,7 @@ import { write } from "../discovery/stories/index.mjs";
 import { readiness, exportHandoff, EXITS } from "../discovery/export/index.mjs";
 import { Refused, readDoc, PRD_FILE, PROTOTYPE_FILE, STORIES_FILE } from "../discovery/record/index.mjs";
 
-const { check, done } = suite("discovery-reactions · pending proposal holds the backlog", 66);
+const { check, done } = suite("discovery-reactions · pending proposal holds the backlog", 107);
 const attempt = async (fn) => { try { return { value: await fn() }; } catch (error) { return { error }; } };
 const bytes = (root, file) => existsSync(join(root, file)) ? readFileSync(join(root, file), "utf8") : null;
 const tree = (root, dir) => !existsSync(join(root, dir)) ? null : JSON.stringify(readdirSync(join(root, dir), { recursive: true, withFileTypes: true })
@@ -78,6 +78,50 @@ for (const mode of ["new", "rewrite", "older-pending", "stale-seen", "combined",
       ? exported.error instanceof Refused && exported.error.code === "not-ready" && exported.error.detail?.some((f) => f.rule === "reaction-pending")
         && bytes(root, PRD_FILE) === saved && tree(root, "discovery/handoffs") === handoffs
       : !!exported.value, exported.error?.message);
+  }
+});
+// Recovery follows the amendment's version/hash guard, not the reaction's seen hashes.
+const unavailable = (text = "") => /(?:cannot|can't|can no longer|no longer)[^.]*approv|not approv/i.test(text);
+const currentGuidance = (text = "") => /\bapprove\b/i.test(text) && /\breject\b/i.test(text) && !unavailable(text);
+const staleGuidance = (text = "") => unavailable(text)
+  && /reject/i.test(text) && /re-?propos|propos[^.]*again/i.test(text) && /current/i.test(text)
+  && !/\bapprove\s+or\s+reject/i.test(text);
+for (const mode of ["current", "hash-only", "version-only", "missing-prototype"]) await withRoot({}, async (parent) => {
+  const { disc: root } = await seedDelivery(parent);
+  const { amendment: a } = doors.propose({ root, by: "PM", target: "/open_questions/0/owner", to: "new owner", rationale: "reaction" });
+  const seen = reaction(loadPrd(root), readDoc(root, PROTOTYPE_FILE), a.id, "RX-1");
+  if (mode === "version-only") {
+    const other = doors.propose({ root, by: "PM", target: "/open_questions/1/owner", to: "another owner", rationale: "unrelated" });
+    doors.approve({ root, by: "PM", id: other.amendment.id, radius: [] });
+  }
+  if (mode === "hash-only") { const p = loadPrd(root); p.problem.crux += " at night"; savePrd(root, p); }
+  const prd = loadPrd(root), stale = mode === "hash-only" || mode === "version-only";
+  check(`${mode}: isolate the approval guard`, (a.against_version !== prd.meta.version) === (mode === "version-only")
+    && (a.against_hash !== prd.meta.content_hash) === (mode === "hash-only"));
+  prd.reactions = [seen]; put(root, PRD_FILE, JSON.stringify(prd));
+  if (mode === "missing-prototype") unlinkSync(join(root, PROTOTYPE_FILE));
+  const before = tree(root, "discovery"), q = scripted(), out = await attempt(() => write({ root, _query: q.query }));
+  check(`${mode}: story refusal retains door precedence`, out.error instanceof Refused
+    && out.error.code === (mode === "missing-prototype" ? "no-prototype" : "reaction-pending"));
+  check(`${mode}: refused story writes nothing and calls no model`, q.calls.length === 0 && tree(root, "discovery") === before);
+  if (mode !== "missing-prototype") check(`${mode}: story guidance matches available recovery`, /RX-1/.test(out.error?.message) && /AMD-1/.test(out.error?.message)
+    && (stale ? staleGuidance(out.error?.message) : currentGuidance(out.error?.message)), out.error?.message);
+  if (stale) {
+    const approval = await attempt(() => doors.approve({ root, by: "PM", id: a.id, radius: [] }));
+    check(`${mode}: approval really refuses prd-moved without writes`, approval.error instanceof Refused
+      && approval.error.code === "prd-moved" && tree(root, "discovery") === before);
+  }
+  for (const exit of EXITS) {
+    const ready = readiness(root, exit), f = ready.findings.find((f) => f.rule === "reaction-pending");
+    check(`${mode}/${exit}: pending readiness survives with usable recovery`, ready.verdict === "block" && f?.subject === prd.id
+      && f.severity === "high" && f.confidence === "certain" && /AMD-1/.test(f.remedy)
+      && (stale ? staleGuidance(f.remedy) : currentGuidance(f.remedy)), JSON.stringify(f));
+    const saved = bytes(root, PRD_FILE), handoffs = tree(root, "discovery/handoffs");
+    const exported = await attempt(() => exportHandoff({ root, exit, by: "PM", _exec: noService, _fetch: noService, _env: {} }));
+    check(`${mode}/${exit}: export stays refused without publishing`, exported.error instanceof Refused
+      && (mode === "missing-prototype" ? exported.error.code === "no-prototype"
+        : exported.error.code === "not-ready" && exported.error.detail?.some((f) => f.rule === "reaction-pending"))
+      && bytes(root, PRD_FILE) === saved && tree(root, "discovery/handoffs") === handoffs);
   }
 });
 done();
