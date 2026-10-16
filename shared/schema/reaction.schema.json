@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forge.local/schema/reaction.schema.json",
+  "title": "Reaction",
+  "description": "What the specification editor makes of a PM's plain-language reaction to the prototype: at most one proposed change to the accepted record, its reason, and a note for the PM. The editor names criteria and requirements by join id; the runner builds the pointer, assigns any new criterion's id, and mints the change as a proposal the PM approves or rejects.",
+  "type": "object",
+  "required": ["change", "rationale", "note"],
+  "additionalProperties": false,
+  "properties": {
+    "change": {
+      "type": ["object", "null"],
+      "required": ["statement"],
+      "additionalProperties": false,
+      "description": "The one change the reaction asks of the accepted record, or null when it is about presentation rather than product meaning. Name exactly one of `criterion` (to reword that criterion) or `requirement` (to add a criterion to it).",
+      "properties": {
+        "criterion": { "type": "string", "pattern": "^REQ-\\d+/AC-\\d+$", "description": "The criterion to reword, as REQ-n/AC-m." },
+        "requirement": { "type": "string", "pattern": "^REQ-\\d+$", "description": "The requirement to add a criterion to, as REQ-n." },
+        "statement": { "$ref": "prd.schema.json#/properties/requirements/items/properties/acceptance_criteria/items/properties/statement", "description": "The criterion as it should read: provable by one piece of work, in one place." }
+      }
+    },
+    "rationale": { "type": "string", "description": "Why the change follows from what the PM said. Empty only when change is null." },
+    "note": { "type": "string", "description": "For the PM: what you understood, and anything to look at before deciding." }
+  }
+}

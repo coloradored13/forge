@@ -215,12 +215,13 @@ export function renderPrd(prd) {
   return parts.join("\n\n");
 }
 
-export function renderPrototype(proto) {
+/** The prototype as an agent reads it. With `file: false` the pointer to the HTML is left out, for an agent that has no tools to read it. */
+export function renderPrototype(proto, { file = true } = {}) {
   const screens = (proto.screens ?? []).map((s) => `- **${s.id}** "${s.name}" on ${s.surface_ref} — ${s.req_refs.join(", ") || "(no requirements)"}`).join("\n") || "(no screens)";
   const lines = [`Screens:\n${screens}`];
   if (proto.uncovered?.length) lines.push(`Not shown by the prototype: ${proto.uncovered.join(", ")}`);
   if (proto.notes?.trim()) lines.push(`Builder's notes: ${proto.notes.trim()}`);
-  lines.push(`The prototype itself is at \`${proto.file}\` — read it; what it shows is evidence, what this list says is a claim.`);
+  if (file) lines.push(`The prototype itself is at \`${proto.file}\` — read it; what it shows is evidence, what this list says is a claim.`);
   return lines.join("\n\n");
 }
 

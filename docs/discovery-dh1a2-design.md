@@ -14,7 +14,7 @@ Status: for ChatGPT's review, as PR 1 of DH1a.2, before any tests or code. Base:
 | 2 | The guard (§1) |
 | 3 | D05 readiness and the history copy (§5), with the §7 suite refits and the SPEC wording |
 | 4a | The PRD's runner-owned `reactions` list, the pending-reaction hold in `write()`, its readiness row, and the `amendment-audit` count (split by the owner, 2026-10-16) |
-| 4b | The `react` door (§2): the editor prompt, `reaction.schema.json` and its refusals, with the `coherence` count |
+| 4b | The `react` door (§2): the editor prompt, `reaction.schema.json` and its refusals, the amendment fields `origin: "reaction"`, `reaction` and `pq` (moved from PR 5, owner 2026-10-16), with the `coherence` count |
 | 5 | Approval settles the linked question (§3), and the D03 journey suite (§4) |
 
 Each PR's lines count toward this milestone's estimate.
@@ -41,7 +41,7 @@ Each PR's lines count toward this milestone's estimate.
 - Implementation was close to the original estimate. Tests were underestimated about 3×: each behavior needs a refused run, an allowed run and a no-write check, and review adds cases.
 - The 1.5× line, a gut check rather than a ceiling, is the actuals plus 1.5× of what remains: about 366 implementation and 1,281 test lines.
 - **Risks to settle as PR 4 starts:**
-  - `fieldsOf` (`shared/schema/index.mjs`) does not walk `oneOf`, so a `change` that takes one of two shapes would not have its fields described to the editor. That is 4b; it adds about 10–20 lines each of implementation and tests.
+  - ~~`fieldsOf` does not walk `oneOf`~~ — resolved by "4b decisions": `change` is one nullable object, which `fieldsOf` already describes, so 4b is about 10–20 lines smaller each than estimated.
   - Five smaller gaps (4b and 5):
     - `react`'s prototype recheck comes before `savePrd`'s guard;
     - `prd-changed` carries no detail, so `react` re-throws it with `{ text, pq }`;
@@ -81,12 +81,13 @@ The PM reacts in plain language to the prototype they are looking at. A specific
 | `revision-moved` | `seen` no longer matches the current PRD and prototype |
 | `unknown-question` | `pq` is given but the prototype doesn't ask it |
 | `already-ruled` | `pq` is given but no longer open |
+| `reaction-pending` | an earlier reaction's proposal is still proposed: one at a time (owner, 2026-10-16) |
 
 **The editor call.**
 - Role `discovery.writer`, kind `extract` (no tools), stage `reaction`.
 - `mechanics()` passes the rulings and the scope, as every writer gets.
 - The prompt holds `renderPrd`, the prototype's screens and notes, the PQ if one is given, and the PM's text. It contains no instruction to read files.
-- **Output contract:** a new `shared/schema/reaction.schema.json`, `{ change, rationale, note }`. `change` is `null`, `{ criterion: "REQ-n/AC-m", statement }` to reword a criterion, or `{ requirement: "REQ-n", statement }` to add one. The editor names criteria by join id, and the runner builds the JSON pointer.
+- **Output contract:** a new `shared/schema/reaction.schema.json`, `{ change, rationale, note }`. `change` is `null`, `{ criterion: "REQ-n/AC-m", statement }` to reword a criterion, or `{ requirement: "REQ-n", statement }` to add one. The editor names criteria by join id, and the runner builds the JSON pointer. The schema's shape is settled in "4b decisions" below: one nullable `change` object rather than a `oneOf`.
 
 **After the call.** Each refusal below leaves `prd.json` byte-identical, files no audit, and carries `{ text, pq }`:
 
@@ -115,6 +116,81 @@ The PM reacts in plain language to the prototype they are looking at. A specific
 The PM's objection cannot be bypassed by writing stories on the old meaning.
 
 **`change: null`** means the editor judged the reaction to be about presentation, not product meaning. The reaction is recorded with the editor's note, and nothing is minted.
+
+### 4b decisions (for review before tests)
+
+Settles the re-estimate's risks and the 4a review's seventh. Line numbers are `main` at `52b7486`; "4a" marks `origin/discovery/dh1a2-pr4a`.
+
+**Output contract.** `reaction.schema.json` makes `change` a single nullable object, not a `oneOf`.
+- `change` is `type: ["object", "null"]`, `required: ["statement"]` and closed. It has three fields:
+  - `criterion`, matching `^REQ-\d+/AC-\d+$`;
+  - `requirement`, matching `^REQ-\d+$`;
+  - `statement`, a sibling `$ref` to the PRD's criterion statement, with no local `minLength` (code refuses blanks).
+
+  Its description says null is allowed and to name exactly one id. Mechanics prints no types, so only this description tells the editor about null.
+- `rationale` and `note` are required strings with no length bounds, since the PRD fields they land in have none. The root is closed, with no `x-runner` fields.
+- `fieldsOf` already walks a type array (`shared/schema/index.mjs:193`), so all six paths reach the editor: risk (1) costs zero lines. The sweep's `anyOf` plus a branch walk is rejected: it needs path merging and a cross-branch `required` rule, and it is no better proven on the wire.
+- `coherence` goes from 202 to 206 (`evals/coherence.mjs:34`). A `oneOf` version also counts 206, so the count cannot prove the fields are described.
+- The call is `stage: "reaction"`, `role: "writer"`, `kind: "extract"`, with identity `discovery/doors/prompts/editor.md`. Prompt: `renderPrd`, `renderPrototype(proto, { file: false })` (a new option dropping the "read it" line, record 4a:223), the linked PQ only, the PM's text.
+
+**Before the call.** Each check throws `Refused(code, message, { text, pq })`; `reaction-pending` adds `pending`.
+1. `no-author` and `no-text` run before any read, as `answer` does (doors:36-37).
+2. Read the project, `prd`, `base = prdStamp(root)` (extract's order, workshop:270-272), `proto`, and `protoBase` (sha256 of `prototype.json`, null if absent).
+3. `no-prototype`, then `prototype-stale` (agree's test, doors:319). Stale wins over `revision-moved` because `seen` cannot fix it.
+4. `reaction-pending` when `pendingReactions(prd)` is not empty (4a), with detail `{ text, pq, pending }` naming each reaction and its amendment. Conditions of the record come before conditions of the PM's input (`seen`, `pq`). One at a time because approving one proposal bumps the version, which leaves every other pending one unapprovable (`prd-moved`), and two additions to one requirement would get the same `AC-n` and pointer (`target-now-exists`, doors:279).
+5. `revision-moved` compares `seen` with the two content hashes, as agreements do (doors:321), not bytes. So the PM's own agreement or earlier reaction does not void their view. A missing `seen` fails here.
+6. `unknown-question`, then `already-ruled` with `answer`'s message (doors:55-57).
+
+`no-prd`, `no-project` and `BudgetError` propagate unchanged.
+
+**After the call.**
+1. `no-structured-output`.
+2. `reaction-invalid` when the contract fails, or when the editor:
+   - names both ids or neither;
+   - names a target that is not found (`criterionAt`) or not in `insideRequirements(prd)`;
+   - gives a blank statement, or a reword identical to the current one;
+   - proposes a change with a blank `rationale`. `mint` does not check this; propose does (`no-rationale`, doors:218).
+3. One `_now()` stamps both records. `mint` runs in memory with `proto` and `stories`, the stories read with `readDoc(root, STORIES_FILE)` immediately before `mint`, after the editor returns, so a story rewrite during the call is in the radius `approve` recomputes (doors:282). It is not guarded like the PRD and prototype bytes; approve's existing recomputation covers any later change, and gains optional `reaction` and `pq`, spread as in `answer` (doors:70). React passes `by: "editor"`, `origin: "reaction"` and the trimmed statement. An addition's `-` comes back as the index with `adds: true` (doors:243-248); §2 should say so.
+4. `revision-moved` if the bytes of `prototype.json` no longer match `protoBase`. Nothing is awaited before step 5.
+5. Append the reaction, then `savePrd(root, prd, { base })`. A `prd-changed` is caught and re-thrown with `{ text, pq }`.
+6. File the audit only if something was minted. This is extract's order (workshop:310-311), not propose's.
+
+So when the prototype moved, the result is `revision-moved` whether or not the PRD also moved. `change: null` still runs steps 4–5.
+
+**Returns** `{ reaction, amendment, audit, prd }`, as the other doors return their records; `amendment` and `audit` are null when `change` is null.
+
+**Ids and screens.**
+- `RX-n` and an added `AC-n` use the doors' `nextId` (doors:21): highest plus one, gaps never filled. A refused react consumes no number. A model-supplied `id` fails the closed contract.
+- `screens` lists the screens whose `req_refs` include the targeted requirement, in prototype order. It is not `radius.screens`, which is empty for a reword.
+
+**The record, and `change: null`.** `text` is kept verbatim, per 4a's schema; PR 5 trims it when it copies it into a ruling. `seen` is rebuilt from the current hashes. A null change records `proposal: null`, `screens: []` and the editor's `note`, and keeps `pq`. Nothing is minted or audited. React pushes no flags and no funnel signal.
+
+**The PQ on react.** React never writes `prototype.json`. The PQ stays `open`, and blocking, until approval (PR 5).
+
+**Refusal table changes (after the call).**
+
+| Change | Row | Why |
+|---|---|---|
+| Drop | mint's own codes | Unreachable: react builds both pointers from indexes it validated, and `acceptance_criteria` is required. Anything `mint` throws still comes before any write |
+| Reword | `reaction-invalid` | List the step 2 checks |
+| Reword | `prd-changed` | Only `prd.json` moved; the detail is re-thrown |
+| Reword | `revision-moved` | An answer to **any** PQ: `answer` with `pq` writes `prototype.json` (doors:80-81) |
+| Not added | `no-line` | A current prototype implies a drawn line |
+| Add (before the call) | `reaction-pending` | One pending reaction at a time (owner, 2026-10-16) |
+
+**Remaining ambiguities.**
+- §7's `_fixture.mjs:274` is `builder()`, and `discovery-guard.mjs:93-109` uses the same idiom. To run `generate()` mid-call, wrap it in an async generator that awaits it and then `yield*`s the script.
+- "PQ no longer open" can be set up through the doors: build asking Q, call `answer({ pq })`, rebuild still asking Q, then react. Without the rebuild, the result is `prototype-stale`.
+- `["object","null"]` has never been on the live wire; the first live react proves it.
+
+**Decided by the owner (2026-10-16),** with Claude, ChatGPT and Gemini each recommending the same:
+- **The amendment fields move into 4b.** `amendments.items` gains `origin: "reaction"` and optional `reaction` (`RX-n`) and `pq` (`PQ-n`); without them `savePrd` refuses every proposing reaction with `prd-invalid` (prd.schema:330, :340).
+- **One pending reaction at a time.** `react` refuses `reaction-pending` before the call, as above.
+- **An identical reword is refused** as `reaction-invalid` (trimmed text equal to the current statement). `answer` still settles a PQ whose criterion already reads right.
+- **Journey step 4 (PR 5)** seeds a backlog before the reaction, so the export before the rewrite meets the ready gate (`not-ready` with `stories-stale`), not `no-stories`.
+
+**Estimate.** The nullable-object contract removes risk (1) from the re-estimate (#68): 4b drops about 10–20 lines each of implementation and tests.
+
 
 ## 3. Approval settles the linked question, by reference only
 
@@ -210,6 +286,77 @@ The PM's objection cannot be bypassed by writing stories on the old meaning.
 **How to land a write in the middle of a call:** wrap `_query`, so it pauses after the step has read the PRD (the pattern at `_fixture.mjs:274`).
 
 **Assert on what is saved:** file bytes, refusal codes and classes (`Refused`), `scripted().calls` counts, and prompt contents. Each case has a run the gate refuses and one it allows.
+
+**For 4b** (from the 4b design PR; numbers refer to these cases, not to sections):
+
+1. `fields("reaction").map(f => f.path)` is exactly `/change`, `/change/criterion`, `/change/requirement`, `/change/statement`, `/rationale`, `/note`. Guard it with `names().includes("reaction") &&` so `main` fails by assertion, not ENOENT.
+2. The editor's `systemPrompt` (from `scripted().calls`):
+   - names all six paths in backticks;
+   - contains "Output contract — `reaction`", "The MVP line:" and each ruling id;
+   - is guarded on `typeof doors.react === "function"`.
+3. `coherence` declares 206. On `main` it fails by count (ran 202 of 206).
+4. Editor call:
+   - `options.outputFormat` deep-equals `{ type: "json_schema", schema: outputContract("reaction") }`;
+   - `options.allowedTools` is `[]`;
+   - the ledger gains one row with stage `reaction`, role `writer`, kind `extract`, half `discovery`.
+5. `calls[0].prompt`:
+   - contains each screen's id and name, `proto.notes`, the linked PQ's id and question, and the PM's text;
+   - does not contain `proto.file`, `/read it/i`, or an unlinked PQ's question.
+6. Pre-call codes, table-driven, in the order above (`reaction-pending` after `prototype-stale`). Each case breaks its own condition and every later one. Each asserts `instanceof Refused`, the code, and `e.detail.text` and `e.detail.pq` by property (never `deepEqual`, never the message text). Each also asserts zero calls, zero ledger rows, and `tree(root, "discovery")` unchanged.
+7. The PRD moved after the build (e.g. `answer` with an OQ) and `seen` holds the current hashes: still `prototype-stale`.
+8. The prototype is current but `seen.prototype_hash` is wrong, or `seen` is all zeros: `revision-moved`, zero calls.
+9. `agree()` before react, with the pre-agreement `seen`: allowed.
+10. `already-ruled` through the doors (build asking Q, `answer({ pq })`, rebuild asking Q):
+    - zero calls, and the message names RUL-1;
+    - control: with PQ-1 still open, react is allowed and records `pq: "PQ-1"`;
+    - without the rebuild: `prototype-stale`.
+11. `reaction-invalid` cases. Each makes one call, leaves `prd.json` byte-identical, and files no `amendment-audit` file:
+    - both ids; neither id; `criterion: "REQ-2"`;
+    - an addition carrying `id: "AC-1"`;
+    - missing `change`, `rationale` or `note`;
+    - statement `""` or `"   "`;
+    - a reword identical to the current statement;
+    - a change with rationale `""` or `"   "`;
+    - `REQ-1/AC-9`, or `REQ-9`;
+    - a reword or an addition on `REQ-3` (past the line in `seedProject`).
+12. `change: null` with rationale `""` is allowed.
+13. `agree()` inside the `_query` wrapper gives `prd-changed`: detail `{ text, pq }`, no audit file, and `prd.json` equals the post-agree bytes.
+14. `answer({ pq })` inside the wrapper gives `revision-moved`, and `prd.json` equals the post-answer bytes. This rejects guard-first ordering.
+15. A rebuild inside an async-generator wrapper that changes only notes or questions:
+    - gives `revision-moved`, with the prototype content hash unchanged;
+    - count only ledger rows with stage `reaction`;
+    - check for no audit only under `discovery/reviews/amendment-audit`.
+16. `prototype.json` unlinked inside the wrapper gives `revision-moved`, not a crash.
+17. `propose()` inside the wrapper: compare the discovery tree with the snapshot taken after the injected write, since propose files its own audit.
+18. `change: null` with a mid-call `agree()` still gives `prd-changed`, with no write.
+19. Allowed reword:
+    - target is `/requirements/i/acceptance_criteria/j/statement`, `from` is the old statement, `to` is trimmed;
+    - `origin: "reaction"`, `by: "editor"`, `reaction` equal to the RX id, `pq` present only when given, `status: "proposed"`;
+    - `validate("prd", loadPrd(root)).ok`.
+20. Allowed addition: `target` ends in `/acceptance_criteria/<length>`, not `-`; `adds: true`; no `from`; `to` is `{ id: <next AC-n>, statement }`.
+21. After an allowed change, the audit exists and its `judged` pin equals the saved PRD's content hash.
+22. A requirement holding AC-1 and AC-3 gets AC-4.
+23. Allowed react, refused react, `reject` AMD-1, allowed react: the result is RX-2 with AMD-2.
+24. `screens`, on the bookings fixture (`project(parent, [cancel("REQ-1")])`): a reword of REQ-1/AC-1 gives `["SCREEN-1"]` while `amendment.radius.screens` is `[]`. Do not use the dock fixture: its vocabulary puts SCREEN-1 in the radius.
+25. With a fixed `_now`: `reaction.at === amendment.at === _now().toISOString()`.
+26. `reaction.seen` deep-equals the current `{ prd_hash, prototype_hash }` content hashes, and `text` equals the argument byte-for-byte.
+27. Null record:
+    - `proposal: null`, `screens: []`, `note` as returned, `pq` kept;
+    - amendments, requirements, content hash, version and agreements unchanged;
+    - no `amendment-audit` directory;
+    - `write()` is not refused `reaction-pending`.
+28. `prd.flags` is unchanged after any react.
+29. After a react with a blocking PQ: `prototype.json` is byte-identical, the PQ is still `open`, and `write()` refuses `reaction-pending` with zero calls.
+30. One at a time:
+    - a second react while RX-1's AMD-1 is proposed is refused `reaction-pending` with zero calls, `prd.json` unchanged, and `detail.pending` naming RX-1 and AMD-1;
+    - after `reject` (or `approve`) of AMD-1, the next react is allowed and records RX-2;
+    - a `change: null` reaction never blocks the next react.
+31. An `onEvent` spy receives `· ok` and nothing else.
+32. A `BudgetError` propagates with its class and code unchanged.
+33. Make no assertion on `skeleton("reaction")`.
+34. Journey step 4 (PR 5): a backlog is seeded before the reaction. Between step 3's agree and the rewrite, `exportHandoff({ exit: "team" })` is refused `not-ready` with `stories-stale`, with no handoff written. After the rewrite it succeeds, and the contract shows the criterion and RUL-n.
+35. With a backlog on disk, the minted amendment's `radius.stories` equals what `approve` recomputes, so `approve` with that radius succeeds (no `radius-unacknowledged`). Interleaving: while `react` waits on the editor, a scripted story rewrite adds a story proving the target criterion, with PRD and prototype bytes unchanged. The proposal and its audit include that story, and `approve` with the displayed radius succeeds.
+36. `react` returns `{ reaction, amendment, audit, prd }`; for `change: null`, `amendment` and `audit` are null.
 
 ## 8. Notes for writing the tests
 
