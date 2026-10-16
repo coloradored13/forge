@@ -69,7 +69,7 @@ for (const mode of ["new", "rewrite", "older-pending", "stale-seen", "combined",
     const ready = readiness(root, exit), f = ready.findings.find((f) => f.rule === "reaction-pending");
     check(`${mode}/${exit}: readiness ${held ? "holds with an actionable finding" : "clears"}`, held
       ? ready.verdict === "block" && f?.subject === prd.id && f.severity === "high" && f.confidence === "certain"
-        && /approve/i.test(f.remedy) && /reject/i.test(f.remedy) && f.remedy !== f.summary
+        && /\bapprove\b/i.test(f.remedy) && /reject/i.test(f.remedy) && f.remedy !== f.summary
       : ready.verdict !== "block" && !f, JSON.stringify(ready.findings));
     if (mode === "new") continue; // Export requires an existing backlog; rewrite covers that gate.
     const saved = bytes(root, PRD_FILE), handoffs = tree(root, "discovery/handoffs");
@@ -84,7 +84,7 @@ for (const mode of ["new", "rewrite", "older-pending", "stale-seen", "combined",
 const unavailable = (text = "") => /(?:cannot|can't|can no longer|no longer)[^.]*approv|not approv/i.test(text);
 const currentGuidance = (text = "") => /\bapprove\b/i.test(text) && /\breject\b/i.test(text) && !unavailable(text);
 const staleGuidance = (text = "") => unavailable(text)
-  && /reject/i.test(text) && /re-?propos|propos[^.]*again/i.test(text) && /current/i.test(text)
+  && /reject/i.test(text) && /\b(?:re-?propose|propose\s+again)\b/i.test(text) && /current/i.test(text)
   && !/\bapprove\s+or\s+reject/i.test(text);
 for (const mode of ["current", "hash-only", "version-only", "missing-prototype"]) await withRoot({}, async (parent) => {
   const { disc: root } = await seedDelivery(parent);
