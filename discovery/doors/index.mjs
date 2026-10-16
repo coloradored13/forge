@@ -5,18 +5,28 @@
 // radius — every criterion, story and screen that references what changes — and the
 // vocabulary it introduces, at mint; the PM approves the radius, not just the edit (R4).
 // `agree`: the PM's agreement names the exact PRD and prototype stories are written from.
+// `react`: the PM's plain-language reaction to the prototype becomes at most one proposed
+// change, by one editor call; nothing accepted moves until the PM approves it.
 // After the line is drawn a ruled criterion moves only through these doors; extraction
 // may still change unruled content. No door edits a hash by hand.
 
-import { join } from "node:path";
-import { load, validate } from "../../shared/schema/index.mjs";
+import { createHash } from "node:crypto";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { load, validate, validateAgainst, outputContract } from "../../shared/schema/index.mjs";
+import { identity, mechanics, assemble } from "../../shared/prompt/index.mjs";
+import { call } from "../../shared/agent-call/index.mjs";
+import { scopeOf } from "../../shared/scope.mjs";
+import { loadProject, ledgerPath } from "../setup/index.mjs";
 import { canonicalize, resolve, stamp } from "../../shared/hash.mjs";
 import { deriveVerdict, pin, fit } from "../../shared/judge/index.mjs";
 import { record as recordSignal, funnelPath } from "../../shared/funnel.mjs";
-import { loadPrd, savePrd, PRD_FILE } from "../workshop/index.mjs";
-import { Refused, readDoc, saveDoc, saveVerdict, criterionAt, PROTOTYPE_FILE, STORIES_FILE, bumpVersion } from "../record/index.mjs";
+import { loadPrd, savePrd, prdStamp, PRD_FILE } from "../workshop/index.mjs";
+import { Refused, readDoc, saveDoc, saveVerdict, criterionAt, insideRequirements, pendingReactions, rulingsOf, renderPrd, renderPrototype, PROTOTYPE_FILE, STORIES_FILE, bumpVersion } from "../record/index.mjs";
 
 export const AUDIT_GATE = "amendment-audit";
+const PROMPTS = join(dirname(fileURLToPath(import.meta.url)), "prompts");
 
 const nextId = (items, prefix) => `${prefix}-${Math.max(0, ...items.map((x) => Number(String(x.id).split("-")[1]) || 0)) + 1}`;
 const norm = (s) => String(s ?? "").toLowerCase().replace(/\s+/g, " ").trim();
@@ -232,7 +242,7 @@ export function propose({ root, target, to, rationale, by, origin = "pm", _now =
  * proposed against the PRD as it stands. The caller has checked the arguments, and saves
  * the PRD and files the audit.
  */
-export function mint({ prd, proto, stories, target, to, rationale, by, origin, at }) {
+export function mint({ prd, proto, stories, target, to, rationale, by, origin, reaction, pq, at }) {
   const top = `/${target.split("/")[1]}`;
   if (forbiddenTargets().includes(top)) throw new Refused("forbidden-target", `propose: ${top} is the runner's record, not the PRD's content — it is written by the doors, never amended`);
 
@@ -250,6 +260,7 @@ export function mint({ prd, proto, stories, target, to, rationale, by, origin, a
 
   const amendment = {
     id: nextId(prd.amendments ?? [], "AMD"), target: pointer, adds, ...(adds ? {} : { from }), to, rationale: rationale.trim(), by: by.trim(), at, origin,
+    ...(reaction ? { reaction } : {}), ...(pq ? { pq } : {}),
     material: material(prd, pointer),
     radius: radiusOf({ prd, proto, stories, target: pointer, from: adds ? undefined : from }),
     introduces: introducedBy(prd, to),
@@ -258,6 +269,93 @@ export function mint({ prd, proto, stories, target, to, rationale, by, origin, a
   const audit = { ...auditOf(amendment), judged: [pin({ id: prd.id, path: PRD_FILE, doc: prd })] };
   prd.amendments = [...(prd.amendments ?? []), amendment];
   return { amendment, audit };
+}
+
+// ── D03 · react ──
+
+/** The sha256 of the prototype record's bytes, or null without one: what react rechecks after the editor call. */
+const protoStamp = (root) => { const p = join(root, PROTOTYPE_FILE); return existsSync(p) ? createHash("sha256").update(readFileSync(p)).digest("hex") : null; };
+
+/**
+ * React: the PM's words about the prototype they were viewing (`seen`) become at most one
+ * proposed change, by one editor call. Refused before the call when the reaction cannot be
+ * placed: no author or text, no current prototype, an earlier reaction still pending, a
+ * moved view, or a question that is unknown or settled. After the call the editor's change
+ * must name one criterion or requirement inside the line; the runner builds the pointer and
+ * any new criterion's id and mints the proposal with the stories as they are then. Nothing
+ * is written if the prototype or the PRD moved while the editor worked.
+ */
+export async function react({ root, by, text, pq, seen, onEvent, _query, _sleep, _now = () => new Date() }) {
+  const no = (code, message, extra = {}) => new Refused(code, `react: ${message}`, { text, pq, ...extra });
+  if (!by?.trim()) throw no("no-author", "a reaction is attributed — say who reacts");
+  if (!text?.trim()) throw no("no-text", "say what the prototype gets wrong");
+  const project = loadProject(root);
+  const prd = loadPrd(root);
+  const base = prdStamp(root);
+  const proto = readDoc(root, PROTOTYPE_FILE);
+  const protoBase = protoStamp(root);
+  if (!proto) throw no("no-prototype", "there is no prototype to react to");
+  if (proto.traces?.prd?.content_hash !== prd.meta.content_hash) throw no("prototype-stale", "the prototype was built from an older PRD — rebuild it, then react to what it shows");
+  const pending = pendingReactions(prd);
+  if (pending.length) throw no("reaction-pending", `${pending.map((r) => `${r.id} (${r.proposal})`).join(", ")} still waits on the PM — approve or reject it before reacting again`, { pending });
+  if (seen?.prd_hash !== prd.meta.content_hash || seen?.prototype_hash !== proto.meta.content_hash) throw no("revision-moved", "the PRD or the prototype changed since it was viewed — look again, then react");
+  const asked = pq ? (proto.open_questions ?? []).find((x) => x.id === pq) : null;
+  if (pq && !asked) throw no("unknown-question", `${pq} is not a question the prototype asks`);
+  if (asked && asked.status !== "open") throw no("already-ruled", `${pq} is ${asked.status}${asked.ruling ? ` by ${asked.ruling}` : ""} — a settled question is not re-answered; amend the criterion it became`);
+
+  const system = assemble({ identity: identity(join(PROMPTS, "editor.md")), mechanics: mechanics({ kind: "writer", schema: "reaction", scope: scopeOf(prd), rulings: rulingsOf(prd) }) });
+  const prompt = [
+    renderPrd(prd),
+    `## The prototype the PM was viewing\n\n${renderPrototype(proto, { file: false })}`,
+    asked ? `## The question the PM answers — ${asked.id}\n\n${asked.question}` : "",
+    `## What the PM said\n\n${text}`,
+  ].filter(Boolean).join("\n\n");
+  const res = await call({
+    half: "discovery", stage: "reaction", role: "writer", kind: "extract",
+    system, prompt, cwd: root, outputSchema: outputContract("reaction"),
+    ledger: ledgerPath(root), budget: project.budget, models: project.models,
+    onEvent, _query, _sleep,
+  });
+
+  if (res.structured === undefined) throw no("no-structured-output", "the editor returned no output");
+  const out = res.structured;
+  const v = validateAgainst(outputContract("reaction"), out);
+  if (!v.ok) throw no("reaction-invalid", `the editor's result does not fit the contract — ${v.errors.slice(0, 5).join("; ")}`, { errors: v.errors });
+  const invalid = (why) => no("reaction-invalid", `the editor's change ${why}`);
+  const c = out.change;
+  let target, to, req;
+  if (c) {
+    if (Boolean(c.criterion) === Boolean(c.requirement)) throw invalid("must name exactly one criterion or requirement");
+    const statement = c.statement.trim();
+    if (!statement) throw invalid("has no statement");
+    if (!out.rationale.trim()) throw invalid("carries no reason");
+    const inside = new Set(insideRequirements(prd).map((r) => r.id));
+    req = c.requirement ?? c.criterion.split("/")[0];
+    if (!inside.has(req)) throw invalid(`names ${c.criterion ?? c.requirement}, which is not inside the line`);
+    if (c.criterion) {
+      const found = criterionAt(prd, c.criterion);
+      if (!found) throw invalid(`names ${c.criterion}, which is not on the record`);
+      if (found.ac.statement.trim() === statement) throw invalid(`leaves ${c.criterion} reading as it does`);
+      [target, to] = [`/requirements/${found.i}/acceptance_criteria/${found.j}/statement`, statement];
+    } else {
+      const i = prd.requirements.findIndex((r) => r.id === req);
+      [target, to] = [`/requirements/${i}/acceptance_criteria/-`, { id: nextId(prd.requirements[i].acceptance_criteria ?? [], "AC"), statement }];
+    }
+  }
+
+  const at = _now().toISOString();
+  const id = nextId(prd.reactions ?? [], "RX");
+  const minted = c ? mint({ prd, proto, stories: readDoc(root, STORIES_FILE), target, to, rationale: out.rationale, by: "editor", origin: "reaction", reaction: id, pq, at }) : null;
+  const reaction = {
+    id, by: by.trim(), at, text, ...(pq ? { pq } : {}), seen: { prd_hash: prd.meta.content_hash, prototype_hash: proto.meta.content_hash },
+    proposal: minted?.amendment.id ?? null, screens: req ? (proto.screens ?? []).filter((s) => s.req_refs.includes(req)).map((s) => s.id) : [], note: out.note,
+  };
+  if (protoStamp(root) !== protoBase) throw no("revision-moved", "the prototype changed while the editor worked — look again, then react");
+  prd.reactions = [...(prd.reactions ?? []), reaction];
+  try { savePrd(root, prd, { base }); } catch (e) { throw e instanceof Refused && e.code === "prd-changed" ? new Refused(e.code, e.message, { text, pq }) : e; }
+  if (minted) saveVerdict(root, minted.audit, join(AUDIT_GATE, minted.amendment.id));
+  const saved = loadPrd(root);
+  return { reaction: saved.reactions.at(-1), amendment: minted ? saved.amendments.at(-1) : null, audit: minted ? readDoc(root, join("discovery", "reviews", AUDIT_GATE, `${minted.amendment.id}.json`)) : null, prd: saved };
 }
 
 /**
