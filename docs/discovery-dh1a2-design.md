@@ -24,7 +24,7 @@ Each PR's lines count toward this milestone's estimate.
 - The agreed estimate was ~200 / ~220. The increase is the guard, D05's suite refits, and the history copy.
 - **Actual so far (2026-10-15), nonblank lines added:**
   - the guard (#61, #62): implementation +17 net, tests +162;
-  - D05 (#65 and its implementation PR): implementation +88 / −34 including the SPEC row, tests +240 including 19 lines of unchanged helper moves.
+  - D05 (#65 and its implementation PR): implementation +90 / −36 including the SPEC row, tests +240 including 19 lines of unchanged helper moves.
   - Tests are at 402, past the 1.5× line, with PRs 4 and 5 still to come. They grew from the refits and from tightening after deliberately wrong versions got through. The owner treats the line as a gut check here, not a ceiling (see the plan's estimate rule), and PRs 4 and 5 are re-estimated before they start.
 
 ## 1. The guard: a late write cannot replace a PRD that moved
