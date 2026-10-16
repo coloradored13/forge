@@ -16,7 +16,7 @@ import { Refused, readDoc, saveDoc, staleness, PRD_FILE, PROTOTYPE_FILE, STORIES
 import { createRun, adoptHandoff, readRun, transition } from "../delivery/state/index.mjs";
 import { verifyHandoff } from "../shared/handoff.mjs";
 
-const { check, done } = suite("discovery-readiness · D05 exits and outgoing history", 92);
+const { check, done } = suite("discovery-readiness · D05 exits and outgoing history", 94);
 const bytes = (root, file) => readFileSync(join(root, file), "utf8");
 const hash = (s) => createHash("sha256").update(s).digest("hex");
 const attempt = async (fn) => { try { return { value: await fn() }; } catch (error) { return { error }; } };
@@ -197,11 +197,14 @@ for (const failure of ["ids-dropped", "model-error"]) await withRoot({}, async (
   check(`${failure}: retry keeps exactly the original hash-matched pair`, kept(root, jsonPath, saved) && kept(root, htmlPath, html)
     && hash(bytes(root, htmlPath)) === JSON.parse(saved).file_hash && JSON.stringify(files) === JSON.stringify([jsonPath, htmlPath].map((p) => p.split("/").at(-1)).sort()));
 });
-for (const prior of [false, true]) await withRoot({}, async (parent) => {
-  const root = seedProject(parent); if (prior) { seedPrototype(root); unlinkSync(join(root, HTML_FILE)); }
+for (const mode of ["first build", "orphan HTML", "missing HTML", "mismatched HTML"]) await withRoot({}, async (parent) => {
+  const root = seedProject(parent), prior = mode === "missing HTML" || mode === "mismatched HTML";
+  if (prior) seedPrototype(root);
+  if (mode === "missing HTML") unlinkSync(join(root, HTML_FILE));
+  if (mode === "orphan HTML" || mode === "mismatched HTML") writeHtml(root, HTML + "<!-- hand edit -->");
   const saved = prior ? bytes(root, PROTOTYPE_FILE) : null, out = await attempt(() => rebuild(root));
   const dir = join(root, "discovery/history"), files = existsSync(dir) ? readdirSync(dir) : [];
-  check(`${prior ? "missing HTML" : "first build"}: succeeds with ${prior ? "JSON-only history" : "no history"}`, !out.error && !!readDoc(root, PROTOTYPE_FILE)
+  check(`${mode}: succeeds with ${prior ? "JSON-only history" : "no history"}`, !out.error && !!readDoc(root, PROTOTYPE_FILE)
     && (prior ? files.length === 1 && kept(root, archive("prototype", saved), saved) : files.length === 0), out.error?.message);
 });
 const tree = (root) => JSON.stringify([".", ...readdirSync(root, { recursive: true })].sort().map((file) => {
