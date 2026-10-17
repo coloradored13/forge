@@ -73,7 +73,7 @@ Discovery draws the MVP line; the contract binds only MVP; every reviewer and ju
 
 **R3 · Rulings are spec.** `discovery`
 A human's answer becomes a criterion in one mechanical operation — attributed, pinned, versioned. No reviewer or judge re-raises a settled ruling.
-*evidence* AMD-14..23: ten amendments, two rounds, to promote content already decided. *enforcer* the `answer` door · the ruled-criterion guard · eval `rulings`
+*evidence* AMD-14..23: ten amendments, two rounds, to promote content already decided. *enforcer* the `answer`/`approve` doors · the ruled-criterion guard · eval `rulings`
 
 **R4 · Amendments are audited at mint.** `discovery`
 A proposal computes its blast radius — every criterion, story, and screen that references the changed term — and any vocabulary it introduces. The PM approves the radius, not just the edit.

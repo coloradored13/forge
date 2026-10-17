@@ -363,6 +363,8 @@ export async function react({ root, by, text, pq, seen, onEvent, _query, _sleep,
  * what was proposed against, and the caller must acknowledge the radius as it is now —
  * every criterion, story and screen, restated. Then the edit lands, the version bumps
  * (minor when material), the hash is re-stamped, and the document must still validate.
+ * An approved reaction that names a prototype question still open settles it by reference
+ * (R3): one ruling for the criterion the edit set, and the question answered by it.
  */
 export function approve({ root, id, by, radius, _now = () => new Date() }) {
   if (!by?.trim()) throw new Refused("no-author", "approve: say who approves");
@@ -377,7 +379,8 @@ export function approve({ root, id, by, radius, _now = () => new Date() }) {
   if (a.adds && current !== undefined) throw new Refused("target-now-exists", `approve: ${a.target} exists now; ${id} was to add it`);
   if (!a.adds && canonicalize(current) !== canonicalize(a.from)) throw new Refused("from-changed", `approve: ${a.target} no longer holds what ${id} was proposed against`, { now: current, from: a.from });
 
-  const now = radiusOf({ prd, proto: readDoc(root, PROTOTYPE_FILE), stories: readDoc(root, STORIES_FILE), target: a.target, from: a.adds ? undefined : a.from });
+  const proto = readDoc(root, PROTOTYPE_FILE);
+  const now = radiusOf({ prd, proto, stories: readDoc(root, STORIES_FILE), target: a.target, from: a.adds ? undefined : a.from });
   const expected = [...now.criteria, ...now.stories, ...now.screens].sort();
   const given = Array.isArray(radius) ? [...new Set(radius)].sort() : null;
   if (!given || given.join("\n") !== expected.join("\n")) {
@@ -396,8 +399,25 @@ export function approve({ root, id, by, radius, _now = () => new Date() }) {
   const superseded = ruled.filter(([r, was]) => criterionAt(prd, r.criterion)?.ac.statement !== was).map(([r]) => Object.assign(r, { superseded_by: a.id }).id);
   prd.meta.version = bumpVersion(prd.meta.version, a.material ? "minor" : "patch");
   Object.assign(a, { status: "approved", radius: now, resulting_version: prd.meta.version, decided: { by: by.trim(), at } });
-  prd.flags.push({ at, section: parentPtr.split("/")[1] ?? "prd", kind: "note", note: `${a.id} approved by ${by.trim()} → ${prd.meta.version}: ${a.rationale}${expected.length ? ` · radius ${expected.join(", ")}` : ""}${superseded.length ? ` · supersedes ${superseded.join(", ")}` : ""}` });
+  // Settled only by the amendment's own pq, from its reaction, on one of react's two criterion shapes.
+  const shape = a.target.match(/^\/requirements\/(\d+)\/acceptance_criteria\/(\d+)(\/statement)?$/);
+  const rx = a.pq && (prd.reactions ?? []).find((x) => x.id === a.reaction);
+  const asked = rx && shape && a.adds === !shape[3] ? (proto?.open_questions ?? []).find((q) => q.id === a.pq && q.status === "open") : null;
+  let ruling = null;
+  if (asked) {
+    const r = prd.requirements[Number(shape[1])];
+    ruling = { id: nextId(prd.rulings ?? [], "RUL"), pq: a.pq, question: asked.question, answer: rx.text.trim(), by: by.trim(), at,
+      criterion: `${r.id}/${r.acceptance_criteria[Number(shape[2])].id}`, version: prd.meta.version, prd_hash: "", amendment: a.id };
+    prd.rulings = [...(prd.rulings ?? []), ruling];
+    stamp(prd);
+    ruling.prd_hash = prd.meta.content_hash;
+    Object.assign(asked, { status: "answered", ruling: ruling.id });
+    const v = validate("prototype", proto); // checked before either record moves
+    if (!v.ok) throw new Refused("prototype-invalid", `approve: the prototype's record does not fit its schema — ${v.errors.slice(0, 5).join("; ")}`, v.errors);
+  }
+  prd.flags.push({ at, section: parentPtr.split("/")[1] ?? "prd", kind: "note", note: `${a.id} approved by ${by.trim()} → ${prd.meta.version}: ${a.rationale}${expected.length ? ` · radius ${expected.join(", ")}` : ""}${superseded.length ? ` · supersedes ${superseded.join(", ")}` : ""}${ruling ? ` · ${ruling.id} settles ${a.pq} as ${ruling.criterion}` : ""}` });
   savePrd(root, prd);
+  if (ruling) saveDoc(root, PROTOTYPE_FILE, "prototype", proto);
   return { amendment: a, prd };
 }
 
