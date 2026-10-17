@@ -42,7 +42,7 @@ Each PR's lines count toward this milestone's estimate.
 - The 1.5× line, a gut check rather than a ceiling, is the actuals plus 1.5× of what remains: about 366 implementation and 1,281 test lines.
 - **Actual at the milestone's end (2026-10-17),** on the same basis:
   - Implementation: 4a +53, 4b +129, PR 5 +21. **Total +291 of ~273 (107%),** under the 366 line.
-  - Tests: 4a +124, 4b +292, PR 5 +233. **Total +1,075 of ~1,000 (108%),** under the 1,281 line.
+  - Tests: 4a +124, 4b +292, PR 5 +239. **Total +1,081 of ~1,000 (108%),** under the 1,281 line.
 - **Risks to settle as PR 4 starts:**
   - ~~`fieldsOf` does not walk `oneOf`~~ — resolved by "4b decisions": `change` is one nullable object, which `fieldsOf` already describes, so 4b is about 10–20 lines smaller each than estimated.
   - Five smaller gaps (4b and 5):
