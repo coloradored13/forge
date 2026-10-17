@@ -300,7 +300,7 @@
     "rulings": {
       "type": "array",
       "x-runner": true,
-      "description": "Rulings are spec (R3): a PM's answer made a criterion in one operation — attributed, pinned to the PRD version it landed in, ridden into every writer, reviewer and judge, never re-raised. Append-only; written by the answer door.",
+      "description": "Rulings are spec (R3): a PM's answer made a criterion in one operation — attributed, pinned to the PRD version it landed in, ridden into every writer, reviewer and judge, never re-raised. Append-only; written by the answer door, and by approval when an approved reaction settles its prototype question.",
       "items": {
         "type": "object",
         "required": ["id", "question", "answer", "by", "at", "criterion", "version", "prd_hash"],
@@ -316,6 +316,7 @@
           "criterion": { "type": "string", "pattern": "^REQ-\\d+/AC-\\d+$", "description": "The acceptance criterion the answer became." },
           "version": { "type": "string", "description": "The PRD version the ruling landed in." },
           "prd_hash": { "type": "string", "description": "The PRD content hash after the ruling landed." },
+          "amendment": { "type": "string", "pattern": "^AMD-\\d+$", "description": "The approved amendment whose reaction settled the question, when approval wrote this ruling." },
           "superseded_by": { "type": "string", "pattern": "^AMD-\\d+$", "description": "The approved amendment that has since changed the criterion. The ruling stays on the record as history." }
         }
       }
