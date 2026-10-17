@@ -11,7 +11,7 @@ import { Refused, readDoc, saveDoc, rulingsOf, PRD_FILE, PROTOTYPE_FILE } from "
 import { validate } from "../shared/schema/index.mjs";
 import { resolve, verify } from "../shared/hash.mjs";
 
-const { check, done } = suite("discovery-settlement · approval by reference", 24);
+const { check, done } = suite("discovery-settlement · approval by reference", 25);
 const _now = () => new Date("2026-10-17T12:00:00Z");
 const text = "  Keep a reason and timestamp.\n", statement = "An exception records a reason and timestamp.";
 const bytes = (root, file) => existsSync(join(root, file)) ? readFileSync(join(root, file), "utf8") : null;
@@ -82,14 +82,18 @@ await test("supersedes only the old ruling and preserves unrelated history", asy
   for (const id of [old.id, "RUL-3", "PQ-1"]) assert.ok(prd.flags.at(-1).note.includes(id));
 });
 
-for (const mode of ["missing-reaction", "dangling-reaction", "no-pq", "unknown-pq", "answered", "no-prototype", "wrong-target"]) {
+for (const mode of ["missing-reaction", "dangling-reaction", "no-pq", "unknown-pq", "answered", "no-prototype", "wrong-target", "whole-criterion"]) {
   await test(`approval without settlement: ${mode}`, async (root) => {
     prototype(root); let a = await proposal(root, { linked: mode !== "no-pq" });
     const prd = loadPrd(root), proto = readDoc(root, PROTOTYPE_FILE);
-    if (mode === "wrong-target") {
+    if (mode === "wrong-target" || mode === "whole-criterion") {
       // The exported mint permits a linked amendment outside react's two criterion shapes.
-      prd.amendments = []; a = doors.mint({ prd, proto, target: "/requirements/0/statement", to: "A dock lead records exceptions.",
+      const whole = mode === "whole-criterion";
+      const target = whole ? "/requirements/0/acceptance_criteria/0" : "/requirements/0/statement";
+      const to = whole ? { id: "AC-1", statement } : "A dock lead records exceptions.";
+      prd.amendments = []; a = doors.mint({ prd, proto, target, to,
         rationale: "Context.", by: "editor", origin: "reaction", reaction: "RX-1", pq: "PQ-1", at: _now().toISOString() }).amendment;
+      assert.equal(a.adds, false);
     } else {
       a = prd.amendments.at(-1);
       if (mode === "missing-reaction") delete a.reaction;
@@ -98,6 +102,8 @@ for (const mode of ["missing-reaction", "dangling-reaction", "no-pq", "unknown-p
       if (mode === "answered") Object.assign(proto.open_questions[0], { status: "answered", ruling: "RUL-99" });
     }
     savePrd(root, prd); saveDoc(root, PROTOTYPE_FILE, "prototype", proto);
+    // P06: a valid record need not have the runner's whitespace; a redundant save changes its bytes.
+    if (mode === "no-pq") { assert.ok(validate("prototype", proto).ok); put(root, PROTOTYPE_FILE, JSON.stringify(proto)); }
     if (mode === "no-prototype") unlinkSync(join(root, PROTOTYPE_FILE));
     const r = doors.radiusOf({ prd, proto: readDoc(root, PROTOTYPE_FILE), target: a.target, from: a.from });
     const before = loadPrd(root), protoBytes = bytes(root, PROTOTYPE_FILE);
