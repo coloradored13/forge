@@ -98,7 +98,7 @@ The PM reacts in plain language to the prototype they are looking at. A specific
 |---|---|
 | `no-structured-output` | the editor returned no output |
 | `reaction-invalid` | the output doesn't fit the contract, or names a criterion or requirement that doesn't exist or sits past the line |
-| mint's own codes | passed through unchanged |
+| mint's own codes | passed through unchanged (dropped as unreachable in "4b decisions") |
 | `prd-changed` | the guard fired |
 | `revision-moved` | the prototype record's bytes no longer match what `react` read before the call. This covers a rebuild, and an answer to the linked PQ, made while the editor was working. It includes a rebuild that changed only notes or questions, which leaves the content hash unchanged |
 
@@ -108,7 +108,7 @@ The PM reacts in plain language to the prototype they are looking at. A specific
 - **Minted through `mint()`** with `by: "editor"`, `origin: "reaction"`, `reaction: "RX-n"`, and `pq` when one was given.
 - **Order:** the PRD is saved with the guard's `base` first, and the audit is filed after it, as `extract` does.
 
-**The reaction record.** It lives in the PRD's runner-owned `reactions` list: `{ id, by, at, text, pq?, seen, proposal: AMD-n | null, screens, note }`. `screens` lists the prototype screens that show the targeted requirement. Together with the proposal's from/to and radius, this is the "affected behavior" D03 asks for.
+**The reaction record.** It lives in the PRD's runner-owned `reactions` list: `{ id, by, at, text, pq?, seen, proposal: AMD-n | null, screens, note }`. `screens` lists the prototype screens that show the targeted requirement. "4b decisions" fixes this as the screens whose `req_refs` include it, which is not `radius.screens`. Together with the proposal's from/to and radius, this is the "affected behavior" D03 asks for.
 
 **Nothing accepted changes before approval.** Requirements, content hash, version and the current agreement all stay as they were, because amendments and reactions are outside the hash.
 

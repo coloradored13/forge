@@ -20,7 +20,7 @@
     "traces": {
       "type": "object",
       "x-runner": true,
-      "description": "What this prototype was built from. A PRD whose hash no longer matches makes the prototype stale — the badge, not a block.",
+      "description": "What this prototype was built from. A PRD whose hash no longer matches makes the prototype stale, and a stale prototype cannot be agreed to or reacted to, so it holds every export (D05).",
       "required": ["prd"],
       "additionalProperties": false,
       "properties": {
