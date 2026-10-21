@@ -43,6 +43,8 @@ No browser pilot runs before part 3's isolation proof.
 4. **Unknown spend is fixed at its source now** (part 5): a failed call's cost is marked unknown in a separate field, so Delivery's totals and call counts do not change.
 5. **Browser tests run in CI** with a pinned Chromium, where SKIPPED fails. Claude makes the network install (the dev dependency and a browser download of roughly 100–350 MB) with the owner's OK.
 
+**Agreed by the owner (2026-10-21):** all five, the estimate, and the single-attempt rule, after reviews by Dots and Gemini.
+
 Everything else, such as the notes box, tracker wording and setup's retry behavior, is decided at the kickoff of the part it belongs to.
 
 ## Not in DH1b
