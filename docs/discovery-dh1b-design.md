@@ -31,7 +31,7 @@ Net nonblank lines, as in DH1a.2, with about 20% for tightening after wrong vers
 ## Part 1's two contracts
 
 - **Trusted requests.** The console trusts only its own loopback address, whatever `Host` a request claims. A mutating request needs an `Origin` that matches it exactly; a missing, `null` or foreign `Origin` is refused, setup included. Plain navigation without `Origin` still works. Each refused foreign or prototype post is paired with an allowed PM submission.
-- **One mutation at a time, through its work.** A project-wide guard holds from a mutating request until its long work finishes, not only its handler (`shared/console/index.mjs:170–177` runs the work after the handler returns). A second mutation, or a duplicate submit, is refused with a remedy while one runs. A build publishes only after validation; an ordinary model or validation failure keeps the prior HTML and record. Within one console request a model call runs once: a usage gap ends the request with a refusal saying when to try again (plan line 27).
+- **One mutation at a time, through its work.** A project-wide guard holds from a mutating request until its long work finishes, not only its handler (`shared/console/index.mjs:170–177` runs the work after the handler returns). A second mutation, or a duplicate submit, is refused with a remedy while one runs. A build publishes only after validation; an ordinary model or validation failure keeps the prior HTML and record. Within one Discovery console request a model call runs once: a usage gap ends the request with a refusal saying when to try again (plan line 27). Delivery keeps its pause (`evals/economics.mjs:120`), and `SPEC.md:134` gets a word-neutral edit.
 
 No browser pilot runs before part 3's isolation proof.
 
