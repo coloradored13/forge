@@ -28,6 +28,13 @@ Each part is one or more tests-first PR pairs, scoped at its kickoff.
 
 Net nonblank lines, as in DH1a.2, with about 20% for tightening after wrong versions get through. Three independent estimates were reconciled; they agreed on implementation and differed most on part 4's tests. The 1.5× gut check is about 745 / 2,300. DH1a.2 came in at +291 / +1,081. Then the exit checkpoint: the owner's live run, setup with and without GitHub sign-in, and the package-only agent read.
 
+## Part 1's two contracts
+
+- **Trusted requests.** The console trusts only its own loopback address, whatever `Host` a request claims. A mutating request needs an `Origin` that matches it exactly; a missing, `null` or foreign `Origin` is refused, setup included. Plain navigation without `Origin` still works. Each refused foreign or prototype post is paired with an allowed PM submission.
+- **One mutation at a time, through its work.** A project-wide guard holds from a mutating request until its long work finishes, not only its handler (`shared/console/index.mjs:170–177` runs the work after the handler returns). A second mutation, or a duplicate submit, is refused with a remedy while one runs. A build publishes only after validation; an ordinary model or validation failure keeps the prior HTML and record. Within one console request a model call runs once: a usage gap ends the request with a refusal saying when to try again (plan line 27).
+
+No browser pilot runs before part 3's isolation proof.
+
 ## Decisions for the owner
 
 1. **The split and order above.** Part 1 first, because everything later binds to the published HTML.
