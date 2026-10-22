@@ -311,8 +311,8 @@ export async function project(parent, reqs) {
 /** Rebuild through scripted writers, preserving each suite's chosen backlog and design. */
 export async function refresh(root, { stories = readDoc(root, STORIES_FILE), design = readDoc(root, DESIGN_FILE) } = {}) {
   const proto = readDoc(root, PROTOTYPE_FILE);
-  const q = scripted({ structured: { screens: proto.screens, uncovered: proto.uncovered, notes: proto.notes, open_questions: [] } });
-  await generate({ root, _query: (args) => { writeHtml(root); return q.query(args); } });
+  const q = scripted({ structured: { screens: proto.screens, uncovered: proto.uncovered, notes: proto.notes, open_questions: [], html: HTML } });
+  await generate({ root, _query: q.query });
   agree({ root, by: "Brad" });
   await write({ root, _query: scripted({ structured: { epics: stories.epics, stories: stories.stories, notes: stories.notes, open_questions: stories.open_questions } }).query });
   if (!design) return;
