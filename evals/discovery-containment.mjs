@@ -14,7 +14,7 @@ import { PROJECT_FILE, ledgerPath } from "../discovery/setup/index.mjs";
 import { rows } from "../shared/agent-call/ledger.mjs";
 import { outputContract, validateAgainst } from "../shared/schema/index.mjs";
 
-const { check, done } = suite("discovery-containment · DH1b 1a", 92);
+const { check, done } = suite("discovery-containment · DH1b 1a", 100);
 const cap = 1_048_576, model = "writer-containment-sentinel";
 const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const hash = (bytes) => createHash("sha256").update(bytes).digest("hex");
@@ -106,6 +106,10 @@ for (const [label, html, prior] of [
   ["one UTF-8 byte under cap", nearCap, true], ["exact cap", nearCap + "x", true],
   ["fragment and data URI", '<a href="#local">local</a><img src="data:image/png;base64,AA==">' + marker, true],
   ["plain network text", '<p>https://example.test ws://example.test</p>' + marker, true],
+  ["src-looking plain text", '<p>src="https://example.test"</p>' + marker, true],
+  ["CSS-url-looking plain text", '<p>url(https://example.test)</p>' + marker, true],
+  ["inert data-src attribute", '<div data-src="https://example.test">mock</div>' + marker, true],
+  ["HTML comment with network reference", '<!-- <img src="https://example.test"> -->' + marker, true],
 ]) await withRoot({}, async (parent) => {
   const root = seedProject(parent); if (prior) seedPrototype(root);
   const before = bytes(root, PRD_FILE), old = bytes(root, HTML_FILE), q = scripted({ structured: build({ html }) });
