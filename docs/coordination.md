@@ -29,6 +29,7 @@ Rigor scales with risk. Each kickoff PR names its track, and the owner can chang
 - **One wrong-version run per PR,** after the tests have settled, not on every round. Claude runs it directly and reports survivors as real gaps or equivalents. A survivor that matters becomes one batched test request.
 - **Batch requests.** Each review round sends one consolidated list of everything that needs changing, so the other model does it in one pass rather than several.
 - **Standing authorization for tests.** The owner may tell ChatGPT directly, in ChatGPT, that it may write tests for every kickoff PR in a milestone whose estimate the owner has agreed. Without that, each kickoff waits for the owner's direct authorization. This file records the arrangement; it does not grant it.
+  - **In force (owner, 2026-10-26, given to ChatGPT directly and confirmed to Claude):** ChatGPT writes the tests for each kickoff, and adds tests that it or Claude identify in review (missing controls, survivors of a wrong-version run), as tests-only commits on the PR's test branch, without asking the owner again.
 
 ## Rules
 
