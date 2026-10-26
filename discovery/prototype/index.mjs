@@ -98,20 +98,27 @@ export async function generate({ root, notes, onEvent, _query, _sleep }) {
 
 /**
  * The page the builder returned, checked before it is published: present, within the size
- * cap, and with no network reference in an attribute or a stylesheet. Text that merely
- * mentions an address is not a reference.
+ * cap, and with no network reference in a tag's attribute, a <style> block or a style
+ * attribute. Text, comments and data-* attributes that merely mention an address are not
+ * references.
  */
 export function checkHtml(html) {
   if (!html.trim()) throw new Refused("no-html", "prototype: the builder returned an empty page");
   const size = Buffer.byteLength(html, "utf8");
   if (size > MAX_HTML) throw new Refused("html-too-large", `prototype: the page is ${size} bytes; the cap is ${MAX_HTML}`);
-  const refs = [];
-  for (const m of html.matchAll(/\b(src|href|action|formaction|poster|srcset)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/gi)) {
-    const value = m[2] ?? m[3] ?? m[4];
-    refs.push(...(m[1].toLowerCase() === "srcset" ? value.split(",").map((c) => c.trim().split(/\s+/)[0]) : [value]));
+  const page = html.replace(/<!--[\s\S]*?-->/g, "");
+  const refs = [], css = [...page.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style>/gi)].map((m) => m[1]);
+  for (const [tag] of page.matchAll(/<[a-z][^\s>\/]*(?:[^>"']|"[^"]*"|'[^']*')*>/gi)) {
+    for (const m of tag.matchAll(/\s(src|href|action|formaction|poster|srcset|style)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/gi)) {
+      const name = m[1].toLowerCase(), value = m[2] ?? m[3] ?? m[4];
+      if (name === "style") css.push(value);
+      else refs.push(...(name === "srcset" ? value.split(",").map((c) => c.trim().split(/\s+/)[0]) : [value]));
+    }
   }
-  for (const m of html.matchAll(/url\(\s*(?:"([^"]*)"|'([^']*)'|([^)]*))\s*\)/gi)) refs.push(m[1] ?? m[2] ?? m[3]);
-  for (const m of html.matchAll(/@import\s+(?:"([^"]*)"|'([^']*)')/gi)) refs.push(m[1] ?? m[2]);
+  for (const sheet of css) {
+    for (const m of sheet.matchAll(/url\(\s*(?:"([^"]*)"|'([^']*)'|([^)]*))\s*\)/gi)) refs.push(m[1] ?? m[2] ?? m[3]);
+    for (const m of sheet.matchAll(/@import\s+(?:"([^"]*)"|'([^']*)')/gi)) refs.push(m[1] ?? m[2]);
+  }
   const external = refs.map((r) => r.trim()).filter((r) => NETWORK.test(r));
   if (external.length) throw new Refused("html-external", `prototype: the page reaches the network — ${external.slice(0, 5).join(", ")}; a prototype runs from disk`, external);
 }
