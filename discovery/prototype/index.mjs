@@ -1,16 +1,17 @@
 // owns: R2 · discovery — the prototype: the PRD made tangible so the PM can find what is
-// wrong with it. One builder call through the chokepoint writes one HTML file and returns
-// the record of its screens; the runner refuses a write anywhere else, hashes the file,
+// wrong with it. One builder call through the chokepoint returns the page and the record of
+// its screens, and writes nothing (D13); the runner checks the page, publishes and hashes it,
 // keeps screen ids sticky, and holds the record to the line's arithmetic — every shipped
 // surface inside the line has a screen, every functional requirement inside the line is on
 // a screen or listed as uncovered, nothing past the line is shown. No AI reviews the
 // prototype: the PM is the loop here.
 
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { skeleton, outputContract, validateAgainst } from "../../shared/schema/index.mjs";
+import { skeleton, outputContract, validate, validateAgainst } from "../../shared/schema/index.mjs";
+import { stamp } from "../../shared/hash.mjs";
 import { identity, mechanics, assemble } from "../../shared/prompt/index.mjs";
 import { call } from "../../shared/agent-call/index.mjs";
 import { deriveVerdict, pin } from "../../shared/judge/index.mjs";
@@ -22,7 +23,9 @@ import { Refused, readDoc, saveDoc, saveVerdict, keepOutgoing, traceOf, rulingsO
 const PROMPTS = join(dirname(fileURLToPath(import.meta.url)), "prompts");
 export const GATE = "prototype-arithmetic";
 export const ARITHMETIC = ["surface-without-screen", "screen-surface-unknown", "screen-past-line", "ref-unknown", "req-unaccounted", "uncovered-yet-covered"];
-const EDITS = new Set(["Write", "Edit"]);
+const WRITES = new Set(["Write", "Edit", "Bash", "NotebookEdit"]);
+const MAX_HTML = 1_048_576; // UTF-8 bytes
+const NETWORK = /^(?:https?:|wss?:|ftp:|\/\/)/i;
 
 export function loadPrototype(root) { return readDoc(root, PROTOTYPE_FILE); }
 
@@ -32,12 +35,13 @@ export function fileHash(root) {
 
 /**
  * Build or rebuild the prototype. Refused before the line is drawn — there is nothing
- * to hold the prototype to. The builder writes exactly one file; the record it returns
- * is validated, its screen ids must survive from the previous build, and the arithmetic
- * is checked and filed as a gate verdict beside it. The previous record and its HTML are
- * kept in the history as a pair before the call, since the builder overwrites the HTML —
- * the HTML only while it is still the one the record describes, so a failed build's HTML
- * never replaces an archived pair.
+ * to hold the prototype to. The builder returns the page and its record and writes nothing;
+ * the record is validated, its screen ids must survive from the previous build, and the
+ * page is checked before anything published moves. Then the page is written whole and the
+ * record saved, and the arithmetic is filed as a gate verdict beside it. A refused or failed
+ * build leaves the published pair as it was. The previous record and its HTML are kept in
+ * the history as a pair before the call — the HTML only while it is still the one the record
+ * describes, so a hand-edited page never replaces an archived pair.
  */
 export async function generate({ root, notes, onEvent, _query, _sleep }) {
   const project = loadProject(root);
@@ -49,41 +53,74 @@ export async function generate({ root, notes, onEvent, _query, _sleep }) {
 
   const system = assemble({
     identity: identity(join(PROMPTS, "builder.md")),
-    mechanics: mechanics({ kind: "writer", schema: "prototype", scope, rulings: rulingsOf(prd), arithmetic: ARITHMETIC }),
+    mechanics: mechanics({ kind: "writer", schema: "prototype-build", scope, rulings: rulingsOf(prd), arithmetic: ARITHMETIC }),
   });
   const prompt = [
     renderPrd(prd),
     priorIds.length ? `## Existing screens — keep these ids for the same screens; mint new ones only for new screens\n\n${priorIds.map((p) => `- ${p.id}: ${p.label}`).join("\n")}` : "",
     notes?.trim() ? `## The PM's notes on the last build\n\n${notes.trim()}` : "",
-    `## Where to write\n\nWrite one file, \`${HTML_FILE}\`, relative to the project root. Nothing else — the record of screens comes back as your structured answer, not as a file.`,
+    "## What to return\n\nReturn the whole page as `html`, with the record of its screens, in your structured answer. Write no file: the runner publishes the page.",
   ].filter(Boolean).join("\n\n");
 
   keepOutgoing(root, "prototype", PROTOTYPE_FILE, prior && existsSync(join(root, HTML_FILE)) && fileHash(root) === prior.file_hash ? HTML_FILE : undefined);
   const res = await call({
-    half: "discovery", stage: "prototype", role: "writer", kind: "writer",
-    system, prompt, cwd: root, outputSchema: outputContract("prototype"),
+    half: "discovery", stage: "prototype", role: "writer", kind: "compose",
+    system, prompt, cwd: root, outputSchema: outputContract("prototype-build"),
     ledger: ledgerPath(root), budget: project.budget, models: project.models,
     onEvent, _query, _sleep,
   });
 
-  const target = resolve(root, HTML_FILE);
-  const elsewhere = res.toolUses.filter((t) => EDITS.has(t.name) && resolve(root, String(t.input?.file_path ?? "")) !== target);
-  if (elsewhere.length) throw new Refused("wrote-elsewhere", `prototype: the builder wrote ${elsewhere.map((t) => t.input?.file_path).join(", ")} — the only file is ${HTML_FILE}`, elsewhere);
-  if (!existsSync(target)) throw new Refused("no-html", `prototype: ${HTML_FILE} was not written`);
+  const wrote = res.toolUses.filter((t) => WRITES.has(t.name));
+  if (wrote.length) throw new Refused("wrote", `prototype: the builder used ${wrote.map((t) => t.name).join(", ")} — it returns the page, the runner publishes it`, wrote);
   if (res.structured === undefined) throw new Refused("no-structured-output", "prototype: the builder returned no record of its screens");
-  const v = validateAgainst(outputContract("prototype"), res.structured);
-  if (!v.ok) throw new Refused("prototype-invalid", `prototype: the record does not fit the contract — ${v.errors.slice(0, 5).join("; ")}`, v.errors);
+  const v = validateAgainst(outputContract("prototype-build"), res.structured);
+  if (!v.ok) throw new Refused("prototype-invalid", `prototype: the build does not fit the contract — ${v.errors.slice(0, 5).join("; ")}`, v.errors);
+  const { html, ...record } = res.structured;
+  checkHtml(html);
 
-  const doc = { ...skeleton("prototype"), id: `proto-${prd.meta.slug}`, traces: traceOf(prd), file: HTML_FILE, file_hash: fileHash(root), ...res.structured };
+  const doc = { ...skeleton("prototype"), id: `proto-${prd.meta.slug}`, traces: traceOf(prd), file: HTML_FILE, file_hash: createHash("sha256").update(html).digest("hex"), ...record };
   Object.assign(doc, questionsOf(doc.open_questions, prior, prd.rulings ?? []));
   const kept = new Set(doc.screens.map((s) => s.id));
   const dropped = priorIds.filter((p) => !kept.has(p.id));
   if (dropped.length) throw new Refused("ids-dropped", `prototype: the rebuild dropped ${dropped.map((p) => p.id).join(", ")} — screen ids are sticky; a screen that went away keeps its id with no requirements`, dropped);
 
+  const valid = validate("prototype", stamp(structuredClone(doc))); // checked before the page moves
+  if (!valid.ok) throw new Refused("prototype-invalid", `prototype: the record does not fit its schema — ${valid.errors.slice(0, 5).join("; ")}`, valid.errors);
+  const target = join(root, HTML_FILE);
+  mkdirSync(dirname(target), { recursive: true });
+  writeFileSync(`${target}.tmp`, html);
+  renameSync(`${target}.tmp`, target);
   saveDoc(root, PROTOTYPE_FILE, "prototype", doc);
   const arithmetic = { ...checkPrototype(prd, doc), judged: [pin({ id: prd.id, path: PRD_FILE, doc: prd }), pin({ id: doc.id, path: PROTOTYPE_FILE, doc })] };
   saveVerdict(root, arithmetic);
   return { prototype: doc, arithmetic, model: res.model, usd: res.usd };
+}
+
+/**
+ * The page the builder returned, checked before it is published: present, within the size
+ * cap, and with no network reference in a tag's attribute, a <style> block or a style
+ * attribute. Text, comments and data-* attributes that merely mention an address are not
+ * references.
+ */
+export function checkHtml(html) {
+  if (!html.trim()) throw new Refused("no-html", "prototype: the builder returned an empty page");
+  const size = Buffer.byteLength(html, "utf8");
+  if (size > MAX_HTML) throw new Refused("html-too-large", `prototype: the page is ${size} bytes; the cap is ${MAX_HTML}`);
+  const page = html.replace(/<!--[\s\S]*?-->/g, "");
+  const refs = [], css = [...page.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style>/gi)].map((m) => m[1]);
+  for (const [tag] of page.matchAll(/<[a-z][^\s>\/]*(?:[^>"']|"[^"]*"|'[^']*')*>/gi)) {
+    for (const m of tag.matchAll(/\s(src|href|action|formaction|poster|srcset|style)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/gi)) {
+      const name = m[1].toLowerCase(), value = m[2] ?? m[3] ?? m[4];
+      if (name === "style") css.push(value);
+      else refs.push(...(name === "srcset" ? value.split(",").map((c) => c.trim().split(/\s+/)[0]) : [value]));
+    }
+  }
+  for (const sheet of css) {
+    for (const m of sheet.matchAll(/url\(\s*(?:"([^"]*)"|'([^']*)'|([^)]*))\s*\)/gi)) refs.push(m[1] ?? m[2] ?? m[3]);
+    for (const m of sheet.matchAll(/@import\s+(?:"([^"]*)"|'([^']*)')/gi)) refs.push(m[1] ?? m[2]);
+  }
+  const external = refs.map((r) => r.trim()).filter((r) => NETWORK.test(r));
+  if (external.length) throw new Refused("html-external", `prototype: the page reaches the network — ${external.slice(0, 5).join(", ")}; a prototype runs from disk`, external);
 }
 
 /**
