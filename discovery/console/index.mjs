@@ -16,6 +16,14 @@ import { answer, propose, approve, reject, agree } from "../doors/index.mjs";
 import { exportHandoff } from "../export/index.mjs";
 import { readDoc, renderPrd, renderPrototype, renderStories, renderDesign, HTML_FILE } from "../record/index.mjs";
 import { VIEWS, ARTIFACTS, setupView, workshopView, boardView, exportView } from "./views.mjs";
+import { singleAttempt } from "../../shared/agent-call/index.mjs";
+
+// A Discovery request from the console makes one model attempt: a usage gap refuses with its
+// reset instead of holding the page for hours (plan line 27). Delivery and direct calls pause.
+const once = (table) => table.map((r) => ({ ...r, handler: async (ctx) => {
+  const out = await singleAttempt.run(true, () => r.handler(ctx));
+  return out?.work ? { ...out, work: (log) => singleAttempt.run(true, () => out.work(log)) } : out;
+} }));
 
 /** The nav, from the spec's six. */
 export const nav = VIEWS.map((v) => ({ href: `/${v.key}`, label: v.label }));
@@ -193,7 +201,7 @@ export function routes({ root, _query, _sleep, _exec, _fetch, _env } = {}) {
     return { kind: f.tracker, site: blank(f.site), project: blank(f.project), ...(blank(f.ideas) ? { ideas: f.ideas.trim() } : {}) };
   };
 
-  return [
+  return once([
     { method: "GET", path: "/", handler: () => ({ redirect: home() }) },
     { method: "GET", path: "/setup", handler: () => setupPage(setupView(root)) },
     { method: "POST", path: "/setup", handler: ({ form: f }) => {
@@ -213,7 +221,7 @@ export function routes({ root, _query, _sleep, _exec, _fetch, _env } = {}) {
       if (!doc) return { title: "Not found", status: 404, body: `<h1>Not found</h1><p class="muted">no ${esc(params.kind)} on the record</p>` };
       return { title: params.kind, body: `<h1>${esc(params.kind)} <span class="muted">v${esc(doc.meta.version)} · <code>${esc(short(doc.meta.content_hash))}</code></span></h1><pre>${esc(RENDER[params.kind](doc))}</pre>` };
     } },
-    { method: "GET", path: "/prototype/index.html", handler: () => ({ file: join(root, HTML_FILE) }) },
+    { method: "GET", path: "/prototype/index.html", handler: () => ({ file: join(root, HTML_FILE), headers: { "content-security-policy": "sandbox allow-scripts" } }) },
     { method: "POST", path: "/prototype/generate", handler: ({ form: f }) => work("Prototype", "/board", async (onEvent) => { await generate({ root, notes: blank(f.notes), onEvent, ...seams }); return "/board"; }) },
     { method: "POST", path: "/stories/write", handler: ({ form: f }) => work("Stories", "/board", async (onEvent) => { await writeStories({ root, notes: blank(f.notes), onEvent, ...seams }); return "/board"; }) },
     { method: "POST", path: "/stories/review", handler: () => work("Story review", "/board", async (onEvent) => { await reviewStories({ root, onEvent, ...seams }); return "/board"; }) },
@@ -228,5 +236,5 @@ export function routes({ root, _query, _sleep, _exec, _fetch, _env } = {}) {
     { method: "GET", path: "/export", handler: () => exportPage(exportView(root)) },
     { method: "POST", path: "/export", handler: async ({ form: f }) => { await exportHandoff({ root, exit: f.exit, by: f.by, tracker: trackerOf(f), ...exportSeams }); return { redirect: "/export" }; } },
     { method: "GET", path: "/release", handler: () => landsPage("release") },
-  ];
+  ]);
 }

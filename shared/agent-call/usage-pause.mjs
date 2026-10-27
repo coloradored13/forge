@@ -4,6 +4,12 @@
 // callable; every caller writes output only at the end, which is what makes coarse
 // retry safe. Ported from v1 tools/usage.mjs.
 
+import { AsyncLocalStorage } from "node:async_hooks";
+import { Refused } from "../refused.mjs";
+
+/** Set around a request that makes one attempt: a usage gap refuses with its reset instead of pausing. */
+export const singleAttempt = new AsyncLocalStorage();
+
 const USAGE_PATTERNS = [
   /usage limit/i,
   /rate.?limit/i,
@@ -43,6 +49,7 @@ export async function withUsagePause(fn, { label = "agent", onEvent, maxTotalMs 
       if (!isUsageGap(e?.message ?? e)) throw e;
       const wait = waitMsFor(attempt);
       const first = String(e?.message ?? e).split("\n")[0];
+      if (singleAttempt.getStore()) throw new Refused("usage-limit", `${label}: ${first} — this request makes one attempt; try again after the reset`);
       if (waited + wait > maxTotalMs) {
         throw new Error(`${label}: usage gap outlasted the ${Math.round(maxTotalMs / 3_600_000)}h pause budget — ${first}`);
       }

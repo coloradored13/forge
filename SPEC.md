@@ -131,7 +131,7 @@ Every eval seeds its own state in a temp root. The gate ledger proves it can say
 - Flags are append-only decision history.
 - Rulings ride into every writer, reviewer, and judge.
 - Design is judged as a designer would: direction, craft, a hero spend.
-- Usage limits pause the run; nothing degrades quietly.
+- Usage limits pause Delivery; Discovery refuses until reset.
 - Build accounting is the diff from base, whoever committed.
 
 ## §4 Discovery
