@@ -186,7 +186,9 @@ export function setupProject({
       throw new SetupRefused("setup-unfinished", `setup: stopped before it finished — ${String(e?.message ?? e).split("\n")[0]}. Fix that, then try again: setup finishes what is missing`);
     }
   } else {
-    run("git", ["add", "forge", "discovery", ".gitignore"]);
+    // An unfinished setup's marker is never committed, here as in a new project's first commit;
+    // it goes only once the attach has landed.
+    run("git", ["add", "--", "forge", "discovery", ".gitignore", `:!${SETUP_MARKER}`]);
     run("git", ["commit", "-q", "-m", "forge: attach project", "--allow-empty"]);
     rmSync(join(root, SETUP_MARKER), { force: true });
   }
