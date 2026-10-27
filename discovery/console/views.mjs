@@ -9,7 +9,7 @@ import { basename, join } from "node:path";
 import { roles, defaults, modelFor, standing, estimate, quote } from "../../shared/agent-call/index.mjs";
 import { verdictFreshness } from "../../shared/judge/index.mjs";
 import { readHandoffs, latestHandoff, handoffFile } from "../../shared/handoff.mjs";
-import { loadProject, ledgerPath, SetupRefused } from "../setup/index.mjs";
+import { loadProject, ledgerPath, partialProject, SetupRefused } from "../setup/index.mjs";
 import { loadPrd, WorkshopRefused, captured, mayOpen, progress, quoteTurn, readTranscript } from "../workshop/index.mjs";
 import { section } from "../workshop/sections.mjs";
 import { readDoc, readVerdict, staleness, rulingsOf, PRD_FILE, PROTOTYPE_FILE, STORIES_FILE, DESIGN_FILE, HTML_FILE } from "../record/index.mjs";
@@ -37,7 +37,7 @@ export const ARTIFACTS = [
   { kind: "design", file: DESIGN_FILE, gates: [DESIGN_GATE, DESIGN_REVIEW] },
 ];
 
-const tryProject = (root) => { try { return loadProject(root); } catch (e) { if (e instanceof SetupRefused && e.code === "no-project") return null; throw e; } };
+const tryProject = (root) => { try { return loadProject(root); } catch (e) { if (e instanceof SetupRefused && ["no-project", "setup-incomplete"].includes(e.code)) return null; throw e; } };
 const tryPrd = (root) => { try { return loadPrd(root); } catch (e) { if (e instanceof WorkshopRefused && e.code === "no-prd") return null; throw e; } };
 
 // ── setup ──
@@ -54,7 +54,12 @@ export function setupView(root) {
     const model = modelFor({ half, role }, overrides);
     return { key, half, role, model, default: defaults()[key], overridden: model !== defaults()[key], estimate: ledger && half === "discovery" ? estimate(ledger, { half, role, model }) : null };
   });
-  if (!project) return { root, project: null, slug: basename(root), existing: existsSync(join(root, ".git")), roles: roleRows(), standing: null, cost: [] };
+  if (!project) {
+    // An unfinished setup is resumed as a new project, never offered as an attach (its .git is setup's own).
+    const partial = partialProject(root);
+    return { root, project: null, slug: partial?.slug ?? basename(root), title: partial?.title ?? "", budget: partial?.budget ?? null, resume: Boolean(partial),
+      existing: !partial && existsSync(join(root, ".git")), roles: roleRows(partial?.models ?? {}), standing: null, cost: [] };
+  }
   const ledger = ledgerPath(root);
   return {
     root, project: { slug: project.slug, title: project.title, created: project.created, repo: project.repo },
