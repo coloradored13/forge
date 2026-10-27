@@ -14,7 +14,7 @@ import { routes } from "../discovery/console/index.mjs";
 import { generate } from "../discovery/prototype/index.mjs";
 import { serve } from "../shared/console/index.mjs";
 
-const { check, done } = suite("setup · preflight, retry and console", 43);
+const { check, done } = suite("setup · preflight, retry and console", 50);
 const attempt = (fn) => { try { return { value: fn() }; } catch (error) { return { error }; } };
 const snapshot = (root) => !existsSync(root) ? null : JSON.stringify(readdirSync(root, { recursive: true, withFileTypes: true }).map((e) => {
   const p = join(e.parentPath, e.name);
@@ -37,11 +37,16 @@ async function scenario(label, fn) {
     finally { if (oldHome === undefined) delete process.env.HOME; else process.env.HOME = oldHome; }
   });
 }
-function fixture(tmp, home) {
+function fixture(tmp, home, { https = false, rewrite = false } = {}) {
   const root = join(tmp, "oven"), remote = join(tmp, "remote.git"), calls = [];
   const env = { PATH: process.env.PATH, HOME: home, GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: join(home, "config"), GIT_ALLOW_PROTOCOL: "file", GIT_TERMINAL_PROMPT: "0" };
   writeFileSync(env.GIT_CONFIG_GLOBAL, "[user]\n name = Setup Eval\n email = setup@example.invalid\n[init]\n defaultBranch = main\n");
-  const git = (cwd, args) => execFileSync("git", args, { cwd, env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+  const origin = https ? "https://github.com/acme/oven.git" : remote;
+  // Realistic gh URLs; only Git transport is rewritten to a disposable bare repo.
+  const url = https ? "https://github.com/acme/oven" : `file://${remote}`;
+  const sshUrl = https ? "git@github.com:acme/oven.git" : remote;
+  const git = (cwd, args) => execFileSync("git", https && !rewrite && ["push", "ls-remote"].includes(args[0])
+    ? ["-c", `url.${remote}.insteadOf=${origin}`, ...args] : args, { cwd, env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
   git(tmp, ["init", "--bare", "-q", remote]);
   const state = { exists: false, failCreate: false, failPush: false, failFinal: false };
   let pushes = 0;
@@ -59,16 +64,17 @@ function fixture(tmp, home) {
     assert.equal(args[0], "repo"); assert.equal(args[2], "oven");
     if (args[1] === "view") {
       assert.deepEqual(new Set(args[args.indexOf("--json") + 1].split(",")), new Set(["url", "sshUrl", "isEmpty"]));
-      return state.exists ? JSON.stringify({ url: `file://${remote}`, sshUrl: remote, isEmpty: !git(tmp, ["ls-remote", remote]) }) : "";
+      return state.exists ? JSON.stringify({ url, sshUrl, isEmpty: !git(tmp, ["ls-remote", remote]) }) : "";
     }
     assert.equal(args[1], "create"); assert(args.includes("--private") && args.includes("--push"));
     if (state.failCreate) throw failure();
     assert.equal(state.exists, false, "must not recreate the repo");
     state.exists = true;
-    git(cwd, ["remote", "add", "origin", remote]);
+    git(cwd, ["remote", "add", "origin", origin]);
+    if (rewrite) git(cwd, ["config", `url.${remote}.insteadOf`, origin]);
     return push(cwd, ["push", "-u", "origin", "HEAD"]);
   };
-  return { root, remote, git, state, calls, _exec, pushes: () => pushes,
+  return { root, remote, origin, git, state, calls, _exec, pushes: () => pushes,
     run: (extra = {}) => attempt(() => setupProject({ slug: "oven", title: "Oven", path: root, _exec, ...extra })) };
 }
 const complete = (f, out, remote = f.remote) => {
@@ -185,6 +191,40 @@ await scenario("matching repo URL also retries an empty remote", (tmp, home) => 
   f.state.failPush = false; complete(f, f.run(), `file://${f.remote}`);
   assert.equal(f.pushes(), 2);
 });
+// PR82 regressions: gh's HTTPS clone URL differs from its browser URL.
+for (const rewrite of [false, true]) for (const stage of ["failPush", "failFinal"]) {
+  await scenario(`HTTPS ${stage} retry${rewrite ? " with configured insteadOf" : ""}`, (tmp, home) => {
+    const f = fixture(tmp, home, { https: true, rewrite }); f.state[stage] = true;
+    assert(f.run().error); incomplete(f);
+    assert.equal(f.git(f.root, ["config", "--get", "remote.origin.url"]), f.origin);
+    assert.equal(f.git(f.root, ["remote", "get-url", "origin"]), rewrite ? f.remote : f.origin);
+    const head = f.git(f.root, ["rev-parse", "HEAD"]), before = f.pushes();
+    assert.equal(Boolean(f.git(tmp, ["ls-remote", f.remote])), stage === "failFinal");
+    f.state[stage] = false;
+    complete(f, f.run(), rewrite ? f.remote : f.origin);
+    assert.equal(f.pushes() - before, stage === "failFinal" ? 0 : 1);
+    assert(f.git(tmp, ["ls-remote", f.remote]).includes(head));
+    assert.equal(f.calls.filter((c) => c.cmd === "git" && c.args[0] === "init").length, 1);
+    assert.equal(f.git(f.root, ["log", "--format=%s"]).split("\n").filter((x) => x === "forge: project setup").length, 1);
+  });
+}
+await scenario("HTTPS normalization still refuses a different configured repository", (tmp, home) => {
+  const f = fixture(tmp, home, { https: true, rewrite: true }); f.state.failPush = true;
+  assert(f.run().error); f.state.failPush = false;
+  f.git(f.root, ["remote", "set-url", "origin", "https://github.com/elsewhere/oven.git"]);
+  const before = f.pushes(); refused(f.run(), "repo-taken", /repo|remote|history/i); incomplete(f);
+  assert.equal(f.pushes(), before); assert.equal(f.git(tmp, ["ls-remote", f.remote]), "");
+});
+await scenario("a successful setup's clone loads and remains usable after attach", (tmp, home) => {
+  const f = fixture(tmp, home); complete(f, f.run());
+  const clone = join(tmp, "clone"); f.git(tmp, ["clone", "-q", f.remote, clone]);
+  const loaded = attempt(() => loadProject(clone)), n = f.calls.length;
+  assert.ifError(f.run({ path: clone, existing: true }).error);
+  assert.equal(loadProject(clone).slug, "oven"); assert.ifError(loaded.error);
+  assert.doesNotThrow(() => workshopView(clone));
+  assert.equal(f.git(clone, ["status", "--porcelain"]), "");
+  assert(f.calls.slice(n).every((c) => c.cmd === "git" && c.cwd === clone));
+});
 async function http(srv, path, form) {
   const res = await fetch(srv.url + path, { redirect: "manual", signal: AbortSignal.timeout(5000), ...(form ? { method: "POST", headers: { Origin: srv.url }, body: new URLSearchParams(form) } : {}) });
   return { status: res.status, location: res.headers.get("location"), text: await res.text() };
@@ -235,5 +275,23 @@ await scenario("console reload of a plain repository still offers attach", async
   const srv = await serve({ routes: routes({ root: f.root, _exec: f._exec }) });
   try { assert(/\bchecked\b/.test(input((await http(srv, "/setup")).text, "existing"))); }
   finally { await srv.close(); }
+});
+await scenario("a populated setup page shows the refusal code and remedy on reattach", async (tmp, home) => {
+  const f = fixture(tmp, home); complete(f, f.run()); let fail = true;
+  const before = snapshot(f.root), n = f.calls.length;
+  const srv = await serve({ routes: routes({ root: f.root, _exec: (cmd, args, opts) => {
+    if (fail && cmd === "git" && args[0] === "var") throw failure();
+    return f._exec(cmd, args, opts);
+  } }) });
+  try {
+    const submitted = { slug: "oven", existing: "1" };
+    const rejected = await http(srv, "/setup", submitted);
+    assert(rejected.status >= 400 && rejected.status < 500);
+    assert.match(rejected.text, /no-git-identity/); assert.match(rejected.text, /git config|user\.(name|email)/i);
+    assert.equal(snapshot(f.root), before);
+    fail = false; assert.equal((await http(srv, "/setup", submitted)).status, 303);
+    assert.equal(loadProject(f.root).slug, "oven");
+    assert(f.calls.slice(n).every((c) => c.cmd === "git"));
+  } finally { await srv.close(); }
 });
 done();
