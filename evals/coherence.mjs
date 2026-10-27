@@ -257,7 +257,7 @@ await withRoot({}, async (tmp) => {
   const srv = await serve({ routes: [...routes({ root, _query: q.query, _exec: () => "", _fetch: () => { throw new Error("no fetch"); }, _env: {} }), ...deliveryRoutes({ root })], port: 0 });
   try {
     const get = async (p) => { const r = await fetch(srv.url + p, { redirect: "manual" }); return { status: r.status, location: r.headers.get("location"), text: await r.text() }; };
-    const post = async (p, form) => { const r = await fetch(srv.url + p, { method: "POST", body: new URLSearchParams(form), redirect: "manual" }); return { status: r.status, location: r.headers.get("location"), text: await r.text() }; };
+    const post = async (p, form) => { const r = await fetch(srv.url + p, { method: "POST", headers: { Origin: srv.url }, body: new URLSearchParams(form), redirect: "manual" }); return { status: r.status, location: r.headers.get("location"), text: await r.text() }; };
     const home = await get("/");
     check("the root redirects to the board once a PRD exists", home.status === 303 && home.location === "/board", `${home.status} ${home.location}`);
     const pages = await Promise.all(VIEWS.map((v) => get(`/${v.key}`)));
@@ -304,7 +304,7 @@ await withRoot({}, async (tmp) => {
     const partial = await post("/doors/approve", { id: amd.id, by: "Brad", radius: radius[0] });
     check("one box ticked arrives as one value and the door refuses it — the radius is acknowledged whole or not at all", partial.status === 409 && partial.text.includes("radius-unacknowledged") && loadPrd(root).amendments.at(-1).status === "proposed", `${partial.status} ${partial.text.slice(0, 200)}`);
     const whole = new URLSearchParams({ id: amd.id, by: "Brad" }); for (const r of radius) whole.append("radius", r);
-    const approved = await fetch(srv.url + "/doors/approve", { method: "POST", body: whole, redirect: "manual" });
+    const approved = await fetch(srv.url + "/doors/approve", { method: "POST", headers: { Origin: srv.url }, body: whole, redirect: "manual" });
     check("every box ticked arrives as a list and the approve door takes it: the amendment approved, the requirement changed, back to the board",
       approved.status === 303 && approved.headers.get("location") === "/board" && loadPrd(root).amendments.at(-1).status === "approved" && loadPrd(root).requirements[0].statement.endsWith("one-handed."), `${approved.status} ${loadPrd(root).amendments.at(-1).status}`);
 
@@ -326,7 +326,7 @@ await withRoot({}, async (tmp) => {
   try {
     const r = await fetch(srv2.url + "/", { redirect: "manual" });
     check("the root of a project without a PRD leads to the workshop", r.status === 303 && r.headers.get("location") === "/workshop");
-    const opened = await fetch(srv2.url + "/workshop/open", { method: "POST", body: new URLSearchParams({ title: "Kiln", slug: "kiln", seed: "Fire the load once, not twice." }), redirect: "manual" });
+    const opened = await fetch(srv2.url + "/workshop/open", { method: "POST", headers: { Origin: srv2.url }, body: new URLSearchParams({ title: "Kiln", slug: "kiln", seed: "Fire the load once, not twice." }), redirect: "manual" });
     check("opening the PRD through the console is openPrd, then the workshop", opened.status === 303 && opened.headers.get("location") === "/workshop" && loadPrd(fresh).seed === "Fire the load once, not twice.");
   } finally {
     await srv2.close();
@@ -366,7 +366,7 @@ await withRoot({}, async (tmp) => {
   const script = scripted({ structuredSeq: [BINDING, PROVES_NOTHING, CLEAN("STORY-2"), CLEAN("REQ-4"), REBOUND, CLEAN("STORY-1")], usd: [0.8, 0.2, 0.2, 0.2, 0.8, 0.2] });
   const srv = await serve({ routes: deliveryRoutes({ root: cold, _query: script.query, _now: clock }), port: 0 });
   const get = async (p) => { const r = await fetch(srv.url + p, { redirect: "manual" }); return { status: r.status, location: r.headers.get("location"), text: await r.text() }; };
-  const post = async (p, form) => { const r = await fetch(srv.url + p, { method: "POST", body: new URLSearchParams(form), redirect: "manual" }); return { status: r.status, location: r.headers.get("location"), text: await r.text() }; };
+  const post = async (p, form) => { const r = await fetch(srv.url + p, { method: "POST", headers: { Origin: srv.url }, body: new URLSearchParams(form), redirect: "manual" }); return { status: r.status, location: r.headers.get("location"), text: await r.text() }; };
   try {
     const offer = await get("/run");
     check("the setup page: the takeable handoff and the refused one, 'no history yet' where the price would be, the defaults in the form, one model field per Delivery role",
@@ -451,7 +451,7 @@ await withRoot({}, async (tmp) => {
   try {
     const page = await (await fetch(srv2.url + "/run")).text();
     check("the page says dead and offers Start again", />dead</.test(page) && /Start again/.test(page) && page.includes('action="/run/intake/run"'));
-    const restarted = await fetch(srv2.url + "/run/intake/run", { method: "POST", body: new URLSearchParams({ by: "Brad" }), redirect: "manual" });
+    const restarted = await fetch(srv2.url + "/run/intake/run", { method: "POST", headers: { Origin: srv2.url }, body: new URLSearchParams({ by: "Brad" }), redirect: "manual" });
     const runR = readRun(ran);
     check("starting again through the console is the runner's recovery over a dead stage: intake approved, the restart flagged with the silence it stepped over",
       restarted.status === 200 && runR.stages.intake.status === "approved" && runR.flags.some((f) => /restarted over a dead stage/.test(f.reason) && /silent/.test(f.note ?? "")), JSON.stringify(runR.flags));
@@ -463,7 +463,7 @@ await withRoot({}, async (tmp) => {
     await refresh(disc);
     await reexport(disc, ran, { now: clock() });
     const before = runView(ran, { now: clock() });
-    const adopted = await fetch(srv2.url + "/run/adopt", { method: "POST", body: new URLSearchParams({ by: "Brad", version: "2" }), redirect: "manual" });
+    const adopted = await fetch(srv2.url + "/run/adopt", { method: "POST", headers: { Origin: srv2.url }, body: new URLSearchParams({ by: "Brad", version: "2" }), redirect: "manual" });
     const after = runView(ran, { now: clock() });
     check("a newer takeable handoff is adoptable on the view and the page; adopting through the console moves the pin to v2 and the approved stage to stale, whose door is Re-judge — never Run",
       before.adoptable.join() === "2" && adopted.status === 303 && after.run.handoff.version === 2 && after.adoptable.length === 0 && after.stages[0].shown === "stale" && after.stages[0].doors.join() === "rejudge,stop" && after.advance === true && /Re-judge/.test(await (await fetch(srv2.url + "/run")).text()), JSON.stringify(after.stages[0]));
