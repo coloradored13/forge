@@ -59,7 +59,7 @@ function setupPage(v, { values, error } = {}) {
   }
   const s = v.standing;
   const standing = s.budget == null ? `<p class="quote">${usd(s.spent)} spent · no cap</p>` : `<p class="quote${s.over ? " over" : ""}">${usd(s.spent)} of ${usd(s.budget)} spent · ${usd(s.remaining)} remains${s.over ? " · " + badge("over budget", "bad") : ""}</p>`;
-  return { title: "Setup", body: `<h1>${esc(v.project.title)} <span class="muted">${esc(v.project.slug)}</span></h1>`
+  return { title: "Setup", body: `<h1>${esc(v.project.title)} <span class="muted">${esc(v.project.slug)}</span></h1>` + (error ? refusalHtml(error) : "")
     + dl([["root", esc(v.root)], ["remote", esc(v.project.repo?.remote ?? "none")], ["created", when(v.project.created)]])
     + `<h2>Model per role</h2>${rolesTable}<p class="note">Set at setup and read by every call; the ledger records which model each verdict came from.</p>`
     + `<h2>Budget</h2>${standing}`

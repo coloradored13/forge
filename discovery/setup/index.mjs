@@ -6,7 +6,7 @@
 // needs (git, an identity, gh signed in, a free repo name) is checked before it writes,
 // and a setup that stops partway is finished by running it again (DH1b part 2).
 
-import { existsSync, mkdirSync, writeFileSync, readFileSync, readdirSync, realpathSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync, readFileSync, readdirSync, realpathSync, rmSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { join, resolve, dirname, basename, sep } from "node:path";
 import { homedir } from "node:os";
@@ -17,6 +17,8 @@ export const PIPELINE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), ".
 export const DEFAULT_PARENT = join(homedir(), "Forge");
 export const PROJECT_FILE = join("forge", "project.json");
 export const LEDGER = join("forge", "discovery", "calls.jsonl");
+/** Present while a new project's setup is unfinished. Never committed, so no clone inherits it. */
+export const SETUP_MARKER = join("forge", ".setup-incomplete");
 const SLUG = /^[a-z0-9][a-z0-9-]{0,63}$/;
 
 /** What every project keeps out of its repository, whatever it is built with. */
@@ -69,8 +71,7 @@ const PREREQS = [
 export function partialProject(root) {
   const file = join(root, PROJECT_FILE);
   if (!existsSync(file)) return null;
-  const project = JSON.parse(readFileSync(file, "utf8"));
-  return project.setup === "incomplete" ? project : null;
+  return existsSync(join(root, SETUP_MARKER)) ? JSON.parse(readFileSync(file, "utf8")) : null;
 }
 
 export function exec(cmd, args, { cwd }) {
@@ -118,7 +119,7 @@ export function setupProject({
   }
   const projectFile = join(root, PROJECT_FILE);
   const prior = existsSync(projectFile) ? JSON.parse(readFileSync(projectFile, "utf8")) : null;
-  const resuming = !existing && prior?.setup === "incomplete";
+  const resuming = !existing && Boolean(prior) && existsSync(join(root, SETUP_MARKER));
   if (existing) {
     if (!existsSync(join(root, ".git"))) throw new SetupRefused("not-a-repo", `setup: ${root} has no .git — attach a repository, or create a new project`);
   } else if (existsSync(root) && readdirSync(root).length && !prior) {
@@ -155,9 +156,11 @@ export function setupProject({
   const project = prior ?? {
     slug, title: title ?? slug, created: _now().toISOString(),
     repo: { path: root, remote: null },
-    models, budget, ledger: LEDGER, ...(created ? { setup: "incomplete" } : {}),
+    models, budget, ledger: LEDGER,
   };
   const save = () => writeFileSync(projectFile, JSON.stringify(project, null, 2) + "\n");
+  const unfinished = () => writeFileSync(join(root, SETUP_MARKER), "Forge setup has not finished — run setup again with the same name.\n");
+  if (created) unfinished();
   save();
 
   if (created) {
@@ -167,31 +170,32 @@ export function setupProject({
       const fresh = !existsSync(join(root, ".git"));
       if (fresh) run("git", ["init", "-q"]);
       if (fresh || !succeeds(() => run("git", ["rev-parse", "--verify", "-q", "HEAD"]))) {
-        run("git", ["add", "-A"]);
+        run("git", ["add", "-A", "--", ".", `:!${SETUP_MARKER}`]);
         run("git", ["commit", "-q", "-m", "forge: project setup"]);
       }
       if (!repo) run("gh", ["repo", "create", slug, "--private", "--source", root, "--push"]);
       else adopt({ repo, slug, run });
       project.repo.remote = run("git", ["remote", "get-url", "origin"]) || null;
-      delete project.setup;
+      rmSync(join(root, SETUP_MARKER), { force: true });
       save();
       run("git", ["add", PROJECT_FILE]);
       run("git", ["commit", "-q", "-m", "forge: record the remote"]);
     } catch (e) {
-      project.setup = "incomplete";
-      save();
+      unfinished();
       if (e instanceof SetupRefused) throw e;
       throw new SetupRefused("setup-unfinished", `setup: stopped before it finished — ${String(e?.message ?? e).split("\n")[0]}. Fix that, then try again: setup finishes what is missing`);
     }
   } else {
     run("git", ["add", "forge", "discovery", ".gitignore"]);
     run("git", ["commit", "-q", "-m", "forge: attach project", "--allow-empty"]);
+    rmSync(join(root, SETUP_MARKER), { force: true });
   }
 
   return { root, created, remote: project.repo.remote, project, ignored };
 }
 
 const succeeds = (fn) => { try { fn(); return true; } catch { return false; } };
+const norm = (u) => String(u).trim().replace(/\/+$/, "").replace(/\.git$/i, "").toLowerCase();
 
 /**
  * An unfinished setup's GitHub repo, judged by what is on it. With a matching `origin`: an
@@ -201,8 +205,11 @@ const succeeds = (fn) => { try { fn(); return true; } catch { return false; } };
 function adopt({ repo, slug, run }) {
   const taken = new SetupRefused("repo-taken", `setup: the GitHub repo ${slug} holds other history — pick another name, or attach a clone of it`);
   let origin = null;
-  try { origin = run("git", ["remote", "get-url", "origin"]); } catch { origin = null; }
-  if (origin && [repo.url, repo.sshUrl].includes(origin)) {
+  // As configured, not as `insteadOf` rewrites it: the comparison is about which repository it names.
+  try { origin = run("git", ["config", "--get", "remote.origin.url"]); } catch { origin = null; }
+  // gh writes an HTTPS origin with `.git`; `gh repo view` reports the browser URL without it.
+  const same = (a) => [repo.url, repo.sshUrl].some((u) => u && norm(u) === norm(a));
+  if (origin && same(origin)) {
     const refs = run("git", ["ls-remote", "origin"]);
     if (!refs.trim()) run("git", ["push", "-u", "origin", "HEAD"]);
     else if (!refs.includes(run("git", ["rev-parse", "HEAD"]))) throw taken;
@@ -217,7 +224,7 @@ export function loadProject(root) {
   const file = join(root, PROJECT_FILE);
   if (!existsSync(file)) throw new SetupRefused("no-project", `${root} is not a Forge project — run setup first`);
   const project = JSON.parse(readFileSync(file, "utf8"));
-  if (project.setup === "incomplete") throw new SetupRefused("setup-incomplete", `${root}: setup has not finished — run it again with the same name to finish it`);
+  if (existsSync(join(root, SETUP_MARKER))) throw new SetupRefused("setup-incomplete", `${root}: setup has not finished — run it again with the same name to finish it`);
   return project;
 }
 
