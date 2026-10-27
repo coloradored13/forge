@@ -116,9 +116,12 @@ for (const failure of ["handler-refusal", "handler-throw", "work-refusal", "work
   const root = seedProject(tmp); mkdirSync(join(root, ".git"), { recursive: true });
   const reset = "2099-01-02T15:04:00Z", waits = [];
   const q = scripted({ throwWith: failure === "usage" ? [`usage limit reached — resets at ${reset}`, null] : failure === "work-throw" ? ["scripted work failure", null] : undefined });
-  const srv = await serve({ routes: routes({ root, _query: q.query, _sleep: async (ms) => waits.push(ms), _exec: () => { throw new Error("scripted executor failure"); } }) });
+  // A generic handler crash is independent of setup's recoverable command failures.
+  const srv = await serve({ routes: [...routes({ root, _query: q.query, _sleep: async (ms) => waits.push(ms) }),
+    { method: "POST", path: "/test/handler-throw", handler: () => { throw new Error("scripted handler failure"); } },
+  ] });
   try {
-    const r = failure === "handler-refusal" ? await post(srv, "/workshop/open", { slug: "dock", seed: "already exists" }) : failure === "handler-throw" ? await post(srv, "/setup", { slug: "dock", existing: "1" }) : failure === "work-refusal" ? await post(srv, "/workshop/problem/extract") : await post(srv, path, text);
+    const r = failure === "handler-refusal" ? await post(srv, "/workshop/open", { slug: "dock", seed: "already exists" }) : failure === "handler-throw" ? await post(srv, "/test/handler-throw") : failure === "work-refusal" ? await post(srv, "/workshop/problem/extract") : await post(srv, path, text);
     check(`${failure}: renders failure at the appropriate transport status`, (failure === "handler-refusal" ? r.status === 409 : failure === "handler-throw" ? r.status === 500 : r.status === 200) && /class="refusal"/.test(r.text) && (failure !== "usage" || r.text.includes(reset)));
     if (failure === "usage") check("Discovery console usage gap makes exactly one query and no sleep", q.calls.length === 1 && waits.length === 0 && readTranscript(root, "problem").length === 0);
     check(`${failure}: guard released for the next successful door`, succeeded(await post(srv, path, text)));
