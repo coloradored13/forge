@@ -5,8 +5,8 @@
 // a proposal, never applied, while unruled criteria stay editable. Red at DH0 by design
 // (docs/discovery-m0-evidence.md); DH1a turns it green. Its assertions may be tightened, never loosened.
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { suite, scripted, withRoot } from "./_harness.mjs";
 import { partialContract, validateAgainst } from "../shared/schema/index.mjs";
 import { checkScope } from "../shared/scope.mjs";
@@ -17,7 +17,7 @@ import { section } from "../discovery/workshop/sections.mjs";
 import * as doors from "../discovery/doors/index.mjs";
 import { generate, GATE as PROTOTYPE_GATE } from "../discovery/prototype/index.mjs";
 import { write, loadStories, GATE as STORY_GATE } from "../discovery/stories/index.mjs";
-import { Refused, readDoc, readVerdict, HTML_FILE, PRD_FILE, PROTOTYPE_FILE, STORIES_FILE } from "../discovery/record/index.mjs";
+import { Refused, readDoc, readVerdict, PRD_FILE, PROTOTYPE_FILE, STORIES_FILE } from "../discovery/record/index.mjs";
 
 const { check, done } = suite("discovery-loop · D01 a blocking question holds the stories, D02 a ruling survives extraction", 11);
 const QUESTION = "Can a member cancel a booking after pickup?";
@@ -59,18 +59,13 @@ for (const blocking of [false, true]) {
         "D01 the refusal shows the PM the blocking question"]
       : ["D01 control: a non-blocking question permits a valid persisted backlog"];
     const asked = [{ question: ASIDE, blocking: false }, { question: QUESTION, blocking }];
-    const writes = [{ name: "Write", input: { file_path: HTML_FILE } }];
-    const builder = scripted({ structured: {
+    const builder = scripted({ structured: { html: HTML,
       screens: [{ id: "SCREEN-1", name: "Booking", surface_ref: "SURF-1", req_refs: ["REQ-1"] }],
       uncovered: [], notes: "Cancellation policy needs PM confirmation.", open_questions: asked,
-    }, toolUses: writes });
+    } });
     const setup = await attempt(async () => {
       const root = await project(parent, [cancel("REQ-1")]);
-      // The scripted SDK Write, carried out where the runner pointed the builder. Not containment evidence (D13).
-      await generate({ root, _query: (args) => {
-        for (const w of writes) { const p = resolve(args.options.cwd, w.input.file_path); mkdirSync(dirname(p), { recursive: true }); writeFileSync(p, HTML); }
-        return builder.query(args);
-      } });
+      await generate({ root, _query: builder.query });
       doors.agree({ root, by: "PM" }); // both runs agree the revision; `blocking` stays the only difference
       return root;
     });

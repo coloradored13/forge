@@ -6,8 +6,8 @@
 // the PRD or the prototype voids it; a ruled criterion the PM's own words contradict is
 // held as a proposal, and approving it supersedes the ruling on the record.
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { suite, scripted, withRoot } from "./_harness.mjs";
 import { seedProject, SCREENS, EPICS, STORIES, HTML } from "./_fixture.mjs";
 import { loadPrd, extract, appendTranscript, WorkshopRefused } from "../discovery/workshop/index.mjs";
@@ -15,7 +15,7 @@ import * as doors from "../discovery/doors/index.mjs";
 import { generate } from "../discovery/prototype/index.mjs";
 import { write, loadStories } from "../discovery/stories/index.mjs";
 import { splitReraised } from "../shared/judge/index.mjs";
-import { Refused, readDoc, readVerdict, rulingsOf, HTML_FILE, PRD_FILE, PROTOTYPE_FILE, STORIES_FILE } from "../discovery/record/index.mjs";
+import { Refused, readDoc, readVerdict, rulingsOf, PRD_FILE, PROTOTYPE_FILE, STORIES_FILE } from "../discovery/record/index.mjs";
 
 const { check, done } = suite("discovery-decisions · questions, agreement and rulings stories wait on", 22);
 const ASIDE = { question: "Should the run sheet show each vendor's phone number?", blocking: false };
@@ -41,15 +41,10 @@ const door = (name, args) => attempt(() => {
 });
 const asked = (root) => (readDoc(root, PROTOTYPE_FILE)?.open_questions ?? []).map((q) => `${q.id}:${q.status}:${q.question.slice(0, 18)}`).join(" | ");
 
-/** A real build: the scripted builder writes the HTML where the runner points it and returns these questions. */
+/** A real build: the scripted builder returns HTML and these questions. */
 async function build(root, open_questions, uncovered = ["REQ-4"]) {
-  const builder = scripted({ structured: { screens: SCREENS, uncovered, notes: "Start on the run sheet.", open_questions }, toolUses: [{ name: "Write", input: { file_path: HTML_FILE } }] });
-  return attempt(() => generate({ root, _query: (args) => {
-    const p = resolve(args.options.cwd, HTML_FILE);
-    mkdirSync(dirname(p), { recursive: true });
-    writeFileSync(p, HTML);
-    return builder.query(args);
-  } }));
+  const builder = scripted({ structured: { html: HTML, screens: SCREENS, uncovered, notes: "Start on the run sheet.", open_questions } });
+  return attempt(() => generate({ root, _query: builder.query }));
 }
 
 async function stories(root, extra) {

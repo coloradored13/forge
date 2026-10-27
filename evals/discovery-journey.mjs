@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { suite, scripted, withRoot } from "./_harness.mjs";
-import { project, cancel, seedStories, writeHtml } from "./_fixture.mjs";
+import { project, cancel, seedStories } from "./_fixture.mjs";
 import * as doors from "../discovery/doors/index.mjs";
 import { loadPrd } from "../discovery/workshop/index.mjs";
 import { Refused, readDoc, agreementGap, PRD_FILE, PROTOTYPE_FILE, STORIES_FILE } from "../discovery/record/index.mjs";
@@ -19,9 +19,9 @@ const bytes = (root, file) => readFileSync(join(root, file), "utf8");
 const accepted = (prd) => ({ requirements: prd.requirements, hash: prd.meta.content_hash, version: prd.meta.version, agreements: prd.agreements });
 const noService = () => { throw new Error("unexpected external service"); };
 async function build(root) {
-  const q = scripted({ structured: { screens: [{ id: "SCREEN-1", name: "Booking", surface_ref: "SURF-1", req_refs: ["REQ-1"] }],
+  const q = scripted({ structured: { html: "<!doctype html><title>Booking</title><button>Cancel booking</button>\n", screens: [{ id: "SCREEN-1", name: "Booking", surface_ref: "SURF-1", req_refs: ["REQ-1"] }],
     uncovered: [], notes: "Confirm cancellation policy.", open_questions: [{ question: QUESTION, blocking: true }] } });
-  await generate({ root, _query: (args) => { writeHtml(root, "<!doctype html><title>Booking</title><button>Cancel booking</button>\n"); return q.query(args); } });
+  await generate({ root, _query: q.query });
   assert.equal(q.calls.length, 1); return q;
 }
 async function setup(parent) {

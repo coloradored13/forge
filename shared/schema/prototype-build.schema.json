@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forge.local/schema/prototype-build.schema.json",
+  "title": "Prototype build",
+  "description": "What the prototype builder returns: the page itself and the record of what it shows. The builder writes nothing; the runner checks the page and publishes it, and the record is saved without it.",
+  "type": "object",
+  "required": ["screens", "uncovered", "notes", "open_questions", "html"],
+  "additionalProperties": false,
+  "properties": {
+    "screens": { "$ref": "prototype.schema.json#/properties/screens" },
+    "uncovered": { "$ref": "prototype.schema.json#/properties/uncovered" },
+    "notes": { "$ref": "prototype.schema.json#/properties/notes" },
+    "open_questions": { "$ref": "prototype.schema.json#/properties/open_questions" },
+    "html": { "type": "string", "description": "The whole prototype: one self-contained HTML page, with inline CSS and JavaScript and no network references." }
+  }
+}

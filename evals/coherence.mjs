@@ -31,7 +31,7 @@ import { agree } from "../discovery/doors/index.mjs";
 import { GATE as EXPORT_GATE } from "../discovery/export/index.mjs";
 import rules from "../shared/rules.json" with { type: "json" };
 
-const { check, done } = suite("coherence · one home per concept", 206);
+const { check, done } = suite("coherence · one home per concept", 210);
 
 const same = (a, b) => a.length === b.length && [...a].sort().join("\0") === [...b].sort().join("\0");
 const deepKeys = (node, out = new Set()) => {

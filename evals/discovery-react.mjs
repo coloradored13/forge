@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync, readdirSync, unlinkSync } from "node:fs";
 import { join, relative } from "node:path";
 import { suite, scripted, withRoot } from "./_harness.mjs";
-import { seedProject, seedPrototype, seedStories, project, cancel, put, writeHtml, EPICS, STORIES } from "./_fixture.mjs";
+import { seedProject, seedPrototype, seedStories, project, cancel, put, HTML, EPICS, STORIES } from "./_fixture.mjs";
 import * as doors from "../discovery/doors/index.mjs";
 import { loadPrd, savePrd, PRD_FILE } from "../discovery/workshop/index.mjs";
 import { Refused, readDoc, PROTOTYPE_FILE, STORIES_FILE } from "../discovery/record/index.mjs";
@@ -45,8 +45,8 @@ async function refused(fn, code, pq) {
 }
 async function build(root, notes = "Notes", questions = [{ question: "Who records the reason?", blocking: true }]) {
   const proto = readDoc(root, PROTOTYPE_FILE);
-  const q = scripted({ structured: { screens: proto.screens, uncovered: proto.uncovered, notes, open_questions: questions } });
-  return generate({ root, _query: (args) => { writeHtml(root); return q.query(args); } });
+  const q = scripted({ structured: { html: HTML, screens: proto.screens, uncovered: proto.uncovered, notes, open_questions: questions } });
+  return generate({ root, _query: q.query });
 }
 
 await test("nullable schema exposes exactly six described paths and accepts both change forms", () => {

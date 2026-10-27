@@ -9,10 +9,11 @@
 // too: intake's question budget, counted per story from the snapshot and never trimmed —
 // a story over it is a Discovery gate-miss the meter records. No model is reached.
 
+import { createHash } from "node:crypto";
 import { join } from "node:path";
-import { existsSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { suite, withRoot, scripted } from "./_harness.mjs";
-import { seedProject, seedPrototype, seedStories, writeHtml, SCREENS, EPICS, STORIES } from "./_fixture.mjs";
+import { seedProject, seedPrototype, seedStories, HTML, SCREENS, EPICS, STORIES } from "./_fixture.mjs";
 import { outputContract, validate } from "../shared/schema/index.mjs";
 import { verify } from "../shared/hash.mjs";
 import { record, rows, meter, funnelPath, SIGNALS } from "../shared/funnel.mjs";
@@ -104,18 +105,18 @@ await withRoot({}, (parent) => {
 await withRoot({}, async (parent) => {
   const root = seedProject(parent);
   const prd = loadPrd(root);
-  const html = writeHtml(root);
-  const structured = { screens: SCREENS, uncovered: ["REQ-4"], notes: "Start on the run sheet.", open_questions: [] };
+  const html = createHash("sha256").update(HTML).digest("hex");
+  const structured = { html: HTML, screens: SCREENS, uncovered: ["REQ-4"], notes: "Start on the run sheet.", open_questions: [] };
 
-  const q = scripted({ structured, toolUses: [{ name: "Read", input: { file_path: "discovery/prd.json" } }, { name: "Write", input: { file_path: HTML_FILE } }] });
+  const q = scripted({ structured, toolUses: [{ name: "Read", input: { file_path: "discovery/prd.json" } }] });
   const out = await generate({ root, _query: q.query });
   const o = q.calls[0].options;
-  check("the builder is a writer: Read/Write/Edit/Glob/Grep, edits accepted, the prototype contract as its output format, opus billed to discovery.writer",
-    q.calls.length === 1 && eq(o.tools, ["Read", "Write", "Edit", "Glob", "Grep"]) && o.permissionMode === "acceptEdits" && eq(o.outputFormat, { type: "json_schema", schema: outputContract("prototype") }) && out.model === "claude-opus-5" && out.usd === 0.05, JSON.stringify({ tools: o.tools, mode: o.permissionMode, model: out.model }));
+  check("the builder is a writer: Read/Glob/Grep, default permissions, the build contract as its output format, opus billed to discovery.writer",
+    q.calls.length === 1 && eq(o.tools, ["Read", "Glob", "Grep"]) && eq(o.allowedTools, o.tools) && o.permissionMode === "default" && eq(o.outputFormat, { type: "json_schema", schema: outputContract("prototype-build") }) && out.model === "claude-opus-5" && out.usd === 0.05, JSON.stringify({ tools: o.tools, mode: o.permissionMode, model: out.model }));
   check("its system prompt is the builder's identity plus the mechanics: scope, and every arithmetic rule as checked elsewhere",
     /^# Prototype builder/.test(o.systemPrompt) && /## Scope/.test(o.systemPrompt) && /One door, one shift, no exports\./.test(o.systemPrompt) && /## Checked elsewhere/.test(o.systemPrompt) && PROTO_RULES.every((r) => o.systemPrompt.includes(r)), o.systemPrompt.slice(-400));
-  check("its prompt is the PRD after the line and where to write — nothing about existing screens or notes on a first build",
-    /REQ-1/.test(q.calls[0].prompt) && q.calls[0].prompt.includes(`Write one file, \`${HTML_FILE}\``) && !/## Existing screens/.test(q.calls[0].prompt) && !/## The PM's notes/.test(q.calls[0].prompt));
+  check("its prompt is the PRD after the line and HTML output contract — nothing about existing screens or notes on a first build",
+    /REQ-1/.test(q.calls[0].prompt) && /\/html/.test(o.systemPrompt) && !/Write one file/.test(q.calls[0].prompt) && !/## Existing screens/.test(q.calls[0].prompt) && !/## The PM's notes/.test(q.calls[0].prompt));
   const doc = readDoc(root, PROTOTYPE_FILE);
   check("the record is written: id from the slug, traced to the PRD's version and hash, the file's hash, the builder's screens; stamped and verifying",
     doc.id === "proto-dock" && doc.traces.prd.version === "0.1.0" && doc.traces.prd.content_hash === prd.meta.content_hash && doc.file === HTML_FILE && doc.file_hash === html && eq(doc.screens, SCREENS) && validate("prototype", doc).ok && verify(doc).verdict === "pass" && eq(out.prototype, doc), JSON.stringify(doc).slice(0, 300));
@@ -125,24 +126,22 @@ await withRoot({}, async (parent) => {
   check("one call, one ledger row", calls(ledgerPath(root)).length === 1);
 
   // A rebuild: existing ids and the PM's notes ride in; a new screen may be minted; a dropped id is refused.
-  const q2 = scripted({ structured: { ...structured, screens: [...SCREENS, { id: "SCREEN-3", name: "Confirming an exception", surface_ref: "SURF-1", req_refs: ["REQ-1"] }] }, toolUses: [{ name: "Write", input: { file_path: join(root, HTML_FILE) } }] });
+  const q2 = scripted({ structured: { ...structured, screens: [...SCREENS, { id: "SCREEN-3", name: "Confirming an exception", surface_ref: "SURF-1", req_refs: ["REQ-1"] }] } });
   const out2 = await generate({ root, notes: "The run sheet needs the vendor on each row.", _query: q2.query });
-  check("a rebuild is told the existing screen ids and the PM's notes; an absolute path to the one file is the one file",
+  check("a rebuild is told the existing screen ids and the PM's notes",
     /## Existing screens[\s\S]*- SCREEN-1: /.test(q2.calls[0].prompt) && /## The PM's notes on the last build\n\nThe run sheet needs the vendor/.test(q2.calls[0].prompt) && out2.prototype.screens.length === 3);
-  const q3 = scripted({ structured: { ...structured, screens: [SCREENS[0]] }, toolUses: [{ name: "Write", input: { file_path: HTML_FILE } }] });
+  const q3 = scripted({ structured: { ...structured, screens: [SCREENS[0]] } });
   const dropped = await refusal(() => generate({ root, _query: q3.query }));
   check("a rebuild that drops a screen id is refused, naming the ids; the record on disk is the last accepted build", dropped instanceof Refused && dropped.code === "ids-dropped" && /SCREEN-2, SCREEN-3/.test(dropped.message) && readDoc(root, PROTOTYPE_FILE).screens.length === 3, dropped?.message);
 
-  // The builder wrote somewhere else, or nowhere, or returned nothing, or returned the wrong shape.
+  // The builder used a write tool, returned blank HTML, nothing, or the wrong shape.
   const elsewhere = await refusal(() => generate({ root, _query: scripted({ structured, toolUses: [{ name: "Write", input: { file_path: HTML_FILE } }, { name: "Edit", input: { file_path: "src/app.js" } }] }).query }));
-  check("a write anywhere but the one file is refused, naming the file", elsewhere instanceof Refused && elsewhere.code === "wrote-elsewhere" && /src\/app\.js/.test(elsewhere.message), elsewhere?.message);
-  rmSync(join(root, HTML_FILE));
-  const noHtml = await refusal(() => generate({ root, _query: scripted({ structured }).query }));
-  check("no file written is refused — the record is not the prototype", noHtml instanceof Refused && noHtml.code === "no-html", noHtml?.message);
-  writeHtml(root);
-  const silent = await refusal(() => generate({ root, _query: scripted({ toolUses: ["Write"].map(() => ({ name: "Write", input: { file_path: HTML_FILE } })) }).query }));
+  check("any write is refused", elsewhere instanceof Refused && elsewhere.code === "wrote", elsewhere?.message);
+  const noHtml = await refusal(() => generate({ root, _query: scripted({ structured: { ...structured, html: "  " } }).query }));
+  check("blank returned HTML is refused", noHtml instanceof Refused && noHtml.code === "no-html", noHtml?.message);
+  const silent = await refusal(() => generate({ root, _query: scripted().query }));
   check("no structured answer is refused", silent instanceof Refused && silent.code === "no-structured-output", silent?.message);
-  const wrong = await refusal(() => generate({ root, _query: scripted({ structured: { screens: "two", uncovered: [] }, toolUses: [{ name: "Write", input: { file_path: HTML_FILE } }] }).query }));
+  const wrong = await refusal(() => generate({ root, _query: scripted({ structured: { ...structured, screens: "two" } }).query }));
   check("a record that does not fit the contract is refused", wrong instanceof Refused && wrong.code === "prototype-invalid", wrong?.message);
   check("nothing refused reached the record: three screens still, the verdict still the last accepted build's", readDoc(root, PROTOTYPE_FILE).screens.length === 3 && readVerdict(root, PROTO_GATE).judged[1].content_hash === readDoc(root, PROTOTYPE_FILE).meta.content_hash);
 

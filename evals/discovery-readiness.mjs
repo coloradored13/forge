@@ -48,8 +48,8 @@ const blocked = async (root, rule, exits = EXITS) => {
 const movePrd = (root) => { const p = loadPrd(root); p.problem.crux += " at night"; savePrd(root, p); };
 const backlog = () => scripted({ structured: { epics: EPICS, stories: STORIES, notes: "", open_questions: [] } });
 const rebuild = async (root, screens = SCREENS, html = HTML, before = () => {}) => {
-  const q = scripted({ structured: { screens, uncovered: ["REQ-4"], notes: "", open_questions: [] } });
-  await generate({ root, _query: (args) => { before(); writeHtml(root, html); return q.query(args); } });
+  const q = scripted({ structured: { html, screens, uncovered: ["REQ-4"], notes: "", open_questions: [] } });
+  await generate({ root, _query: (args) => { before(); return q.query(args); } });
 };
 const setup = async (parent) => {
   const root = seedProject(parent); seedPrototype(root); seedStories(root); seedDesign(root);
@@ -179,7 +179,7 @@ await withRoot({}, async (parent) => {
   await rebuild(root, SCREENS, HTML + "<!-- new build -->", () => {
     beforeCall = kept(root, jsonPath, saved) && kept(root, htmlPath, html);
   });
-  check("prototype JSON/HTML pair is archived before the builder overwrites HTML", beforeCall);
+  check("prototype JSON/HTML pair is archived before the builder call", beforeCall);
   check("archived HTML matches the outgoing record file_hash", kept(root, jsonPath, saved) && kept(root, htmlPath, html)
     && hash(bytes(root, htmlPath)) === JSON.parse(saved).file_hash && bytes(root, HTML_FILE) !== html);
 });
@@ -187,9 +187,9 @@ for (const failure of ["ids-dropped", "model-error"]) await withRoot({}, async (
   const root = seedProject(parent); seedPrototype(root);
   const saved = bytes(root, PROTOTYPE_FILE), html = bytes(root, HTML_FILE), jsonPath = archive("prototype", saved), htmlPath = jsonPath.replace(/\.json$/, ".html");
   const failedHtml = HTML + `<!-- ${failure} -->`, q = scripted(failure === "model-error" ? { resultError: "scripted model failure" }
-    : { structured: { screens: SCREENS.slice(0, 1), uncovered: ["REQ-4"], notes: "", open_questions: [] } });
-  const failed = await attempt(() => generate({ root, _sleep: async () => {}, _query: (args) => { writeHtml(root, failedHtml); return q.query(args); } }));
-  check(`${failure}: failed builder overwrote HTML but retained the outgoing record`, q.calls.length === 1 && bytes(root, HTML_FILE) === failedHtml && bytes(root, PROTOTYPE_FILE) === saved
+    : { structured: { html: failedHtml, screens: SCREENS.slice(0, 1), uncovered: ["REQ-4"], notes: "", open_questions: [] } });
+  const failed = await attempt(() => generate({ root, _sleep: async () => {}, _query: q.query }));
+  check(`${failure}: failed builder retained HTML and the outgoing record`, q.calls.length === 1 && bytes(root, HTML_FILE) === html && bytes(root, PROTOTYPE_FILE) === saved
     && (failure === "ids-dropped" ? failed.error instanceof Refused && failed.error.code === failure : /scripted model failure/.test(failed.error?.message)));
   check(`${failure}: failed build already preserved the original pair`, kept(root, jsonPath, saved) && kept(root, htmlPath, html));
   await rebuild(root, SCREENS, HTML + "<!-- successful retry -->");
