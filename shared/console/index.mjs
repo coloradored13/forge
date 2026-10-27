@@ -150,9 +150,20 @@ export function serve({ routes, nav = [], port = 0, host = "127.0.0.1", brand })
   const send = (res, status, html) => { res.writeHead(status, { "content-type": TYPES[".html"] }); res.end(html); };
   const errorPage = (res, pathname, e) => send(res, e?.code ? 409 : 500, page({ title: e?.code ? "Refused" : "Error", nav: navFor(pathname), body: `<h1>${e?.code ? "The door refused" : "Something failed"}</h1>${refusalHtml(e)}<p><a href="javascript:history.back()">Back</a></p>`, brand }));
 
+  // Trust comes from the address this server listens on, never from the request: a page on
+  // another origin, a rebinding name or a sandboxed prototype cannot drive a door (D13).
+  let trusted = new Set(), origins = new Set(), busy = false;
+  const refuse = (res, status, pathname, code, message) => send(res, status, page({ title: "Refused", nav: navFor(pathname), body: `<h1>The console refused</h1>${refusalHtml({ code, message })}`, brand }));
+
   const server = createServer(async (req, res) => {
-    const url = new URL(req.url, `http://${req.headers.host ?? "localhost"}`);
+    if (!trusted.has(req.headers.host)) return refuse(res, 403, "/", "untrusted-host", `this console answers only at ${[...trusted][0]} — open it from the address it printed`);
+    const url = new URL(req.url, `http://${req.headers.host}`);
     const { pathname } = url;
+    const mutating = req.method === "POST";
+    if (mutating && !origins.has(req.headers.origin)) return refuse(res, 403, pathname, "untrusted-origin", "a change must come from this console's own page");
+    // One change at a time, held until its long work finishes, not just its handler.
+    if (mutating && busy) return refuse(res, 409, pathname, "busy", "another change is still running — wait for it to finish, then try again");
+    if (mutating) busy = true;
     try {
       const route = compiled.find((r) => r.method === req.method && r.re.test(pathname));
       if (!route) return send(res, 404, page({ title: "Not found", nav: navFor(pathname), body: `<h1>Not found</h1><p class="muted">${esc(pathname)}</p>`, brand }));
@@ -164,7 +175,7 @@ export function serve({ routes, nav = [], port = 0, host = "127.0.0.1", brand })
       if (out.redirect) { res.writeHead(303, { location: out.redirect }); return res.end(); }
       if (out.file) {
         if (!existsSync(out.file)) return send(res, 404, page({ title: "Not found", nav: navFor(pathname), body: `<h1>Not found</h1><p class="muted">${esc(out.file)}</p>`, brand }));
-        res.writeHead(200, { "content-type": out.type ?? TYPES[extname(out.file)] ?? "application/octet-stream" });
+        res.writeHead(200, { "content-type": out.type ?? TYPES[extname(out.file)] ?? "application/octet-stream", ...(out.headers ?? {}) });
         return res.end(readFileSync(out.file));
       }
       if (out.work) {
@@ -185,6 +196,8 @@ export function serve({ routes, nav = [], port = 0, host = "127.0.0.1", brand })
       return send(res, out.status ?? 200, page({ title: out.title, nav: navFor(pathname), body: out.body, brand }));
     } catch (e) {
       return errorPage(res, pathname, e);
+    } finally {
+      if (mutating) busy = false;
     }
   });
 
@@ -192,6 +205,8 @@ export function serve({ routes, nav = [], port = 0, host = "127.0.0.1", brand })
     server.once("error", no);
     server.listen(port, host, () => {
       const a = server.address();
+      trusted = new Set([`${host}:${a.port}`, `localhost:${a.port}`]);
+      origins = new Set([...trusted].map((t) => `http://${t}`));
       ok({ server, url: `http://${host}:${a.port}`, port: a.port, close: () => new Promise((r) => server.close(r)) });
     });
   });

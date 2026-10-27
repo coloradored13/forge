@@ -21,7 +21,7 @@ import { isUsageGap, withUsagePause } from "./usage-pause.mjs";
 
 export { modelFor, roles, defaults } from "./models.mjs";
 export { rows, spent, totals, estimate, standing, quote, tally } from "./ledger.mjs";
-export { withUsagePause, isUsageGap, waitMsFor } from "./usage-pause.mjs";
+export { withUsagePause, isUsageGap, waitMsFor, singleAttempt } from "./usage-pause.mjs";
 
 export const HALVES = ["discovery", "delivery"];
 
