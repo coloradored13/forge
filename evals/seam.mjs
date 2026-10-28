@@ -11,6 +11,7 @@
 
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { homedir } from "node:os";
 import { suite, withRoot, scripted, ROOT } from "./_harness.mjs";
 import { refresh, seedProject, seedPrototype, seedStories, seedDesign, STORIES, seedBuild, builder, roundCtx, put, gitIn, BUILT } from "./_fixture.mjs";
 import { round as buildRound, worktree, WORKTREE, BRANCH, RECORD } from "../delivery/build/index.mjs";
@@ -120,9 +121,9 @@ withRoot({ "pipeline/shared/rules.json": RULES, "pipeline/SPEC.md": "#", "taken/
   check("a new project lands at <parent>/<slug> with discovery/, forge/ and forge/project.json beside a README and .gitignore",
     made.root === root && made.created && existsSync(join(root, "discovery")) && existsSync(join(root, "forge", "project.json")) && existsSync(join(root, "README.md")) && existsSync(join(root, ".gitignore")));
   const cmds = execs.map((e) => `${e.cmd} ${e.args.slice(0, 2).join(" ")}`);
-  check("the sequence is git init → add → commit → gh repo create --private → record the remote → commit, all in the project root",
-    cmds.join(" | ") === "git init -q | git add -A | git commit -q | gh repo create | git remote get-url | git add forge/project.json | git commit -q" && execs.every((e) => e.cwd === root), cmds.join(" | "));
-  const gh = execs.find((e) => e.cmd === "gh");
+  check("the sequence is git init → add → commit → gh repo create --private → record the remote → commit, after preflight in the home directory",
+    cmds.join(" | ") === "git --version | git var GIT_COMMITTER_IDENT | gh --version | gh auth status | gh repo view | git init -q | git add -A | git commit -q | gh repo create | git remote get-url | git add forge/project.json | git commit -q" && execs.slice(0, 5).every((e) => e.cwd === homedir()) && execs.slice(5).every((e) => e.cwd === root), cmds.join(" | "));
+  const gh = execs.find((e) => e.cmd === "gh" && e.args[1] === "create");
   check("the remote is private and the source is the project root", gh.args.includes("--private") && gh.args[gh.args.indexOf("--source") + 1] === root && gh.args.includes("--push"));
   const project = loadProject(root);
   check("project.json records slug, title, path, remote, models, budget and the ledger path",
@@ -135,7 +136,7 @@ withRoot({ "pipeline/shared/rules.json": RULES, "pipeline/SPEC.md": "#", "taken/
   const attached = setupProject({ slug: "theirs", title: "Theirs", path: theirs, existing: true, pipelineRoot, _exec });
   check("attaching lays down discovery/ and forge/project.json, commits them, and creates no remote",
     !attached.created && attached.remote === null && existsSync(join(theirs, "forge", "project.json")) && existsSync(join(theirs, "discovery")) && existsSync(join(theirs, "src", "app.js")) &&
-    !execs.some((e) => e.cmd === "gh") && execs.map((e) => e.args[0]).join() === "add,commit", JSON.stringify(execs.map((e) => e.args)));
+    !execs.some((e) => e.cmd === "gh") && execs.map((e) => e.args[0]).join() === "--version,var,add,commit" && execs.every((e) => e.cwd === theirs), JSON.stringify(execs.map((e) => e.args)));
   const again = setupProject({ slug: "theirs", path: theirs, existing: true, pipelineRoot, _exec });
   check("re-attaching the same project is idempotent — project.json is kept, not rewritten", again.project.created === attached.project.created && JSON.parse(readFileSync(join(theirs, "forge", "project.json"), "utf8")).title === "Theirs");
   check("a directory that is not a project cannot be loaded", (() => { try { loadProject(join(tmp, "taken")); return false; } catch (e) { return e.code === "no-project"; } })());

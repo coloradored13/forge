@@ -57,7 +57,7 @@ After export, drift enters from either side — the PM in Discovery, the team in
 
 **One repo.** `discovery/`, `delivery/`, `shared/`. One import rule — `delivery/` imports from `shared/` only — and one cold-intake eval keep the halves from re-fusing under pressure.
 
-**One repo per project.** Discovery's `setup` creates it — `git init`, first commit, private remote — or attaches an existing one. It holds `discovery/` (the PM's artifacts and handoffs), `forge/` (run records, manifest, verifier) and the product. The pipeline checkout holds code, evals and fixtures only. Refused: a project path inside the pipeline checkout; a new project over an existing directory; an existing project without `.git`. Delivery agents run with the project repo as `cwd` and may not read `discovery/` — the chokepoint records every tool use; such a read is a refusal, like a judge's write.
+**One repo per project.** Discovery's `setup` creates it — `git init`, first commit, private remote — or attaches an existing one. It holds `discovery/` (the PM's artifacts and handoffs), `forge/` (run records, manifest, verifier) and the product. The pipeline checkout holds code, evals and fixtures only. Refused: a project path inside the pipeline checkout; a new project over a non-empty directory; an existing project without `.git`. Delivery agents run with the project repo as `cwd` and may not read `discovery/` — the chokepoint records every tool use; such a read is a refusal, like a judge's write.
 
 ## §3 Rules
 
