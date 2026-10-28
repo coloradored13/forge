@@ -14,7 +14,7 @@ import { routes } from "../discovery/console/index.mjs";
 import { generate } from "../discovery/prototype/index.mjs";
 import { serve } from "../shared/console/index.mjs";
 
-const { check, done } = suite("setup · preflight, retry and console", 50);
+const { check, done } = suite("setup · preflight, retry and console", 52);
 const attempt = (fn) => { try { return { value: fn() }; } catch (error) { return { error }; } };
 const snapshot = (root) => !existsSync(root) ? null : JSON.stringify(readdirSync(root, { recursive: true, withFileTypes: true }).map((e) => {
   const p = join(e.parentPath, e.name);
@@ -293,5 +293,33 @@ await scenario("a populated setup page shows the refusal code and remedy on reat
     assert.equal(loadProject(f.root).slug, "oven");
     assert(f.calls.slice(n).every((c) => c.cmd === "git"));
   } finally { await srv.close(); }
+});
+for (const failAttach of [false, true]) await scenario(`partial new setup → explicit attach${failAttach ? " after failed attach commit" : ""} → usable clone`, (tmp, home) => {
+  const f = fixture(tmp, home), marker = "forge/.setup-incomplete";
+  f.state.failCreate = true; assert(f.run().error); incomplete(f);
+  assert(existsSync(join(f.root, marker))); f.state.failCreate = false;
+  const n = f.calls.length, head = f.git(f.root, ["rev-parse", "HEAD"]);
+  if (failAttach) {
+    let reached = false;
+    const out = f.run({ existing: true, _exec: (cmd, args, opts) => {
+      if (cmd === "git" && args[0] === "commit" && args.includes("forge: attach project")) {
+        reached = true; throw failure();
+      }
+      return f._exec(cmd, args, opts);
+    } });
+    assert(reached && out.error, "the attach commit must actually fail");
+    incomplete(f); assert(existsSync(join(f.root, marker)));
+    assert.equal(f.git(f.root, ["rev-parse", "HEAD"]), head);
+    assert.equal(f.git(f.root, ["ls-files", marker]), "", "failed attach must not stage its marker");
+  }
+  assert.ifError(f.run({ existing: true }).error);
+  assert.equal(loadProject(f.root).slug, "oven"); assert.doesNotThrow(() => workshopView(f.root));
+  assert(!existsSync(join(f.root, marker)), "successful attach clears local protection");
+  assert.equal(f.git(f.root, ["ls-files", marker]), "", "attach must never commit its marker");
+  assert.equal(f.git(f.root, ["status", "--porcelain"]), "");
+  assert(f.calls.slice(n).every((c) => c.cmd === "git" && c.cwd === f.root));
+  const clone = join(tmp, "clone"); f.git(tmp, ["clone", "-q", f.root, clone]);
+  assert(!existsSync(join(clone, marker))); assert.equal(loadProject(clone).slug, "oven");
+  assert.doesNotThrow(() => workshopView(clone));
 });
 done();
