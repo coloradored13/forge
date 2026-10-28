@@ -2,9 +2,11 @@
 // it — git init, first commit, private remote — or attaches an existing one, and lays
 // down `discovery/` and `forge/` beside the product. Three refusals keep the pipeline
 // checkout holding code, evals and fixtures only: a project inside this checkout, a
-// new project over an existing directory, an existing project without `.git`.
+// new project over a non-empty directory, an existing project without `.git`. What it
+// needs (git, an identity, gh signed in, a free repo name) is checked before it writes,
+// and a setup that stops partway is finished by running it again (DH1b part 2).
 
-import { existsSync, mkdirSync, writeFileSync, readFileSync, realpathSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync, readFileSync, readdirSync, realpathSync, rmSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { join, resolve, dirname, basename, sep } from "node:path";
 import { homedir } from "node:os";
@@ -15,6 +17,8 @@ export const PIPELINE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), ".
 export const DEFAULT_PARENT = join(homedir(), "Forge");
 export const PROJECT_FILE = join("forge", "project.json");
 export const LEDGER = join("forge", "discovery", "calls.jsonl");
+/** Present while a new project's setup is unfinished. Never committed, so no clone inherits it. */
+export const SETUP_MARKER = join("forge", ".setup-incomplete");
 const SLUG = /^[a-z0-9][a-z0-9-]{0,63}$/;
 
 /** What every project keeps out of its repository, whatever it is built with. */
@@ -55,6 +59,21 @@ export class SetupRefused extends Error {
 }
 
 /** Default executor: run a command in a directory, return trimmed stdout. */
+/** What setup needs before it writes, each refused with its remedy. Attaching needs the first two. */
+const PREREQS = [
+  ["git", ["--version"], "no-git", "git is not installed — install git (on a Mac: xcode-select --install)"],
+  ["git", ["var", "GIT_COMMITTER_IDENT"], "no-git-identity", "git has no identity to commit with — set git config --global user.name and user.email"],
+  ["gh", ["--version"], "no-gh", "the GitHub CLI is not installed — install gh (brew install gh)"],
+  ["gh", ["auth", "status", "--hostname", "github.com"], "gh-signed-out", "the GitHub CLI is not signed in to github.com — run gh auth login"],
+];
+
+/** Forge's own unfinished setup at `root` — the record a retry finishes — or null. */
+export function partialProject(root) {
+  const file = join(root, PROJECT_FILE);
+  if (!existsSync(file)) return null;
+  return existsSync(join(root, SETUP_MARKER)) ? JSON.parse(readFileSync(file, "utf8")) : null;
+}
+
 export function exec(cmd, args, { cwd }) {
   return execFileSync(cmd, args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
 }
@@ -98,23 +117,35 @@ export function setupProject({
   if (insidePipeline(root, pipelineRoot)) {
     throw new SetupRefused("inside-pipeline", `setup: ${root} is inside the pipeline checkout — a project is its own repo, never a directory here`);
   }
+  const projectFile = join(root, PROJECT_FILE);
+  const prior = existsSync(projectFile) ? JSON.parse(readFileSync(projectFile, "utf8")) : null;
+  const resuming = !existing && Boolean(prior) && existsSync(join(root, SETUP_MARKER));
   if (existing) {
     if (!existsSync(join(root, ".git"))) throw new SetupRefused("not-a-repo", `setup: ${root} has no .git — attach a repository, or create a new project`);
-  } else if (existsSync(root)) {
-    throw new SetupRefused("exists", `setup: ${root} already exists — attach it with existing, or pick another path`);
+  } else if (existsSync(root) && readdirSync(root).length && !prior) {
+    throw new SetupRefused("exists", `setup: ${root} already exists and is not empty — attach it with existing, or pick another path`);
   }
+  if (prior && prior.slug !== slug) throw new SetupRefused("other-project", `setup: ${root} is already the Forge project "${prior.slug}"`);
+  if (!existing && prior && !resuming) throw new SetupRefused("exists", `setup: ${root} is already a Forge project — attach it with existing, or pick another path`);
 
-  const projectFile = join(root, PROJECT_FILE);
-  if (existsSync(projectFile)) {
-    const prior = JSON.parse(readFileSync(projectFile, "utf8"));
-    if (prior.slug !== slug) throw new SetupRefused("other-project", `setup: ${root} is already the Forge project "${prior.slug}"`);
+  // Nothing is written until what setup needs is there. A new project's folder may not exist yet.
+  const pre = (cmd, args) => _exec(cmd, args, { cwd: existing ? root : homedir() });
+  for (const [cmd, args, code, remedy] of PREREQS.slice(0, existing ? 2 : 4)) {
+    try { pre(cmd, args); } catch { throw new SetupRefused(code, `setup: ${remedy}, then try again`); }
+  }
+  let repo = null;
+  if (!existing) {
+    let seen = "";
+    try { seen = pre("gh", ["repo", "view", slug, "--json", "url,sshUrl,isEmpty"]); } catch { seen = ""; }
+    repo = seen.trim() ? JSON.parse(seen) : null;
+    if (repo && !resuming) throw new SetupRefused("repo-taken", `setup: a GitHub repo named ${slug} already exists on this account — pick another name, or attach a clone of it`);
   }
 
   const run = (cmd, args) => _exec(cmd, args, { cwd: root });
   const created = !existing;
   if (created) {
     mkdirSync(root, { recursive: true });
-    writeFileSync(join(root, "README.md"), `# ${title ?? slug}\n\nA Forge project. \`discovery/\` holds the PM's artifacts; \`forge/\` holds run records and the provenance manifest; everything else is the product.\n`);
+    if (!existsSync(join(root, "README.md"))) writeFileSync(join(root, "README.md"), `# ${title ?? slug}\n\nA Forge project. \`discovery/\` holds the PM's artifacts; \`forge/\` holds run records and the provenance manifest; everything else is the product.\n`);
   }
   // Both paths, every time: a project Forge attaches needs this as much as one it creates,
   // and more — its `.gitignore` was written for whatever it was before Forge's runners ran
@@ -122,35 +153,81 @@ export function setupProject({
   const ignored = reconcileIgnore(root);
   for (const d of ["discovery", "forge"]) mkdirSync(join(root, d), { recursive: true });
 
-  const project = existsSync(projectFile) ? JSON.parse(readFileSync(projectFile, "utf8")) : {
+  const project = prior ?? {
     slug, title: title ?? slug, created: _now().toISOString(),
     repo: { path: root, remote: null },
     models, budget, ledger: LEDGER,
   };
-  writeFileSync(projectFile, JSON.stringify(project, null, 2) + "\n");
+  const save = () => writeFileSync(projectFile, JSON.stringify(project, null, 2) + "\n");
+  const unfinished = () => writeFileSync(join(root, SETUP_MARKER), "Forge setup has not finished — run setup again with the same name.\n");
+  if (created) unfinished();
+  save();
 
   if (created) {
-    run("git", ["init", "-q"]);
-    run("git", ["add", "-A"]);
-    run("git", ["commit", "-q", "-m", "forge: project setup"]);
-    run("gh", ["repo", "create", slug, "--private", "--source", root, "--push"]);
-    project.repo.remote = run("git", ["remote", "get-url", "origin"]) || null;
-    writeFileSync(projectFile, JSON.stringify(project, null, 2) + "\n");
-    run("git", ["add", PROJECT_FILE]);
-    run("git", ["commit", "-q", "-m", "forge: record the remote"]);
+    // Each step is skipped when an earlier attempt finished it; the record stays incomplete
+    // until the last commit lands, so running setup again finishes what is missing.
+    try {
+      const fresh = !existsSync(join(root, ".git"));
+      if (fresh) run("git", ["init", "-q"]);
+      if (fresh || !succeeds(() => run("git", ["rev-parse", "--verify", "-q", "HEAD"]))) {
+        run("git", ["add", "-A", "--", ".", `:!${SETUP_MARKER}`]);
+        run("git", ["commit", "-q", "-m", "forge: project setup"]);
+      }
+      if (!repo) run("gh", ["repo", "create", slug, "--private", "--source", root, "--push"]);
+      else adopt({ repo, slug, run });
+      project.repo.remote = run("git", ["remote", "get-url", "origin"]) || null;
+      rmSync(join(root, SETUP_MARKER), { force: true });
+      save();
+      run("git", ["add", PROJECT_FILE]);
+      run("git", ["commit", "-q", "-m", "forge: record the remote"]);
+    } catch (e) {
+      unfinished();
+      if (e instanceof SetupRefused) throw e;
+      throw new SetupRefused("setup-unfinished", `setup: stopped before it finished — ${String(e?.message ?? e).split("\n")[0]}. Fix that, then try again: setup finishes what is missing`);
+    }
   } else {
-    run("git", ["add", "forge", "discovery", ".gitignore"]);
+    // An unfinished setup's marker is never committed, here as in a new project's first commit;
+    // it goes only once the attach has landed.
+    run("git", ["add", "--", "forge", "discovery", ".gitignore", `:!${SETUP_MARKER}`]);
     run("git", ["commit", "-q", "-m", "forge: attach project", "--allow-empty"]);
+    rmSync(join(root, SETUP_MARKER), { force: true });
   }
 
   return { root, created, remote: project.repo.remote, project, ignored };
 }
 
-/** The project record a Discovery door works from. */
+const succeeds = (fn) => { try { fn(); return true; } catch { return false; } };
+const norm = (u) => String(u).trim().replace(/\/+$/, "").replace(/\.git$/i, "").toLowerCase();
+
+/**
+ * An unfinished setup's GitHub repo, judged by what is on it. With a matching `origin`: an
+ * empty remote gets the push it missed, one already holding this setup commit is done, and
+ * anything else is someone else's history. Without one, only an empty repo is taken over.
+ */
+function adopt({ repo, slug, run }) {
+  const taken = new SetupRefused("repo-taken", `setup: the GitHub repo ${slug} holds other history — pick another name, or attach a clone of it`);
+  let origin = null;
+  // As configured, not as `insteadOf` rewrites it: the comparison is about which repository it names.
+  try { origin = run("git", ["config", "--get", "remote.origin.url"]); } catch { origin = null; }
+  // gh writes an HTTPS origin with `.git`; `gh repo view` reports the browser URL without it.
+  const same = (a) => [repo.url, repo.sshUrl].some((u) => u && norm(u) === norm(a));
+  if (origin && same(origin)) {
+    const refs = run("git", ["ls-remote", "origin"]);
+    if (!refs.trim()) run("git", ["push", "-u", "origin", "HEAD"]);
+    else if (!refs.includes(run("git", ["rev-parse", "HEAD"]))) throw taken;
+  } else if (!origin && repo.isEmpty) {
+    run("git", ["remote", "add", "origin", repo.url]);
+    run("git", ["push", "-u", "origin", "HEAD"]);
+  } else throw taken;
+}
+
+/** The project record a Discovery door works from. A setup that has not finished is not one. */
 export function loadProject(root) {
   const file = join(root, PROJECT_FILE);
   if (!existsSync(file)) throw new SetupRefused("no-project", `${root} is not a Forge project — run setup first`);
-  return JSON.parse(readFileSync(file, "utf8"));
+  const project = JSON.parse(readFileSync(file, "utf8"));
+  if (existsSync(join(root, SETUP_MARKER))) throw new SetupRefused("setup-incomplete", `${root}: setup has not finished — run it again with the same name to finish it`);
+  return project;
 }
 
 export function ledgerPath(root) {

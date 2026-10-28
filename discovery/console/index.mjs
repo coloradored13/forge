@@ -6,8 +6,8 @@
 // milestone that brings its record.
 
 import { join } from "node:path";
-import { esc, usd, when, short, badge, table, dl, form, quoteStrip, TONE, verdictLine, findingRows, findingsHtml } from "../../shared/console/index.mjs";
-import { setupProject } from "../setup/index.mjs";
+import { esc, usd, when, short, badge, table, dl, form, quoteStrip, refusalHtml, TONE, verdictLine, findingRows, findingsHtml } from "../../shared/console/index.mjs";
+import { setupProject, SetupRefused } from "../setup/index.mjs";
 import { openPrd, turn, extract } from "../workshop/index.mjs";
 import { generate } from "../prototype/index.mjs";
 import { write as writeStories, review as reviewStories } from "../stories/index.mjs";
@@ -36,26 +36,30 @@ const jsonOrText = (s) => { try { return JSON.parse(s); } catch { return s; } };
 
 // ── setup ──
 
-function setupPage(v) {
+function setupPage(v, { values, error } = {}) {
   // a call's likely cost is the ledger's mean for that role and model — never a rate card (R1); Delivery's roles are priced on the run view
   const history = (r) => (r.estimate == null ? `<span class="muted">${r.half === "delivery" && v.project ? "priced on the Delivery run view" : "—"}</span>` : r.estimate.basis === "none" ? `<span class="muted">no history yet</span>` : `~${usd(r.estimate.usd)} a call <span class="muted">(${r.estimate.n} so far)</span>`);
   const rolesTable = table(["role", "half", "model", "", "a call, from history"], v.roles.map((r) => [`<code>${esc(r.key)}</code>`, esc(r.half), `<code>${esc(r.model)}</code>`, r.overridden ? badge(`override · default ${r.default}`, "warn") : badge("default", "muted"), history(r)]));
   if (!v.project) {
-    return { title: "Setup", body: `<h1>Set up a project</h1><p class="muted">${esc(v.root)}</p>` + form({
-      action: "/setup", submit: "Set up",
+    // A refused setup comes back with what the PM typed; an unfinished one is finished, not attached.
+    const val = (name, fallback) => values?.[name] ?? fallback;
+    return { title: "Setup", body: `<h1>${v.resume ? "Finish setting up" : "Set up a project"}</h1><p class="muted">${esc(v.root)}</p>`
+      + (error ? refusalHtml(error) : "")
+      + (v.resume && !error ? `<p class="note">Setup stopped partway. Finish setup to complete what is missing — nothing needs cleaning up.</p>` : "") + form({
+      action: "/setup", submit: v.resume ? "Finish setup" : "Set up",
       fields: [
-        { name: "slug", label: "slug", value: v.slug, required: true },
-        { name: "title", label: "title", value: "" },
-        { name: "existing", label: "this path is already a repository — attach it", type: "checkbox", checked: v.existing },
-        { name: "budget", label: "budget in USD (blank: no cap — cost is the subscription's)", type: "number", step: "0.01", value: "" },
-        ...v.roles.map((r) => ({ name: `model.${r.key}`, label: `model · ${r.key}`, value: r.model })),
+        { name: "slug", label: "slug", value: val("slug", v.slug), required: true },
+        { name: "title", label: "title", value: val("title", v.title ?? "") },
+        { name: "existing", label: "this path is already a repository — attach it", type: "checkbox", checked: values ? Boolean(values.existing) : v.existing },
+        { name: "budget", label: "budget in USD (blank: no cap — cost is the subscription's)", type: "number", step: "0.01", value: val("budget", v.budget ?? "") },
+        ...v.roles.map((r) => ({ name: `model.${r.key}`, label: `model · ${r.key}`, value: val(`model.${r.key}`, r.model) })),
       ],
-      note: "A new project is its own repository: git init, a private remote through gh, one commit. The models and the budget set here are what every door reads.",
+      note: "A new project is its own repository: git init, a private remote through gh, then its first commits. The models and the budget set here are what every door reads.",
     }) };
   }
   const s = v.standing;
   const standing = s.budget == null ? `<p class="quote">${usd(s.spent)} spent · no cap</p>` : `<p class="quote${s.over ? " over" : ""}">${usd(s.spent)} of ${usd(s.budget)} spent · ${usd(s.remaining)} remains${s.over ? " · " + badge("over budget", "bad") : ""}</p>`;
-  return { title: "Setup", body: `<h1>${esc(v.project.title)} <span class="muted">${esc(v.project.slug)}</span></h1>`
+  return { title: "Setup", body: `<h1>${esc(v.project.title)} <span class="muted">${esc(v.project.slug)}</span></h1>` + (error ? refusalHtml(error) : "")
     + dl([["root", esc(v.root)], ["remote", esc(v.project.repo?.remote ?? "none")], ["created", when(v.project.created)]])
     + `<h2>Model per role</h2>${rolesTable}<p class="note">Set at setup and read by every call; the ledger records which model each verdict came from.</p>`
     + `<h2>Budget</h2>${standing}`
@@ -206,7 +210,12 @@ export function routes({ root, _query, _sleep, _exec, _fetch, _env } = {}) {
     { method: "GET", path: "/setup", handler: () => setupPage(setupView(root)) },
     { method: "POST", path: "/setup", handler: ({ form: f }) => {
       const models = Object.fromEntries(Object.entries(f).filter(([k, v]) => k.startsWith("model.") && blank(v)).map(([k, v]) => [k.slice(6), v.trim()]).filter(([k, v]) => v !== setupView(root).roles.find((r) => r.key === k)?.default));
-      setupProject({ slug: f.slug, title: blank(f.title), path: root, existing: Boolean(f.existing), models, budget: blank(f.budget) ? Number(f.budget) : null, ...(_exec ? { _exec } : {}) });
+      try {
+        setupProject({ slug: f.slug, title: blank(f.title), path: root, existing: Boolean(f.existing), models, budget: blank(f.budget) ? Number(f.budget) : null, ...(_exec ? { _exec } : {}) });
+      } catch (e) {
+        if (!(e instanceof SetupRefused)) throw e;
+        return { ...setupPage(setupView(root), { values: f, error: e }), status: 409 };
+      }
       return { redirect: "/setup" };
     } },
     { method: "GET", path: "/workshop", handler: () => workshopPage(workshopView(root)) },
