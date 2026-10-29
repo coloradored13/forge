@@ -144,7 +144,7 @@ export async function exportHandoff({ root, exit, by, tracker: trackerOpts, _now
   const project = loadProject(root);
   const prd = loadPrd(root);
   const previous = latestHandoff(root);
-  // A named tracker holds what the last handoff to project one sent it; files-only exports since do not reset it.
+  // A named tracker resumes from the last handoff that carries one, so files-only exports since do not reset it.
   const basis = trackerOpts ? readHandoffs(root).findLast((h) => h.tracker) ?? null : previous;
   const toTeam = exit !== "delivery";
   const tracker = trackerOpts === false ? null : toTeam ? resolveTracker(trackerOpts, basis, project) : (previous?.tracker ?? null);
