@@ -1,5 +1,6 @@
 // owns: R10, R14, R15 · shared — Discovery refusal/recovery views and files-only console exports.
 import assert from "node:assert/strict";
+import { isDeepStrictEqual } from "node:util";
 import { readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { suite, withRoot, scripted } from "./_harness.mjs";
@@ -8,13 +9,14 @@ import { serve, refusalHtml, esc } from "../shared/console/index.mjs";
 import { routes, nav } from "../discovery/console/index.mjs";
 import { routes as deliveryRoutes } from "../delivery/console/index.mjs";
 import { exportView } from "../discovery/console/views.mjs";
+import { loadPrd, savePrd } from "../discovery/workshop/index.mjs";
 import { agree, answer, propose } from "../discovery/doors/index.mjs";
 import { review, signoff } from "../discovery/design/index.mjs";
 import { exportHandoff, readiness, EXITS } from "../discovery/export/index.mjs";
 import { readDoc, saveDoc, Refused, PROTOTYPE_FILE, STORIES_FILE, DESIGN_FILE } from "../discovery/record/index.mjs";
 import { latestHandoff } from "../shared/handoff.mjs";
 import { load } from "../shared/schema/index.mjs";
-const { check, done } = suite("console handoff", 53);
+const { check, done } = suite("console handoff", 59);
 const clean = () => scripted({ structured: { findings: [], deferred: [], checked: 2, skipped: 0 } }).query;
 const noIO = () => { throw new Error("unexpected external IO"); };
 const safe = { _exec: noIO, _fetch: noIO, _env: {} };
@@ -133,4 +135,34 @@ await withRoot({}, async tmp => {
   });
 });
 check("handoff null description describes this export, not all history", /this export.*files only/i.test(load("handoff").properties.tracker.description) && !/only ever/.test(load("handoff").properties.tracker.description));
+// A files-only snapshot is not the baseline of a later explicit tracker projection.
+for (const mode of ["unchanged", "changed", "undefined"]) await withRoot({}, async tmp => {
+  const root = await ready(tmp), calls = []; let number = 0;
+  const tracker = { kind: "github", repo: "acme/dock" };
+  const seams = { _env: {}, _fetch: noIO, _exec: (cmd, args) => { assert.equal(cmd, "gh"); calls.push(args); return args[2] === "POST" ? JSON.stringify({ number: ++number }) : ""; } };
+  const first = await exportHandoff({ root, exit: "team", by: "PM", tracker, ...seams });
+  assert.equal(calls.length, Object.keys(first.handoff.tracker.keys).length);
+  const old = readFileSync(join(root, first.file), "utf8"), keys = structuredClone(first.handoff.tracker.keys);
+  const changedText = "As a worker, I want a revised receipt, so that I can check the record";
+  if (mode === "changed") { const s = readDoc(root, STORIES_FILE); s.stories.find(s => s.id === "STORY-1").statement = changedText; saveDoc(root, STORIES_FILE, "story", s); }
+  calls.length = 0; let status;
+  await consoleFor(root, async ({ post }) => { status = (await post("/export", { exit: "team", by: "PM" })).status; }, seams);
+  const middle = latestHandoff(root), middleBytes = readFileSync(join(root, `discovery/handoffs/handoff-v${middle.version}.json`), "utf8");
+  const filesOnly = status === 303 && middle.version === 2 && middle.tracker === null && calls.length === 0;
+  calls.length = 0;
+  const last = await exportHandoff({ root, exit: "team", by: "PM", tracker: mode === "undefined" ? undefined : tracker, ...seams });
+  const kept = readFileSync(join(root, first.file), "utf8") === old && readFileSync(join(root, `discovery/handoffs/handoff-v${middle.version}.json`), "utf8") === middleBytes;
+  const expectedCalls = mode === "changed" ? calls.length === 1 && calls[0][2] === "PATCH" && calls[0][3] === `repos/acme/dock/issues/${keys["STORY-1"]}` && calls[0].some(a => a.startsWith("title=") && a.includes(changedText)) : calls.length === 0;
+  check(`tracker resume ${mode}: projection baseline, keys and files-only semantics`, filesOnly && kept && last.handoff.version === 3 && expectedCalls && (mode === "undefined" ? last.handoff.tracker === null : last.handoff.tracker?.kind === tracker.kind && last.handoff.tracker.repo === tracker.repo && isDeepStrictEqual(last.handoff.tracker.keys, keys)), JSON.stringify({ status, filesOnly, calls: calls.map(a => a.slice(0, 4)), tracker: last.handoff.tracker }));
+});
+for (const state of ["no-agreement", "agreement-stale", "current"]) await withRoot({}, async tmp => {
+  const root = await ready(tmp);
+  if (state !== "current") answer({ root, req: "REQ-1", oq: "OQ-1", answer: "Until the shift ends.", by: "PM" });
+  if (state === "no-agreement") { const prd = loadPrd(root); prd.agreements = []; savePrd(root, prd); }
+  const findings = readiness(root).findings, f = findings.find(f => f.rule === state);
+  await consoleFor(root, async ({ get }) => {
+    const page = await get("/board"), row = page.text.match(/<tr><td>prototype<\/td>[\s\S]*?<\/tr>/)?.[0] ?? "";
+    check(`prototype ${state}: recovery belongs to its row`, page.status === 200 && (state === "current" ? row.includes("current") && !row.includes("stale") && !row.includes("→") && !findings.some(f => ["no-agreement", "agreement-stale"].includes(f.rule)) : Boolean(f?.remedy) && row.includes("stale") && row.includes(esc(f.remedy))), row);
+  });
+});
 done();
