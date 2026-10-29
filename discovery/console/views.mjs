@@ -4,7 +4,8 @@
 // belongs to (R1). SPEC §6 names six views; the four Discovery views are here, the run
 // view is delivery/console's, and the release view is a projection of the manifest (M3).
 
-import { existsSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { basename, join } from "node:path";
 import { roles, defaults, modelFor, standing, estimate, quote } from "../../shared/agent-call/index.mjs";
 import { verdictFreshness } from "../../shared/judge/index.mjs";
@@ -12,7 +13,7 @@ import { readHandoffs, latestHandoff, handoffFile } from "../../shared/handoff.m
 import { loadProject, ledgerPath, partialProject, SetupRefused } from "../setup/index.mjs";
 import { loadPrd, WorkshopRefused, captured, mayOpen, progress, quoteTurn, readTranscript } from "../workshop/index.mjs";
 import { section } from "../workshop/sections.mjs";
-import { readDoc, readVerdict, staleness, rulingsOf, PRD_FILE, PROTOTYPE_FILE, STORIES_FILE, DESIGN_FILE, HTML_FILE } from "../record/index.mjs";
+import { readDoc, readVerdict, staleness, rulingsOf, PRD_FILE, PROTOTYPE_FILE, STORIES_FILE, DESIGN_FILE, HTML_FILE, HISTORY } from "../record/index.mjs";
 import { GATE as PROTOTYPE_GATE } from "../prototype/index.mjs";
 import { GATE as STORY_GATE, REVIEW_GATE as STORY_REVIEW } from "../stories/index.mjs";
 import { GATE as DESIGN_GATE, REVIEW_GATE as DESIGN_REVIEW } from "../design/index.mjs";
@@ -98,6 +99,21 @@ function gateRow(root, gate) {
   const v = readVerdict(root, gate);
   if (!v) return { gate, verdict: null, fresh: null, findings: [], deferred: [], model: null, usd: null };
   return { gate, verdict: v.verdict, fresh: verdictFreshness(v, { root }).fresh, findings: v.findings, deferred: v.deferred ?? [], model: v.cost?.model ?? null, usd: v.cost?.usd ?? null, checked: v.checked, skipped: v.skipped };
+}
+
+/**
+ * A document's kept copies (D05), newest first by the history file's modification time,
+ * then by key. The order is best effort: a copy of the project made without its times can
+ * reorder it. A kept copy identical to the current file, which a failed rebuild leaves, is
+ * not history.
+ */
+export function historyView(root, kind) {
+  const a = ARTIFACTS.find((x) => x.kind === kind && x.kind !== "prd"), dir = join(root, HISTORY);
+  if (!a || !existsSync(dir)) return [];
+  const current = existsSync(join(root, a.file)) ? `${kind}-${createHash("sha256").update(readFileSync(join(root, a.file))).digest("hex").slice(0, 12)}` : null;
+  return readdirSync(dir).filter((f) => new RegExp(`^${kind}-[0-9a-f]{12}\\.json$`).test(f)).map((f) => f.slice(0, -5)).filter((key) => key !== current)
+    .map((key) => ({ key, at: statSync(join(dir, `${key}.json`)).mtimeMs, doc: readDoc(root, join(HISTORY, `${key}.json`)) }))
+    .sort((x, y) => y.at - x.at || (x.key < y.key ? -1 : 1));
 }
 
 /** The published prototype, if any — what the framed prototype view shows. */

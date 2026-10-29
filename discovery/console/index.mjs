@@ -14,8 +14,8 @@ import { write as writeStories, review as reviewStories } from "../stories/index
 import { write as writeDesign, review as reviewDesign, signoff } from "../design/index.mjs";
 import { answer, propose, approve, reject, agree } from "../doors/index.mjs";
 import { exportHandoff } from "../export/index.mjs";
-import { readDoc, renderPrd, renderPrototype, renderStories, renderDesign, HTML_FILE } from "../record/index.mjs";
-import { VIEWS, ARTIFACTS, setupView, workshopView, boardView, prototypeView, exportView } from "./views.mjs";
+import { readDoc, isSigned, renderPrd, renderPrototype, renderStories, renderDesign, HTML_FILE } from "../record/index.mjs";
+import { VIEWS, ARTIFACTS, setupView, workshopView, boardView, prototypeView, historyView, exportView } from "./views.mjs";
 import { singleAttempt } from "../../shared/agent-call/index.mjs";
 
 // A Discovery request from the console makes one model attempt: a usage gap refuses with its
@@ -29,6 +29,8 @@ const once = (table) => table.map((r) => ({ ...r, handler: async (ctx) => {
 export const nav = VIEWS.map((v) => ({ href: `/${v.key}`, label: v.label }));
 
 const RENDER = { prd: renderPrd, prototype: renderPrototype, stories: renderStories, design: renderDesign };
+// A document by name: the PRD by its version, the rest by the PRD version they were written from; then the hash, and a design's signer.
+const named = (kind, doc) => `${kind === "prd" ? `v${esc(doc.meta.version)}` : `from PRD v${esc(doc.traces?.prd?.version)}`} · <code>${esc(short(doc.meta.content_hash))}</code>${kind === "design" && isSigned(doc) ? ` · signed by ${esc(doc.signoff.by)}` : ""}`;
 // The prototype is generated HTML (D13): its scripts and forms run for the mock, but it fetches,
 // loads, connects and submits nowhere, and only the console's own view may frame it. WebRTC is
 // the exception: Chromium applies neither CSP nor the sandbox to it, a recorded limit.
@@ -108,7 +110,7 @@ function artifactRow(a) {
     : [a.stale ? badge(`stale · ${a.moved.join("+")} moved${a.since.length ? ` · since ${a.since.join(", ")}` : ""}`, "warn") : badge("current", "ok"), a.kind === "design" ? (a.signed ? badge(`signed by ${a.signoff.by}`, "ok") : badge("unsigned", "muted")) : ""].join(" ")
       + (a.recovery ? `<br><span class="muted">→ ${esc(a.recovery)}</span>` : "");
   const links = a.present ? [`<a href="/artifact/${esc(a.kind)}">read</a>`, a.html ? `<a href="/prototype">open</a>` : ""].filter(Boolean).join(" · ") : "";
-  return [esc(a.kind), a.present ? `v${esc(a.version)} <code>${esc(short(a.hash))}</code>` : "—", state, a.gates.map(verdictLine).join("<br>") || `<span class="muted">—</span>`, links];
+  return [esc(a.kind), a.present ? `${a.kind === "prd" ? `v${esc(a.version)}` : `from PRD v${esc(a.traced_version)}`} <code>${esc(short(a.hash))}</code>` : "—", state, a.gates.map(verdictLine).join("<br>") || `<span class="muted">—</span>`, links];
 }
 
 function boardPage(v) {
@@ -236,7 +238,15 @@ export function routes({ root, _query, _sleep, _exec, _fetch, _env } = {}) {
       const a = ARTIFACTS.find((x) => x.kind === params.kind);
       const doc = a && readDoc(root, a.file);
       if (!doc) return { title: "Not found", status: 404, body: `<h1>Not found</h1><p class="muted">no ${esc(params.kind)} on the record</p>` };
-      return { title: params.kind, body: `<h1>${esc(params.kind)} <span class="muted">v${esc(doc.meta.version)} · <code>${esc(short(doc.meta.content_hash))}</code></span></h1><pre>${esc(RENDER[params.kind](doc))}</pre>` };
+      const kept = a.kind === "prd" ? [] : historyView(root, a.kind);
+      const history = a.kind === "prd" ? "" : `<h2>Earlier versions</h2>${kept.length ? table(["kept", "written"], kept.map((h) => [`<a href="/artifact/${esc(a.kind)}/history/${esc(h.key)}">${esc(h.key)}</a>`, named(a.kind, h.doc)])) : `<p class="muted">No earlier version is kept.</p>`}`;
+      return { title: params.kind, body: `<h1>${esc(params.kind)} <span class="muted">${named(a.kind, doc)}</span></h1><pre>${esc(RENDER[params.kind](doc))}</pre>${history}` };
+    } },
+    // An earlier version reads only: a key opens only if it is in its kind's history, and a prototype's kept HTML is never shown.
+    { method: "GET", path: "/artifact/:kind/history/:key", handler: ({ params }) => {
+      const h = historyView(root, params.kind).find((x) => x.key === params.key);
+      if (!h) return { title: "Not found", status: 404, body: `<h1>Not found</h1><p class="muted">no such earlier ${esc(params.kind)}</p>` };
+      return { title: `${params.kind} · earlier`, body: `<h1>${esc(params.kind)} <span class="muted">${named(params.kind, h.doc)}</span></h1><p class="note">An earlier version, kept as history and read-only. <a href="/artifact/${esc(params.kind)}">The current one</a>.</p><pre>${esc(RENDER[params.kind](h.doc, { file: false }))}</pre>` };
     } },
     { method: "GET", path: "/prototype", handler: () => prototypePage(prototypeView(root)) },
     // Only a frame gets the HTML: as the top window, a page could always navigate itself away.
