@@ -15,9 +15,9 @@ import { readRun, createRun } from "../delivery/state/index.mjs";
 const { check, done } = suite("console guards · trusted requests through completed work", 52);
 const snapshot = (root) => JSON.stringify(readdirSync(root, { recursive: true, withFileTypes: true }).filter((e) => e.isFile()).map((e) => [join(e.parentPath, e.name).slice(root.length), readFileSync(join(e.parentPath, e.name)).toString("base64")]).sort());
 // node:http lets Host vary while the socket always targets this ephemeral loopback server.
-function http(srv, path, { method = "GET", origin, host = `127.0.0.1:${srv.port}`, form = {} } = {}) {
+function http(srv, path, { method = "GET", origin, host = `127.0.0.1:${srv.port}`, form = {}, dest } = {}) {
   return new Promise((resolve, reject) => {
-    const req = request({ hostname: "127.0.0.1", port: srv.port, path, method, headers: { host, ...(origin === undefined ? {} : { origin }), "content-type": "application/x-www-form-urlencoded" } }, (res) => {
+    const req = request({ hostname: "127.0.0.1", port: srv.port, path, method, headers: { host, ...(dest ? { "sec-fetch-dest": dest } : {}), ...(origin === undefined ? {} : { origin }), "content-type": "application/x-www-form-urlencoded" } }, (res) => {
       let text = "";
       res.setEncoding("utf8").on("data", (s) => text += s).on("end", () => resolve({ status: res.statusCode, headers: res.headers, text }));
     });
@@ -62,9 +62,9 @@ await withRoot({}, async (tmp) => {
   const root = seedProject(tmp); seedPrototype(root);
   const srv = await serve({ routes: routes({ root, _query: scripted().query }) });
   try {
-    const r = await http(srv, "/prototype/index.html");
+    const r = await http(srv, "/prototype/index.html", { dest: "iframe" });
     const sandbox = (r.headers["content-security-policy"] ?? "").split(";").map((s) => s.trim()).find((s) => /^sandbox(?:\s|$)/.test(s));
-    check("prototype serves its HTML with only allow-scripts in its sandbox", r.status === 200 && r.text.includes("<h1>Run sheet</h1>") && sandbox === "sandbox allow-scripts");
+    check("prototype serves its HTML with only scripts and forms in its sandbox", r.status === 200 && r.text.includes("<h1>Run sheet</h1>") && sandbox === "sandbox allow-scripts allow-forms");
     check("localhost authority and Origin are accepted", (await http(srv, "/setup", { host: `localhost:${srv.port}` })).status === 200 && succeeded(await post(srv, path, text, { host: `localhost:${srv.port}`, origin: `http://localhost:${srv.port}` })));
   } finally { await srv.close(); }
 });
