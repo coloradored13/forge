@@ -29,8 +29,9 @@ const once = (table) => table.map((r) => ({ ...r, handler: async (ctx) => {
 export const nav = VIEWS.map((v) => ({ href: `/${v.key}`, label: v.label }));
 
 const RENDER = { prd: renderPrd, prototype: renderPrototype, stories: renderStories, design: renderDesign };
-// The prototype is generated HTML (D13): its scripts and forms run for the mock, but it reaches
-// nothing — no network, no form target — and only the console's own view may frame it.
+// The prototype is generated HTML (D13): its scripts and forms run for the mock, but it fetches,
+// loads, connects and submits nowhere, and only the console's own view may frame it. WebRTC is
+// the exception: Chromium applies neither CSP nor the sandbox to it, a recorded limit.
 const PROTOTYPE_CSP = "sandbox allow-scripts allow-forms; default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; connect-src 'none'; form-action 'none'; frame-ancestors 'self'";
 const STATUS = { complete: "ok", in_progress: "warn", pending: "muted" };
 const list = (xs, sep = ", ") => (xs?.length ? esc(xs.join(sep)) : `<span class="muted">none</span>`);
