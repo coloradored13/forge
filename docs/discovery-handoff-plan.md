@@ -139,7 +139,7 @@ Keep browser checks for D03, D10 package opening and D13 outside root-level `eva
 
 **Work:**
 - Finish project-level conflict handling (conflicting writes are serialized; late results cannot overwrite accepted decisions), duplicate-request prevention, staged persistence, cancellation, visible failures, retry choices, and resume behavior. Basic protection introduced in DH1 remains in place throughout.
-- Test prototype isolation in the real browser. A prototype cannot submit PM approvals, read parent state, or contact arbitrary services.
+- Test prototype isolation in the real browser. A prototype cannot submit PM approvals, read parent state, or contact arbitrary services, except over WebRTC, a recorded limit (`docs/discovery-dh1b-design.md`).
 - Recheck the supported launch and missing-auth recovery introduced in DH1b. Do not postpone first-launch usability until this milestone or claim a hosted/browser deployment that has not been provided.
 - Run the human pilot with a new idea and a non-coding PM; where practical, use someone who did not help design the interface. Test one change after provisional agreement and one scope cut before final export.
 - At the owner's chosen pilot, run H02 once with a cold human recipient given only the package. Earlier DH1b/DH3 reads use fresh agent sessions and are labelled agent reads. Compare a fresh planning-only agent's read with the human's for H03; record help, time, questions, corrections and unresolved blockers against the fixed rubric. The owner and Claude conduct the pilot and live runs separately.

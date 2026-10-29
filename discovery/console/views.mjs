@@ -100,6 +100,12 @@ function gateRow(root, gate) {
   return { gate, verdict: v.verdict, fresh: verdictFreshness(v, { root }).fresh, findings: v.findings, deferred: v.deferred ?? [], model: v.cost?.model ?? null, usd: v.cost?.usd ?? null, checked: v.checked, skipped: v.skipped };
 }
 
+/** The published prototype, if any — what the framed prototype view shows. */
+export function prototypeView(root) {
+  const doc = readDoc(root, PROTOTYPE_FILE);
+  return { present: Boolean(doc), version: doc?.meta?.version ?? null };
+}
+
 /** The artifacts with their stale badges and gates, the doors' state, the ledger's cost, and the quotes before the writer and the reviewer. */
 export function boardView(root) {
   const project = loadProject(root);
