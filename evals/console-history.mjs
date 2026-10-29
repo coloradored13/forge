@@ -77,7 +77,10 @@ await withRoot({}, async tmp => {
   const story = readDoc(root, STORIES_FILE); story.notes = "New current stories"; saveDoc(root, STORIES_FILE, "story", story);
   await consoleFor(root, async get => {
     const before = tree(root);
-    for (const key of [storyKey, "prototype-000000000000", "%2Fetc%2Fpasswd", "%2E%2E%2Fprd", "%2E%2E", "%252E%252E%252Fprd"]) { const r = await get(`/artifact/prototype/history/${key}`); check(`HTTP rejects unlisted or encoded key ${key}`, r.status === 404 && tree(root) === before); }
+    for (const key of [storyKey, "prototype-000000000000", "%2Fetc%2Fpasswd", "%2E%2E%2Fprd", "%252E%252E%252Fprd"]) { const r = await get(`/artifact/prototype/history/${key}`); check(`HTTP rejects unlisted or encoded key ${key}`, r.status === 404 && tree(root) === before); }
+    // A standalone dot segment normalizes before matching: it safely opens the current artifact.
+    const current = await get("/artifact/prototype/"), normalized = await get("/artifact/prototype/history/%2E%2E");
+    check("HTTP normalized dot segment opens only the current artifact", current.status === 200 && normalized.status === 200 && normalized.text === current.text && tree(root) === before);
     const prd = await get("/artifact/prd"); check("PRD exposes no kept-version links", prd.status === 200 && !/href="[^\"]*\/history\//.test(prd.text));
   });
   const before = tree(root); let result;
