@@ -136,8 +136,8 @@ function readForm(req) {
 /**
  * Serve a route table on localhost.
  * routes: [{ method, path, handler }] — path like "/workshop/:key/turn"; handler(ctx) with
- * ctx = { params, query, form, url } returns one of
- *   { title, body }                       a page (status 200 unless given)
+ * ctx = { params, query, form, url, headers } returns one of
+ *   { title, body, headers? }             a page (status 200 unless given)
  *   { redirect }                          303 to a view — every door POST ends here
  *   { file, type? }                       one file from the record, as it is
  *   { title, work: async (event) => href, back }   a long door: progress streamed, then on to `href`
@@ -147,7 +147,7 @@ function readForm(req) {
 export function serve({ routes, nav = [], port = 0, host = "127.0.0.1", brand }) {
   const compiled = routes.map((r) => ({ ...r, ...compile(r.path) }));
   const navFor = (pathname) => nav.map((n) => ({ ...n, current: pathname === n.href || pathname.startsWith(n.href + "/") }));
-  const send = (res, status, html) => { res.writeHead(status, { "content-type": TYPES[".html"] }); res.end(html); };
+  const send = (res, status, html, headers) => { res.writeHead(status, { "content-type": TYPES[".html"], ...headers }); res.end(html); };
   const errorPage = (res, pathname, e) => send(res, e?.code ? 409 : 500, page({ title: e?.code ? "Refused" : "Error", nav: navFor(pathname), body: `<h1>${e?.code ? "The door refused" : "Something failed"}</h1>${refusalHtml(e)}<p><a href="javascript:history.back()">Back</a></p>`, brand }));
 
   // Trust comes from the address this server listens on, never from the request: a page on
@@ -170,7 +170,7 @@ export function serve({ routes, nav = [], port = 0, host = "127.0.0.1", brand })
       const m = route.re.exec(pathname);
       const params = Object.fromEntries(route.keys.map((k, i) => [k, decodeURIComponent(m[i + 1])]));
       const form = req.method === "POST" ? await readForm(req) : {};
-      const out = await route.handler({ params, query: Object.fromEntries(url.searchParams), form, url });
+      const out = await route.handler({ params, query: Object.fromEntries(url.searchParams), form, url, headers: req.headers });
 
       if (out.redirect) { res.writeHead(303, { location: out.redirect }); return res.end(); }
       if (out.file) {
@@ -193,7 +193,7 @@ export function serve({ routes, nav = [], port = 0, host = "127.0.0.1", brand })
         res.write(`</pre><p>Done — <a href="${esc(href)}">continue</a>.</p><script>location.replace(${JSON.stringify(href)})</script></main></body></html>`);
         return res.end();
       }
-      return send(res, out.status ?? 200, page({ title: out.title, nav: navFor(pathname), body: out.body, brand }));
+      return send(res, out.status ?? 200, page({ title: out.title, nav: navFor(pathname), body: out.body, brand }), out.headers);
     } catch (e) {
       return errorPage(res, pathname, e);
     } finally {

@@ -15,7 +15,7 @@ import { write as writeDesign, review as reviewDesign, signoff } from "../design
 import { answer, propose, approve, reject, agree } from "../doors/index.mjs";
 import { exportHandoff } from "../export/index.mjs";
 import { readDoc, renderPrd, renderPrototype, renderStories, renderDesign, HTML_FILE } from "../record/index.mjs";
-import { VIEWS, ARTIFACTS, setupView, workshopView, boardView, exportView } from "./views.mjs";
+import { VIEWS, ARTIFACTS, setupView, workshopView, boardView, prototypeView, exportView } from "./views.mjs";
 import { singleAttempt } from "../../shared/agent-call/index.mjs";
 
 // A Discovery request from the console makes one model attempt: a usage gap refuses with its
@@ -29,6 +29,9 @@ const once = (table) => table.map((r) => ({ ...r, handler: async (ctx) => {
 export const nav = VIEWS.map((v) => ({ href: `/${v.key}`, label: v.label }));
 
 const RENDER = { prd: renderPrd, prototype: renderPrototype, stories: renderStories, design: renderDesign };
+// The prototype is generated HTML (D13): its scripts and forms run for the mock, but it reaches
+// nothing — no network, no form target — and only the console's own view may frame it.
+const PROTOTYPE_CSP = "sandbox allow-scripts allow-forms; default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; connect-src 'none'; form-action 'none'; frame-ancestors 'self'";
 const STATUS = { complete: "ok", in_progress: "warn", pending: "muted" };
 const list = (xs, sep = ", ") => (xs?.length ? esc(xs.join(sep)) : `<span class="muted">none</span>`);
 const blank = (s) => (s?.trim() ? s.trim() : undefined);
@@ -102,7 +105,7 @@ function workshopPage(v, key) {
 function artifactRow(a) {
   const state = !a.present ? badge("absent", "muted")
     : [a.stale ? badge(`stale · ${a.moved.join("+")} moved${a.since.length ? ` · since ${a.since.join(", ")}` : ""}`, "warn") : badge("current", "ok"), a.kind === "design" ? (a.signed ? badge(`signed by ${a.signoff.by}`, "ok") : badge("unsigned", "muted")) : ""].join(" ");
-  const links = a.present ? [`<a href="/artifact/${esc(a.kind)}">read</a>`, a.html ? `<a href="/prototype/index.html">open</a>` : ""].filter(Boolean).join(" · ") : "";
+  const links = a.present ? [`<a href="/artifact/${esc(a.kind)}">read</a>`, a.html ? `<a href="/prototype">open</a>` : ""].filter(Boolean).join(" · ") : "";
   return [esc(a.kind), a.present ? `v${esc(a.version)} <code>${esc(short(a.hash))}</code>` : "—", state, a.gates.map(verdictLine).join("<br>") || `<span class="muted">—</span>`, links];
 }
 
@@ -158,6 +161,16 @@ function boardPage(v) {
     + `<h2>Rulings</h2>${rulings}`
     + `<h2>Amendments</h2>${amendments}${proposeForm}`
     + `<h2>Cost</h2>${cost}` };
+}
+
+// ── prototype ──
+
+// The page allows frames only from the console, so the frame cannot navigate itself to another site.
+function prototypePage(v) {
+  const body = v.present
+    ? `<h1>Prototype <span class="muted">v${esc(v.version)}</span></h1><p><a href="/board">back to the board</a></p><iframe sandbox="allow-scripts allow-forms" src="/prototype/index.html" title="prototype" style="width:100%;height:75vh;border:1px solid var(--rule)"></iframe>`
+    : `<h1>Prototype</h1><p class="muted">No prototype is published yet — generate one on the <a href="/board">board</a>.</p>`;
+  return { title: "Prototype", headers: { "content-security-policy": "frame-src 'self'" }, body };
 }
 
 // ── export ──
@@ -230,7 +243,11 @@ export function routes({ root, _query, _sleep, _exec, _fetch, _env } = {}) {
       if (!doc) return { title: "Not found", status: 404, body: `<h1>Not found</h1><p class="muted">no ${esc(params.kind)} on the record</p>` };
       return { title: params.kind, body: `<h1>${esc(params.kind)} <span class="muted">v${esc(doc.meta.version)} · <code>${esc(short(doc.meta.content_hash))}</code></span></h1><pre>${esc(RENDER[params.kind](doc))}</pre>` };
     } },
-    { method: "GET", path: "/prototype/index.html", handler: () => ({ file: join(root, HTML_FILE), headers: { "content-security-policy": "sandbox allow-scripts" } }) },
+    { method: "GET", path: "/prototype", handler: () => prototypePage(prototypeView(root)) },
+    // Only a frame gets the HTML: as the top window, a page could always navigate itself away.
+    { method: "GET", path: "/prototype/index.html", handler: ({ headers }) => headers["sec-fetch-dest"] === "iframe"
+      ? { file: join(root, HTML_FILE), headers: { "content-security-policy": PROTOTYPE_CSP } }
+      : { title: "Prototype", body: `<h1>Prototype</h1><p>The prototype opens in its <a href="/prototype">view</a>, framed by the console.</p>` } },
     { method: "POST", path: "/prototype/generate", handler: ({ form: f }) => work("Prototype", "/board", async (onEvent) => { await generate({ root, notes: blank(f.notes), onEvent, ...seams }); return "/board"; }) },
     { method: "POST", path: "/stories/write", handler: ({ form: f }) => work("Stories", "/board", async (onEvent) => { await writeStories({ root, notes: blank(f.notes), onEvent, ...seams }); return "/board"; }) },
     { method: "POST", path: "/stories/review", handler: () => work("Story review", "/board", async (onEvent) => { await reviewStories({ root, onEvent, ...seams }); return "/board"; }) },
