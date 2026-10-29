@@ -277,7 +277,7 @@ await withRoot({}, async (tmp) => {
     withKeys.tracker = { kind: "github", repo: "acme/dock", keys: { "REQ-1": "1", "REQ-2": "2", "STORY-1": "3" } };
     writeFileSync(join(root, "discovery/handoffs/handoff-v1.json"), JSON.stringify(withKeys, null, 2) + "\n");
     const e2 = exportView(root);
-    check("tracker state is the latest handoff's: kind, where, and how many items carry a key", e2.tracker.kind === "github" && e2.tracker.where === "acme/dock" && e2.tracker.keyed === 3 && (await get("/export")).text.includes("acme/dock"), JSON.stringify(e2.tracker));
+    check("tracker history stays readable while console sync is hidden", e2.tracker.kind === "github" && e2.tracker.where === "acme/dock" && e2.tracker.keyed === 3 && (await get("/export")).text.includes("acme/dock") && !/name="tracker"/.test((await get("/export")).text), JSON.stringify(e2.tracker));
 
     const ruled = await post("/doors/answer", { req: "REQ-1", oq: "OQ-1", answer: "Yes, until the shift ends.", by: "Brad" });
     const prd = loadPrd(root);
