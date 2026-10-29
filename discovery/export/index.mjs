@@ -14,7 +14,7 @@ import { verify } from "../../shared/hash.mjs";
 import { pin, deriveVerdict } from "../../shared/judge/index.mjs";
 import { checkScope, lineDrawn } from "../../shared/scope.mjs";
 import { totals } from "../../shared/agent-call/ledger.mjs";
-import { handoffFile, latestHandoff, itemsOf, designMoved } from "../../shared/handoff.mjs";
+import { handoffFile, readHandoffs, latestHandoff, itemsOf, designMoved } from "../../shared/handoff.mjs";
 import { loadProject, ledgerPath, exec } from "../setup/index.mjs";
 import { loadPrd, savePrd, PRD_FILE } from "../workshop/index.mjs";
 import { Refused, readDoc, saveDoc, saveVerdict, isSigned, agreementGap, pendingReactions, recoveryOf, stalenessOf, renderPrd, renderPrototype, renderStories, renderStandard, renderDesign, PROTOTYPE_FILE, STORIES_FILE, DESIGN_FILE } from "../record/index.mjs";
@@ -144,8 +144,10 @@ export async function exportHandoff({ root, exit, by, tracker: trackerOpts, _now
   const project = loadProject(root);
   const prd = loadPrd(root);
   const previous = latestHandoff(root);
+  // A named tracker holds what the last handoff to project one sent it; files-only exports since do not reset it.
+  const basis = trackerOpts ? readHandoffs(root).findLast((h) => h.tracker) ?? null : previous;
   const toTeam = exit !== "delivery";
-  const tracker = trackerOpts === false ? null : toTeam ? resolveTracker(trackerOpts, previous, project) : (previous?.tracker ?? null);
+  const tracker = trackerOpts === false ? null : toTeam ? resolveTracker(trackerOpts, basis, project) : (previous?.tracker ?? null);
   if (toTeam && tracker?.kind === "jira" && !(_env.JIRA_EMAIL && _env.JIRA_API_TOKEN)) throw new Refused("no-credentials", "export: JIRA_EMAIL and JIRA_API_TOKEN must be in the environment; they are never written to a record");
   if (!lineDrawn(prd)) throw new Refused("no-line", "export: nothing leaves before the MVP line is drawn");
   const proto = readDoc(root, PROTOTYPE_FILE), stories = readDoc(root, STORIES_FILE), design = readDoc(root, DESIGN_FILE);
@@ -168,7 +170,7 @@ export async function exportHandoff({ root, exit, by, tracker: trackerOpts, _now
   const save = () => { saveDoc(root, file, "handoff", handoff); writeFileSync(join(root, rendering), renderHandoff(handoff)); };
   save();
 
-  const projected = toTeam && tracker ? await projectTo({ handoff, previous, prd, save, _fetch, _env, _exec, root }) : null;
+  const projected = toTeam && tracker ? await projectTo({ handoff, previous: basis, prd, save, _fetch, _env, _exec, root }) : null;
 
   if (tracker?.kind === "jira" && tracker.keys[IDEA]) prd.meta.links = { ...(prd.meta.links ?? {}), jira_idea: tracker.keys[IDEA] };
   const where = projected ? ` · ${trackerName(tracker)}: ${projected.created.length} created, ${projected.updated.length} updated, ${projected.unchanged.length} unchanged` : toTeam ? " · files only" : "";
