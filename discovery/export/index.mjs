@@ -79,6 +79,30 @@ function checkFreshness({ prd, proto, stories, design, exit }) {
   return { findings, checked: 1 + (stories ? 1 : 0) + (design ? 1 : 0) };
 }
 
+// ── each exit ──
+
+/**
+ * Whether an exit may leave now — one rule, which the door enforces and the export view
+ * shows (R10): a prototype and a backlog, then the ready gate, then for Delivery or both a
+ * signed design. Each check that fails is a finding with its remedy; `refusal` is the
+ * first of them, as the door throws it.
+ */
+export function exitReadiness({ prd, proto, stories, design, exit }) {
+  const gate = readinessOf({ prd, proto, stories, design, exit });
+  const findings = [], refusals = [];
+  const need = (code, message, detail, summary, evidence, remedy) => {
+    refusals.push(new Refused(code, message, detail));
+    findings.push({ severity: "high", confidence: "certain", rule: code, subject: prd.id, summary, evidence, remedy });
+  };
+  if (!proto) need("no-prototype", "export: there is no prototype — generate one on the board first", undefined, "There is no prototype; the backlog claims screens it must have.", `\`${PROTOTYPE_FILE}\` is absent.`, "Generate the prototype on the board.");
+  if (!stories) need("no-stories", "export: there is no backlog to hand off — write the stories on the board first", undefined, "There is no backlog to hand off.", `\`${STORIES_FILE}\` is absent.`, "Write the stories on the board.");
+  findings.push(...gate.findings);
+  if (gate.verdict === "block") refusals.push(new Refused("not-ready", "export: the record does not add up — every join is green before anything leaves", gate.findings));
+  if (exit !== "team" && !design) need("no-design", "export: Delivery builds what the design states, and there is no design", "none", "Delivery builds what the design states, and there is no design.", `\`${DESIGN_FILE}\` is absent.`, "Write the design on the board, then review and sign it.");
+  else if (exit !== "team" && !isSigned(design)) need("design-unsigned", "export: what goes to Delivery is signed — sign the design first", "unsigned", `Nobody has signed ${design.id} as it stands.`, "`/signoff`: none on this version.", "Review the design and sign it on the board.");
+  return { exit, verdict: refusals.length ? "block" : "pass", findings, gate, refusal: refusals[0] ?? null };
+}
+
 // ── the contract ──
 
 /** The PRD compiled to what Delivery builds against: its own fields, filtered to the line; rulings in force, approved amendments, open questions. */
@@ -111,7 +135,8 @@ export function compile(prd) {
  * the snapshot is written as the next version with its rendering beside it; for a team,
  * the tracker (given now, or carried from the last handoff) is brought to match it —
  * create · update · leave alone, by item hash — or, with none, the files are the handoff;
- * and the PRD takes a flag saying what left and where. Credentials are written nowhere.
+ * and the PRD takes a flag saying what left and where. `tracker: false` is files only on
+ * any exit: the snapshot carries no tracker and none is called. Credentials are written nowhere.
  */
 export async function exportHandoff({ root, exit, by, tracker: trackerOpts, _now = () => new Date(), _fetch = fetch, _env = process.env, _exec = exec }) {
   if (!EXITS.includes(exit)) throw new Refused("bad-exit", `export: the door has three exits — ${EXITS.join(", ")} — and "${exit}" is not one`);
@@ -120,22 +145,15 @@ export async function exportHandoff({ root, exit, by, tracker: trackerOpts, _now
   const prd = loadPrd(root);
   const previous = latestHandoff(root);
   const toTeam = exit !== "delivery";
-  const tracker = toTeam ? resolveTracker(trackerOpts, previous, project) : (previous?.tracker ?? null);
+  const tracker = trackerOpts === false ? null : toTeam ? resolveTracker(trackerOpts, previous, project) : (previous?.tracker ?? null);
   if (toTeam && tracker?.kind === "jira" && !(_env.JIRA_EMAIL && _env.JIRA_API_TOKEN)) throw new Refused("no-credentials", "export: JIRA_EMAIL and JIRA_API_TOKEN must be in the environment; they are never written to a record");
   if (!lineDrawn(prd)) throw new Refused("no-line", "export: nothing leaves before the MVP line is drawn");
-  const proto = readDoc(root, PROTOTYPE_FILE);
-  if (!proto) throw new Refused("no-prototype", "export: there is no prototype — the backlog claims screens it must have");
-  const stories = readDoc(root, STORIES_FILE);
-  if (!stories) throw new Refused("no-stories", "export: there is no backlog to hand off");
-  const design = readDoc(root, DESIGN_FILE);
-
-  const verdict = readinessOf({ prd, proto, stories, design, exit });
-  saveVerdict(root, verdict);
-  if (verdict.verdict === "block") throw new Refused("not-ready", "export: the record does not add up — every join is green before anything leaves", verdict.findings);
-  if (exit !== "team") {
-    if (!design) throw new Refused("no-design", "export: Delivery builds what the design states, and there is no design", "none");
-    if (!isSigned(design)) throw new Refused("design-unsigned", "export: what goes to Delivery is signed — sign the design first", "unsigned");
-  }
+  const proto = readDoc(root, PROTOTYPE_FILE), stories = readDoc(root, STORIES_FILE), design = readDoc(root, DESIGN_FILE);
+  const ready = exitReadiness({ prd, proto, stories, design, exit });
+  // The gate is filed once the door reaches it, past the prototype and the backlog.
+  if (proto && stories) saveVerdict(root, ready.gate);
+  if (ready.refusal) throw ready.refusal;
+  const verdict = ready.gate;
 
   const version = (previous?.version ?? 0) + 1;
   const handoff = {
