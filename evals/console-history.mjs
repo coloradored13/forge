@@ -11,7 +11,7 @@ import { routes, nav } from "../discovery/console/index.mjs";
 import * as views from "../discovery/console/views.mjs";
 import { generate } from "../discovery/prototype/index.mjs";
 import { readDoc, saveDoc, keepOutgoing, isSigned, renderPrototype, renderStories, renderDesign, PROTOTYPE_FILE, STORIES_FILE, DESIGN_FILE, HTML_FILE } from "../discovery/record/index.mjs";
-const { check, done } = suite("console history", 31);
+const { check, done } = suite("console history", 33);
 const kinds = [["prototype", PROTOTYPE_FILE, "prototype", renderPrototype], ["stories", STORIES_FILE, "story", renderStories], ["design", DESIGN_FILE, "design", renderDesign]];
 const hash = bytes => createHash("sha256").update(bytes).digest("hex");
 const bytes = (root, file) => readFileSync(join(root, file));
@@ -86,5 +86,20 @@ await withRoot({}, async tmp => {
   const before = tree(root); let result;
   try { result = typeof views.historyView === "function" && views.historyView(root, "prototype"); } catch {}
   check("historyView reads without record writes", Boolean(result) && tree(root) === before);
+});
+for (const signed of [true, false]) await withRoot({}, async tmp => {
+  const root = seed(tmp), doc = readDoc(root, DESIGN_FILE);
+  doc.signoff = { by: "History signer", at: "2026-10-29T12:00:00.000Z", content_hash: doc.meta.content_hash, review: { gate: "design-review", verdict: "pass" } };
+  if (!signed) doc.tokens["color-paper"] = "#ffffff";
+  saveDoc(root, DESIGN_FILE, "design", doc);
+  const kept = readDoc(root, DESIGN_FILE), key = basename(keepOutgoing(root, "design", DESIGN_FILE));
+  const current = readDoc(root, DESIGN_FILE); current.traces.prd.version = "99.0.0"; saveDoc(root, DESIGN_FILE, "design", current);
+  assert.equal(isSigned(kept), signed); assert.equal(isSigned(readDoc(root, DESIGN_FILE)), signed);
+  assert.equal(kept.signoff.content_hash === kept.meta.content_hash, signed);
+  await consoleFor(root, async get => {
+    const page = await get("/artifact/design"), board = await get("/board"), old = await get(`/artifact/design/history/${key}`);
+    const surfaces = [page.text.match(/<h1>[^]*?<\/h1>/)?.[0], [...page.text.matchAll(/<tr>[^]*?<\/tr>/g)].find(m => m[0].includes(key))?.[0], board.text.match(/<tr><td>design<\/td>[^]*?<\/tr>/)?.[0], old.text.match(/<h1>[^]*?<\/h1>/)?.[0]];
+    check(`design ${signed ? "matching" : "mismatched"} signature: current and historical labels`, [page, board, old].every(r => r.status === 200) && surfaces.every(text => Boolean(text) && (/signed by/i.test(text) === signed) && (!signed || text.includes("History signer"))));
+  });
 });
 done();
