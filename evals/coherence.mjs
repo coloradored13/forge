@@ -256,7 +256,7 @@ await withRoot({}, async (tmp) => {
   // the two halves meet only in composition — neither imports the other (tools/console does what this line does)
   const srv = await serve({ routes: [...routes({ root, _query: q.query, _exec: () => "", _fetch: () => { throw new Error("no fetch"); }, _env: {} }), ...deliveryRoutes({ root })], port: 0 });
   try {
-    const get = async (p) => { const r = await fetch(srv.url + p, { redirect: "manual" }); return { status: r.status, location: r.headers.get("location"), text: await r.text() }; };
+    const get = async (p, headers = {}) => { const r = await fetch(srv.url + p, { redirect: "manual", headers }); return { status: r.status, location: r.headers.get("location"), text: await r.text() }; };
     const post = async (p, form) => { const r = await fetch(srv.url + p, { method: "POST", headers: { Origin: srv.url }, body: new URLSearchParams(form), redirect: "manual" }); return { status: r.status, location: r.headers.get("location"), text: await r.text() }; };
     const home = await get("/");
     check("the root redirects to the board once a PRD exists", home.status === 303 && home.location === "/board", `${home.status} ${home.location}`);
@@ -264,7 +264,7 @@ await withRoot({}, async (tmp) => {
     check("all six views answer 200; the run view is Delivery's setup until a run exists, and the release view says in one line that it lands with its record", pages.every((p) => p.status === 200) && /Set up Delivery/.test(pages[4].text) && /No handoff Delivery may take|has no <code>\.git<\/code>/.test(pages[4].text) && /M3/.test(pages[5].text), pages.map((p) => p.status).join());
     check("setup prices a Discovery role from the ledger — the design reviewer has one call of history, the writer none, and Delivery's roles are priced on their own view", /discovery\.reviewer<\/code>[^\n]*~\$0\.40 a call/.test(pages[0].text) && /discovery\.writer<\/code>[^\n]*no history yet/.test(pages[0].text) && /delivery\.judge<\/code>[^\n]*priced on the Delivery run view/.test(pages[0].text) && setupView(root).roles.find((r) => r.key === "discovery.reviewer").estimate.n === 1 && setupView(root).roles.find((r) => r.key === "delivery.judge").estimate === null, pages[0].text.match(/<tr>[^\n]*discovery\.reviewer[^\n]*<\/tr>/)?.[0]);
     check("the setup page shows the model per role and the board wears the design-reviewer verdict", pages[0].text.includes("claude-sonnet-5") && pages[0].text.includes("delivery.judge") && pages[2].text.includes(DESIGN_REVIEW) && /pass/.test(pages[2].text));
-    check("the prototype the PM reacts to is served from the record's own file", (await get("/prototype/index.html")).text.includes("<h1>Run sheet</h1>"));
+    check("the prototype the PM reacts to is served from the record's own file", (await get("/prototype/index.html", { "Sec-Fetch-Dest": "iframe" })).text.includes("<h1>Run sheet</h1>"));
 
     // Export: readiness live, the design's state, the handoffs and their tracker.
     const e0 = exportView(root);
