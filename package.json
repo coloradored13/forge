@@ -9,6 +9,7 @@
   },
   "scripts": {
     "evals": "node evals/run-all.mjs",
+    "evals:browser": "node evals/browser/run-all.mjs",
     "import-rule": "node tools/import-rule.mjs",
     "owns": "node tools/owns.mjs",
     "console": "node tools/console.mjs"
