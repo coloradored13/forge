@@ -81,9 +81,12 @@ export function quoteStrip(q) {
   return `<p class="quote${q.over ? " over" : ""}">${q.model ? `<code>${esc(q.model)}</code> · ` : ""}${esc(est)} · ${esc(cap)}${q.over ? " · " + badge("over budget", "bad") : ""}</p>`;
 }
 
+/** A refusal: its code and message, a plain detail as text, findings with their remedies; any other object stays unshown. */
 export function refusalHtml(e) {
   const code = e?.code ? `<code>${esc(e.code)}</code> ` : "";
-  const detail = e?.detail !== undefined && typeof e.detail !== "object" ? `<p class="muted">${esc(String(e.detail))}</p>` : "";
+  const findings = Array.isArray(e?.detail) ? e.detail : e?.detail?.findings;
+  const detail = Array.isArray(findings) && findings.length && findings.every((f) => f?.rule && f.summary) ? table(["severity", "rule", "subject", "what"], findingRows(findings))
+    : e?.detail !== undefined && typeof e.detail !== "object" ? `<p class="muted">${esc(String(e.detail))}</p>` : "";
   return `<p class="refusal">${code}${esc(e?.message ?? String(e))}</p>${detail}`;
 }
 
@@ -135,20 +138,21 @@ function readForm(req) {
 
 /**
  * Serve a route table on localhost.
- * routes: [{ method, path, handler }] — path like "/workshop/:key/turn"; handler(ctx) with
+ * routes: [{ method, path, handler, back? }] — path like "/workshop/:key/turn"; handler(ctx) with
  * ctx = { params, query, form, url, headers } returns one of
  *   { title, body, headers? }             a page (status 200 unless given)
  *   { redirect }                          303 to a view — every door POST ends here
  *   { file, type? }                       one file from the record, as it is
  *   { title, work: async (event) => href, back }   a long door: progress streamed, then on to `href`
  * A thrown error with a `code` is a refusal (409); anything else is a 500. Both render
- * the error's own words. `nav` is the half's view list; the current view is marked by path.
+ * the error's own words, and Back goes to the route's `back` view, or else the page before.
+ * `nav` is the half's view list; the current view is marked by path.
  */
 export function serve({ routes, nav = [], port = 0, host = "127.0.0.1", brand }) {
   const compiled = routes.map((r) => ({ ...r, ...compile(r.path) }));
   const navFor = (pathname) => nav.map((n) => ({ ...n, current: pathname === n.href || pathname.startsWith(n.href + "/") }));
   const send = (res, status, html, headers) => { res.writeHead(status, { "content-type": TYPES[".html"], ...headers }); res.end(html); };
-  const errorPage = (res, pathname, e) => send(res, e?.code ? 409 : 500, page({ title: e?.code ? "Refused" : "Error", nav: navFor(pathname), body: `<h1>${e?.code ? "The door refused" : "Something failed"}</h1>${refusalHtml(e)}<p><a href="javascript:history.back()">Back</a></p>`, brand }));
+  const errorPage = (res, pathname, e, back = "javascript:history.back()") => send(res, e?.code ? 409 : 500, page({ title: e?.code ? "Refused" : "Error", nav: navFor(pathname), body: `<h1>${e?.code ? "The door refused" : "Something failed"}</h1>${refusalHtml(e)}<p><a href="${esc(back)}">Back</a></p>`, brand }));
 
   // Trust comes from the address this server listens on, never from the request: a page on
   // another origin, a rebinding name or a sandboxed prototype cannot drive a door (D13).
@@ -164,8 +168,9 @@ export function serve({ routes, nav = [], port = 0, host = "127.0.0.1", brand })
     // One change at a time, held until its long work finishes, not just its handler.
     if (mutating && busy) return refuse(res, 409, pathname, "busy", "another change is still running — wait for it to finish, then try again");
     if (mutating) busy = true;
+    let route;
     try {
-      const route = compiled.find((r) => r.method === req.method && r.re.test(pathname));
+      route = compiled.find((r) => r.method === req.method && r.re.test(pathname));
       if (!route) return send(res, 404, page({ title: "Not found", nav: navFor(pathname), body: `<h1>Not found</h1><p class="muted">${esc(pathname)}</p>`, brand }));
       const m = route.re.exec(pathname);
       const params = Object.fromEntries(route.keys.map((k, i) => [k, decodeURIComponent(m[i + 1])]));
@@ -195,7 +200,7 @@ export function serve({ routes, nav = [], port = 0, host = "127.0.0.1", brand })
       }
       return send(res, out.status ?? 200, page({ title: out.title, nav: navFor(pathname), body: out.body, brand }), out.headers);
     } catch (e) {
-      return errorPage(res, pathname, e);
+      return errorPage(res, pathname, e, route?.back);
     } finally {
       if (mutating) busy = false;
     }

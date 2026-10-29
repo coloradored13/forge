@@ -17,7 +17,7 @@ import { GATE as PROTOTYPE_GATE } from "../prototype/index.mjs";
 import { GATE as STORY_GATE, REVIEW_GATE as STORY_REVIEW } from "../stories/index.mjs";
 import { GATE as DESIGN_GATE, REVIEW_GATE as DESIGN_REVIEW } from "../design/index.mjs";
 import { radiusOf } from "../doors/index.mjs";
-import { readiness, designState, costOf, EXITS, TRACKERS, repoOf } from "../export/index.mjs";
+import { readiness, exitReadiness, designState, costOf, EXITS } from "../export/index.mjs";
 
 /** The six, in the spec's order. A view that lands later says which milestone brings its record. */
 export const VIEWS = [
@@ -106,11 +106,16 @@ export function prototypeView(root) {
   return { present: Boolean(doc), version: doc?.meta?.version ?? null };
 }
 
-/** The artifacts with their stale badges and gates, the doors' state, the ledger's cost, and the quotes before the writer and the reviewer. */
+// The ready-gate finding that says how each artifact recovers once it is stale (D05).
+const RECOVERY = { prototype: ["no-agreement", "agreement-stale"], stories: ["stories-stale"], design: ["design-stale"] };
+
+/** The artifacts with their stale badges, recovery and gates, the doors' state, the ledger's cost, and the quotes before the writer and the reviewer. */
 export function boardView(root) {
   const project = loadProject(root);
   const prd = loadPrd(root);
   const st = staleness(root);
+  // As Delivery reads the gate, so a stale design shows its recovery too.
+  const ready = readiness(root);
   const docs = Object.fromEntries(ARTIFACTS.map((a) => [a.kind, readDoc(root, a.file)]));
   const artifacts = ARTIFACTS.map(({ kind, file, gates, html }) => {
     const doc = docs[kind];
@@ -119,6 +124,7 @@ export function boardView(root) {
     return {
       kind, file, present: Boolean(doc), version: doc?.meta?.version ?? null, hash: doc?.meta?.content_hash ?? null,
       stale: b?.stale ?? false, moved, since: b?.since ?? [], traced_version: b?.traced_version ?? null,
+      recovery: b?.stale ? ready.findings.find((f) => RECOVERY[kind].includes(f.rule))?.remedy ?? null : null,
       ...(kind === "design" ? { signed: b?.signed ?? false, signoff: doc?.signoff ?? null } : {}),
       ...(html ? { html } : {}),
       gates: gates.map((g) => gateRow(root, g)),
@@ -144,17 +150,18 @@ export function boardView(root) {
 
 // ── export ──
 
-/** The ready gate recomputed live, the design's state, every handoff so far, and the tracker as the latest snapshot carries it. */
+/** The ready gate recomputed live, whether each exit may leave now, the design's state, every handoff so far, and the tracker as the latest snapshot carries it. */
 export function exportView(root) {
-  const project = loadProject(root);
+  loadProject(root); // refused, as the door is, before setup
+  const docs = { prd: loadPrd(root), proto: readDoc(root, PROTOTYPE_FILE), stories: readDoc(root, STORIES_FILE), design: readDoc(root, DESIGN_FILE) };
   const handoffs = readHandoffs(root).map((h) => ({ version: h.version, exit: h.exit, by: h.by, exported_at: h.exported_at, tracker: h.tracker, cost: h.cost, design: designState(h.design), file: handoffFile(h.version), rendering: handoffFile(h.version).replace(/\.json$/, ".md") }));
   const latest = latestHandoff(root);
   const t = latest?.tracker ?? null;
   return {
     readiness: readiness(root),
-    design: designState(readDoc(root, DESIGN_FILE)),
-    exits: EXITS, trackers: TRACKERS,
-    repo: repoOf(project.repo?.remote),
+    readinessByExit: Object.fromEntries(EXITS.map((exit) => { const r = exitReadiness({ ...docs, exit }); return [exit, { verdict: r.verdict, findings: r.findings }]; })),
+    design: designState(docs.design),
+    exits: EXITS,
     handoffs,
     tracker: t ? { kind: t.kind, where: t.kind === "github" ? t.repo : `${t.site} · ${t.project}`, keyed: Object.keys(t.keys ?? {}).length, version: latest.version } : null,
   };

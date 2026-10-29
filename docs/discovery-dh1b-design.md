@@ -49,4 +49,4 @@ Everything else, such as the notes box, tracker wording and setup's retry behavi
 
 ## Not in DH1b
 
-Package versioning and the recipient verifier (DH3); late builds, cancellation and interrupted writes (DH4); anything under `delivery/`. Criteria set without a linked question, and reactions about scope or constraints, stay recorded limits. So does WebRTC from a displayed prototype: Chromium applies neither CSP nor the sandbox to it, so the frame's STUN and TURN traffic leaves (D13; #88).
+Package versioning and the recipient verifier (DH3); late builds, cancellation and interrupted writes (DH4); anything under `delivery/`. Criteria set without a linked question, and reactions about scope or constraints, stay recorded limits. So does WebRTC from a displayed prototype: Chromium applies neither CSP nor the sandbox to it, so the frame's STUN and TURN traffic leaves (D13; #88). Tracker repair stays out of scope (plan line 157). One known gap there predates DH1b: a Delivery export carries the tracker's keys without syncing, so a later team export can miss an edit made before it (#90).

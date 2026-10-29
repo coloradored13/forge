@@ -47,7 +47,7 @@
     },
     "tracker": {
       "x-runner": true,
-      "description": "Where the backlog was projected, if anywhere: the tracker's kind, where in it, and the key of every item exported — carried forward from the last handoff so a re-export updates rather than duplicates. Null when the backlog has only ever gone to files.",
+      "description": "Where the backlog was projected, if anywhere: the tracker's kind, where in it, and the key of every item exported — carried forward from the last handoff so a re-export updates rather than duplicates. Null when this export went to files only.",
       "oneOf": [
         { "type": "null" },
         {

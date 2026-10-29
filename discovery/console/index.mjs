@@ -105,7 +105,8 @@ function workshopPage(v, key) {
 
 function artifactRow(a) {
   const state = !a.present ? badge("absent", "muted")
-    : [a.stale ? badge(`stale · ${a.moved.join("+")} moved${a.since.length ? ` · since ${a.since.join(", ")}` : ""}`, "warn") : badge("current", "ok"), a.kind === "design" ? (a.signed ? badge(`signed by ${a.signoff.by}`, "ok") : badge("unsigned", "muted")) : ""].join(" ");
+    : [a.stale ? badge(`stale · ${a.moved.join("+")} moved${a.since.length ? ` · since ${a.since.join(", ")}` : ""}`, "warn") : badge("current", "ok"), a.kind === "design" ? (a.signed ? badge(`signed by ${a.signoff.by}`, "ok") : badge("unsigned", "muted")) : ""].join(" ")
+      + (a.recovery ? `<br><span class="muted">→ ${esc(a.recovery)}</span>` : "");
   const links = a.present ? [`<a href="/artifact/${esc(a.kind)}">read</a>`, a.html ? `<a href="/prototype">open</a>` : ""].filter(Boolean).join(" · ") : "";
   return [esc(a.kind), a.present ? `v${esc(a.version)} <code>${esc(short(a.hash))}</code>` : "—", state, a.gates.map(verdictLine).join("<br>") || `<span class="muted">—</span>`, links];
 }
@@ -178,20 +179,19 @@ function prototypePage(v) {
 
 function exportPage(v) {
   const ready = v.readiness;
-  const readiness = `<p>${esc(ready.gate)}: ${badge(ready.verdict, TONE[ready.verdict] ?? "warn")} <span class="muted">${ready.checked} checked · ${ready.skipped} skipped</span></p>`
-    + (ready.findings.length ? table(["severity", "rule", "subject", "what"], findingRows(ready.findings)) : "");
-  const tracker = v.tracker ? `<p>${esc(v.tracker.kind)} · ${esc(v.tracker.where)} · ${v.tracker.keyed} items keyed <span class="muted">as of handoff v${v.tracker.version}</span></p>` : `<p class="muted">files only — no tracker projected yet</p>`;
+  // Each exit as the door would take it now, with what stands in its way.
+  const readiness = `<p class="muted">${esc(ready.gate)}: ${ready.checked} checked · ${ready.skipped} skipped</p>`
+    + v.exits.map((x) => { const r = v.readinessByExit[x]; return `<p><b>${esc(x)}</b>: ${badge(r.verdict, TONE[r.verdict])}</p>` + (r.findings.length ? table(["severity", "rule", "subject", "what"], findingRows(r.findings)) : ""); }).join("");
+  const tracker = `<p class="muted">Tracker sync isn't available in this version: an export from here writes the handoff files only.</p>`
+    + (v.tracker ? `<p>${esc(v.tracker.kind)} · ${esc(v.tracker.where)} · ${v.tracker.keyed} items keyed <span class="muted">as of handoff v${v.tracker.version}</span></p>` : "");
   const handoffs = table(["version", "exit", "by", "exported", "tracker", "design", "cost", ""], v.handoffs.map((h) => [`v${h.version}`, esc(h.exit), esc(h.by), when(h.exported_at), h.tracker ? esc(`${h.tracker.kind} · ${h.tracker.kind === "github" ? h.tracker.repo : `${h.tracker.site} · ${h.tracker.project}`} · ${Object.keys(h.tracker.keys ?? {}).length} keyed`) : `<span class="muted">files only</span>`, esc(h.design), `${usd(h.cost?.usd)} · ${h.cost?.calls ?? 0} calls`, `<code>${esc(h.file)}</code>`]));
   const exportForm = form({
     action: "/export", submit: "Export",
     fields: [
       { name: "exit", label: "exit", type: "select", required: true, options: v.exits.map((e) => [e, e]) },
-      { name: "tracker", label: "tracker (team and both exits)", type: "select", options: [["", v.tracker ? `as before — ${v.tracker.kind} · ${v.tracker.where}` : "files only"], ...v.trackers.map((t) => [t, t])] },
-      { name: "repo", label: "GitHub owner/name", value: v.repo ?? "" },
-      { name: "site", label: "Jira site" }, { name: "project", label: "Jira project key" }, { name: "ideas", label: "Jira Product Discovery ideas project (optional)" },
       { name: "by", label: "by", required: true },
     ],
-    note: `The design is <b>${esc(v.design)}</b>. Delivery and both need it signed. Jira credentials come from <code>JIRA_EMAIL</code> and <code>JIRA_API_TOKEN</code> in the environment and are never written to a record.`,
+    note: `The design is <b>${esc(v.design)}</b>. Delivery and both need it signed.`,
   });
   return { title: "Export", body: `<h1>Export</h1><h2>Ready?</h2>${readiness}<h2>Tracker</h2>${tracker}<h2>Handoffs</h2>${handoffs}<h2>Export</h2>${exportForm}` };
 }
@@ -213,12 +213,6 @@ export function routes({ root, _query, _sleep, _exec, _fetch, _env } = {}) {
   const home = () => setupView(root).project ? (workshopView(root).prd ? "/board" : "/workshop") : "/setup";
   const work = (title, back, fn) => ({ title, back, work: fn });
 
-  const trackerOf = (f) => {
-    if (!blank(f.tracker)) return undefined;
-    if (f.tracker === "github") return { kind: "github", ...(blank(f.repo) ? { repo: f.repo.trim() } : {}) };
-    return { kind: f.tracker, site: blank(f.site), project: blank(f.project), ...(blank(f.ideas) ? { ideas: f.ideas.trim() } : {}) };
-  };
-
   return once([
     { method: "GET", path: "/", handler: () => ({ redirect: home() }) },
     { method: "GET", path: "/setup", handler: () => setupPage(setupView(root)) },
@@ -234,7 +228,7 @@ export function routes({ root, _query, _sleep, _exec, _fetch, _env } = {}) {
     } },
     { method: "GET", path: "/workshop", handler: () => workshopPage(workshopView(root)) },
     { method: "GET", path: "/workshop/:key", handler: ({ params }) => workshopPage(workshopView(root, params.key), params.key) },
-    { method: "POST", path: "/workshop/open", handler: ({ form: f }) => { openPrd({ root, title: f.title, slug: f.slug, seed: f.seed, owner: blank(f.owner) }); return { redirect: "/workshop" }; } },
+    { method: "POST", path: "/workshop/open", back: "/workshop", handler: ({ form: f }) => { openPrd({ root, title: f.title, slug: f.slug, seed: f.seed, owner: blank(f.owner) }); return { redirect: "/workshop" }; } },
     { method: "POST", path: "/workshop/:key/turn", handler: ({ params, form: f }) => work(`Workshop · ${params.key}`, `/workshop/${params.key}`, async (onEvent) => { await turn({ root, key: params.key, text: f.text, onEvent, ...seams }); return `/workshop/${params.key}`; }) },
     { method: "POST", path: "/workshop/:key/extract", handler: ({ params }) => work(`Extract · ${params.key}`, `/workshop/${params.key}`, async (onEvent) => { await extract({ root, key: params.key, onEvent, ...seams }); return `/workshop/${params.key}`; }) },
     { method: "GET", path: "/board", handler: () => boardPage(boardView(root)) },
@@ -254,14 +248,15 @@ export function routes({ root, _query, _sleep, _exec, _fetch, _env } = {}) {
     { method: "POST", path: "/stories/review", handler: () => work("Story review", "/board", async (onEvent) => { await reviewStories({ root, onEvent, ...seams }); return "/board"; }) },
     { method: "POST", path: "/design/write", handler: ({ form: f }) => work("Design", "/board", async (onEvent) => { await writeDesign({ root, notes: blank(f.notes), onEvent, ...seams }); return "/board"; }) },
     { method: "POST", path: "/design/review", handler: () => work("Design review", "/board", async (onEvent) => { await reviewDesign({ root, onEvent, ...seams }); return "/board"; }) },
-    { method: "POST", path: "/design/signoff", handler: ({ form: f }) => { signoff(root, { by: f.by, note: blank(f.note), ...(blank(f.override_reason) ? { override: { reason: f.override_reason.trim() } } : {}) }); return { redirect: "/board" }; } },
-    { method: "POST", path: "/doors/answer", handler: ({ form: f }) => { answer({ root, req: f.req, oq: blank(f.oq), pq: blank(f.pq), question: blank(f.question), answer: f.answer, criterion: blank(f.criterion), by: f.by }); return { redirect: "/board" }; } },
-    { method: "POST", path: "/doors/propose", handler: ({ form: f }) => { propose({ root, target: f.target?.trim(), to: f.to === undefined ? undefined : jsonOrText(f.to), rationale: f.rationale, by: f.by }); return { redirect: "/board" }; } },
-    { method: "POST", path: "/doors/approve", handler: ({ form: f }) => { approve({ root, id: f.id, by: f.by, radius: [].concat(f.radius ?? []) }); return { redirect: "/board" }; } },
-    { method: "POST", path: "/doors/agree", handler: ({ form: f }) => { agree({ root, by: f.by }); return { redirect: "/board" }; } },
-    { method: "POST", path: "/doors/reject", handler: ({ form: f }) => { reject({ root, id: f.id, by: f.by, reason: f.reason }); return { redirect: "/board" }; } },
+    { method: "POST", path: "/design/signoff", back: "/board", handler: ({ form: f }) => { signoff(root, { by: f.by, note: blank(f.note), ...(blank(f.override_reason) ? { override: { reason: f.override_reason.trim() } } : {}) }); return { redirect: "/board" }; } },
+    { method: "POST", path: "/doors/answer", back: "/board", handler: ({ form: f }) => { answer({ root, req: f.req, oq: blank(f.oq), pq: blank(f.pq), question: blank(f.question), answer: f.answer, criterion: blank(f.criterion), by: f.by }); return { redirect: "/board" }; } },
+    { method: "POST", path: "/doors/propose", back: "/board", handler: ({ form: f }) => { propose({ root, target: f.target?.trim(), to: f.to === undefined ? undefined : jsonOrText(f.to), rationale: f.rationale, by: f.by }); return { redirect: "/board" }; } },
+    { method: "POST", path: "/doors/approve", back: "/board", handler: ({ form: f }) => { approve({ root, id: f.id, by: f.by, radius: [].concat(f.radius ?? []) }); return { redirect: "/board" }; } },
+    { method: "POST", path: "/doors/agree", back: "/board", handler: ({ form: f }) => { agree({ root, by: f.by }); return { redirect: "/board" }; } },
+    { method: "POST", path: "/doors/reject", back: "/board", handler: ({ form: f }) => { reject({ root, id: f.id, by: f.by, reason: f.reason }); return { redirect: "/board" }; } },
     { method: "GET", path: "/export", handler: () => exportPage(exportView(root)) },
-    { method: "POST", path: "/export", handler: async ({ form: f }) => { await exportHandoff({ root, exit: f.exit, by: f.by, tracker: trackerOf(f), ...exportSeams }); return { redirect: "/export" }; } },
+    // Tracker sync is not offered here: every export from the console goes to files only (plan line 87).
+    { method: "POST", path: "/export", back: "/export", handler: async ({ form: f }) => { await exportHandoff({ root, exit: f.exit, by: f.by, tracker: false, ...exportSeams }); return { redirect: "/export" }; } },
     { method: "GET", path: "/release", handler: () => landsPage("release") },
   ]);
 }
