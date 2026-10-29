@@ -8,7 +8,8 @@ import { seedProject, seedPrototype, seedStories, seedDesign, DESIGN } from "./_
 import { serve, refusalHtml, esc } from "../shared/console/index.mjs";
 import { routes, nav } from "../discovery/console/index.mjs";
 import { routes as deliveryRoutes } from "../delivery/console/index.mjs";
-import { exportView } from "../discovery/console/views.mjs";
+import { boardView, exportView } from "../discovery/console/views.mjs";
+import { PROJECT_FILE } from "../discovery/setup/index.mjs";
 import { loadPrd, savePrd } from "../discovery/workshop/index.mjs";
 import { agree, answer, propose } from "../discovery/doors/index.mjs";
 import { review, signoff } from "../discovery/design/index.mjs";
@@ -16,7 +17,7 @@ import { exportHandoff, readiness, EXITS } from "../discovery/export/index.mjs";
 import { readDoc, saveDoc, Refused, PROTOTYPE_FILE, STORIES_FILE, DESIGN_FILE } from "../discovery/record/index.mjs";
 import { latestHandoff } from "../shared/handoff.mjs";
 import { load } from "../shared/schema/index.mjs";
-const { check, done } = suite("console handoff", 59);
+const { check, done } = suite("console handoff", 62);
 const clean = () => scripted({ structured: { findings: [], deferred: [], checked: 2, skipped: 0 } }).query;
 const noIO = () => { throw new Error("unexpected external IO"); };
 const safe = { _exec: noIO, _fetch: noIO, _env: {} };
@@ -164,5 +165,25 @@ for (const state of ["no-agreement", "agreement-stale", "current"]) await withRo
     const page = await get("/board"), row = page.text.match(/<tr><td>prototype<\/td>[\s\S]*?<\/tr>/)?.[0] ?? "";
     check(`prototype ${state}: recovery belongs to its row`, page.status === 200 && (state === "current" ? row.includes("current") && !row.includes("stale") && !row.includes("→") && !findings.some(f => ["no-agreement", "agreement-stale"].includes(f.rule)) : Boolean(f?.remedy) && row.includes("stale") && row.includes(esc(f.remedy))), row);
   });
+});
+check("string-array refusal detail is not a findings table", !refusalHtml(new Refused("contract-invalid", "Invalid contract", ["/problem: required"])).includes("<table") && refusalHtml(new Refused("blocked", "Finding", [{ rule: "example", summary: "Finding summary", remedy: "Repair this finding." }])).includes("<table"));
+await withRoot({}, async tmp => {
+  const root = await ready(tmp), calls = []; let number = 0;
+  const seams = { _env: {}, _fetch: noIO, _exec: (cmd, args) => { assert.equal(cmd, "gh"); calls.push(args); return args[2] === "POST" ? JSON.stringify({ number: ++number }) : ""; } };
+  const run = tracker => exportHandoff({ root, exit: "team", by: "PM", tracker, ...seams });
+  const first = await run({ kind: "github", repo: "acme/dock" }); calls.length = 0;
+  const tracker = { kind: "github", repo: "acme/dock-backlog" }, second = await run(tracker);
+  const fresh = calls.length === 5 && calls.every(a => a[2] === "POST" && a[3] === "repos/acme/dock-backlog/issues") && !isDeepStrictEqual(first.handoff.tracker.keys, second.handoff.tracker.keys);
+  const prior = [first, second].map(h => readFileSync(join(root, h.file), "utf8")); calls.length = 0;
+  let files; const error = await refused(async () => { files = await run(false); }), silent = calls.length === 0; calls.length = 0;
+  const last = await run(tracker);
+  check("tracker A to B to files to B resumes the last projection", fresh && silent && !error && files?.handoff.version === 3 && files.handoff.tracker === null && last.handoff.version === 4 && calls.length === 0 && isDeepStrictEqual(last.handoff.tracker, second.handoff.tracker) && [first, second].every((h, i) => readFileSync(join(root, h.file), "utf8") === prior[i]), JSON.stringify({ fresh, silent, calls: calls.map(a => a.slice(0, 4)), tracker: last.handoff.tracker }));
+});
+await withRoot({}, async tmp => {
+  const root = await ready(tmp);
+  assert(exportView(root).readiness); assert(boardView(root).artifacts.length);
+  rmSync(join(root, PROJECT_FILE));
+  const view = await refused(() => exportView(root)), board = await refused(() => boardView(root)), door = await refused(() => exportHandoff({ root, exit: "team", by: "PM", ...safe }));
+  check("export view requires setup even when a PRD exists", view?.code === "no-project" && board?.code === "no-project" && door?.code === "no-project", JSON.stringify({ view: view?.code, board: board?.code, door: door?.code }));
 });
 done();
