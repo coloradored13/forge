@@ -3,7 +3,7 @@ import { readFileSync, writeFileSync, mkdirSync, copyFileSync } from "node:fs";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { suite, withRoot, ROOT } from "./_harness.mjs";
-const { check, done } = suite("browser runner", 30);
+const { check, done } = suite("browser runner", 34);
 const pass = 'export default async () => console.log("1/1 passed");';
 const fake = body => `export const chromium = { launch: async () => { ${body} } };`;
 const good = fake('return { close: async () => console.log("CLOSED") };');
@@ -62,7 +62,7 @@ function browserJob(yaml) {
   const job = yaml.match(/^  browser:\s*\n((?:^(?: {4}.*|\s*)\n?)*)/m)?.[1] ?? "";
   const commands = [...job.matchAll(/^\s+- run:\s*(.+)$/gm)].map(m => m[1].trim());
   const install = commands.indexOf("npm ci"), shell = commands.indexOf("npx playwright install --with-deps --only-shell chromium"), runIndex = commands.indexOf("npm run evals:browser");
-  return install >= 0 && shell > install && runIndex > shell && !/continue-on-error:\s*true/.test(job) && !/if:\s*(?:false|\$\{\{\s*false\s*\}\})/.test(job);
+  return install >= 0 && shell > install && runIndex > shell && !/continue-on-error:\s*true/.test(job) && !/^\s*(?:-\s*)?if\s*:/m.test(job);
 }
 const commands = ["npm ci", "npx playwright install --with-deps --only-shell chromium", "npm run evals:browser"];
 const workflow = (cmds, name = "browser") => `jobs:\n  ${name}:\n    runs-on: ubuntu-latest\n    steps:\n${cmds.map(c => `      - run: ${c}\n`).join("")}`;
@@ -74,6 +74,10 @@ check("wiring control rejects ignored failures", !browserJob(workflow(commands) 
 check("wiring control rejects missing npm ci", !browserJob(workflow(commands.slice(1))));
 check("wiring control rejects disabled job", !browserJob(workflow(commands) + "    if: false\n"));
 check("wiring control rejects disabled step", !browserJob(workflow(commands) + "        if: ${{ false }}\n"));
+check("wiring control rejects push-only browser job", !browserJob(workflow(commands) + "    if: github.event_name == 'push'\n"));
+check("wiring control rejects conditional step before run", !browserJob(workflow(commands).replace("    steps:", "    steps:\n      - if: github.event_name == 'push'\n        uses: actions/checkout@v4")));
+check("wiring control rejects conditional step after run", !browserJob(workflow(commands) + "        if: ${{ github.event_name == 'push' }}\n"));
+check("wiring control permits conditions outside browser job and comments", browserJob(workflow(commands) + "    # if: documentation only\n  other:\n    if: github.event_name == 'push'\n    steps:\n      - run: echo other\n"));
 const yaml = readFileSync(join(ROOT, ".github/workflows/verify.yml"), "utf8");
 check("browser job installs dependencies, shell, then runs suites", browserJob(yaml), "browser job absent or incorrectly ordered");
 done();
