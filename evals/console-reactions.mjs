@@ -1,6 +1,6 @@
 // owns: R1, R3, R10, R15 · discovery — DH1b 4b reaction controls and writer-only notes.
 import assert from "node:assert/strict";
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { suite, scripted, withRoot } from "./_harness.mjs";
 import { seedProject, seedPrototype, HTML, SCREENS } from "./_fixture.mjs";
@@ -10,8 +10,10 @@ import { boardView } from "../discovery/console/views.mjs";
 import { react, reject, answer } from "../discovery/doors/index.mjs";
 import { loadPrd } from "../discovery/workshop/index.mjs";
 import { readDoc, saveDoc, Refused, PROTOTYPE_FILE } from "../discovery/record/index.mjs";
+import { loadProject, PROJECT_FILE } from "../discovery/setup/index.mjs";
+import { BudgetError } from "../shared/agent-call/index.mjs";
 import { generate } from "../discovery/prototype/index.mjs";
-const { check, done } = suite("console reactions", 19);
+const { check, done } = suite("console reactions", 20);
 const none = { change: null, rationale: "", note: "Keep the current wording <please>." };
 const edit = { change: { criterion: "REQ-1/AC-1", statement: "An exception records a reason and timestamp." }, rationale: "Traceability.", note: "Review this change." };
 const text = 'Please show <strong>my words</strong> & "details".', by = "PM <owner>";
@@ -133,6 +135,29 @@ for (const code of ["revision-moved", "reaction-invalid"]) await test(`${code}: 
     assert.equal(q.calls.length, code === "revision-moved" ? 0 : 1);
   });
 });
+await test("budget refusal returns escaped words and question without a call or record write", async root => {
+  question(root);
+  writeFileSync(join(root, PROJECT_FILE), JSON.stringify({ ...loadProject(root), budget: 0 }));
+  const q = scripted({ structured: none });
+  await consoleFor(root, q, async ({ get, post, table }) => {
+    const f = fields(root, await get("/prototype"), { pq: "PQ-1" }), before = tree(root);
+    const r = await post("/prototype/react", f);
+    assert.equal(r.status, 200); assert.equal(r.buffering, "no");
+    assert.match(r.body, /<code>budget<\/code>/); assert.match(r.body, /href="\/prototype">Back<\/a>/);
+    assert.equal(q.calls.length, 0); assert.deepEqual(tree(root), before);
+    assert.ok(r.body.includes(esc(text)), "budget refusal dropped the PM's words");
+    assert.ok(!r.body.includes(text), "budget refusal rendered raw markup");
+    assert.ok(r.body.includes(esc(f.pq)), "budget refusal dropped the selected question");
+    // HTTP cannot expose the exception class: check the same real work boundary as well.
+    const route = table.find(r => r.path === "/prototype/react" && r.method === "POST");
+    const out = await route.handler({ form: f });
+    await assert.rejects(() => out.work(() => {}), e => {
+      assert.ok(e instanceof BudgetError); assert.equal(e.code, "budget");
+      assert.deepEqual(e.detail, { text, pq: "PQ-1" }); return true;
+    });
+    assert.equal(q.calls.length, 0); assert.deepEqual(tree(root), before);
+  });
+});
 for (const code of ["revision-moved", "reaction-invalid"]) await test(`${code}: own refusal detail is escaped, not request values`, async root => {
   const detail = { text: "DETAIL <em>words</em> & only", pq: 'DETAIL <question> & "only"' };
   // Inject the door's error at its work boundary, retaining the actual route and shared stream renderer.
@@ -158,14 +183,18 @@ await test("pending reaction suppresses form, names reaction and links to board"
   const out = await react({ root, text, by, seen: seen(root), _query: scripted({ structured: edit }).query });
   await consoleFor(root, scripted(), async ({ get }) => {
     const page = await get("/prototype"); assert.equal(formAt(page, "/prototype/react"), "");
-    assert.ok(page.includes(out.reaction.id)); assert.match(page, /pending|wait|approve|reject/i); assert.match(page, /href="\/board"/);
+    const notice = [...page.matchAll(/<p\b[^]*?<\/p>/g)].map(m => m[0]).find(p => p.includes(out.reaction.id) && /pending|wait|approve|reject/i.test(p)) ?? "";
+    assert.ok(notice, "missing pending reaction notice");
+    assert.match(notice, /href="\/board"/, "pending notice must link to the board itself");
   });
 });
 await test("stale prototype suppresses form and directs rebuild on board", async root => {
   answer({ root, req: "REQ-1", oq: "OQ-1", answer: "Until the shift ends.", by });
   await consoleFor(root, scripted(), async ({ get }) => {
     const page = await get("/prototype"); assert.equal(formAt(page, "/prototype/react"), "");
-    assert.match(page, /rebuild/i); assert.match(page, /href="\/board"/);
+    const notice = [...page.matchAll(/<p\b[^]*?<\/p>/g)].map(m => m[0]).find(p => /rebuild/i.test(p)) ?? "";
+    assert.ok(notice, "missing rebuild notice");
+    assert.match(notice, /href="\/board"/, "rebuild notice must link to the board itself");
   });
 });
 await test("absent prototype retains generate guidance and has no frame or reaction form", async root => {
