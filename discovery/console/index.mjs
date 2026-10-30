@@ -275,7 +275,10 @@ export function routes({ root, _query, _sleep, _exec, _fetch, _env } = {}) {
       : { title: "Prototype", body: `<h1>Prototype</h1><p>The prototype opens in its <a href="/prototype">view</a>, framed by the console.</p>` } },
     { method: "POST", path: "/prototype/generate", handler: () => work("Prototype", "/board", async (onEvent) => { await generate({ root, onEvent, ...seams }); return "/board"; }) },
     { method: "POST", path: "/prototype/react", handler: ({ form: f }) => ({ ...work("Reaction", "/prototype", async (onEvent) => {
-      await react({ root, by: f.by, text: f.text, pq: blank(f.pq), seen: { prd_hash: f.prd_hash, prototype_hash: f.prototype_hash }, onEvent, ...seams });
+      const said = { text: f.text, pq: blank(f.pq) };
+      // The door's refusals carry the PM's words; one from beneath it (the budget, a usage gap, a failed call) is given them here.
+      await react({ root, by: f.by, ...said, seen: { prd_hash: f.prd_hash, prototype_hash: f.prototype_hash }, onEvent, ...seams })
+        .catch((e) => { throw e instanceof Error && e.detail === undefined ? Object.assign(e, { detail: said }) : e; });
       return "/prototype";
     }), refused: saidAgain }) },
     { method: "POST", path: "/stories/write", handler: ({ form: f }) => work("Stories", "/board", async (onEvent) => { await writeStories({ root, notes: blank(f.notes), onEvent, ...seams }); return "/board"; }) },
