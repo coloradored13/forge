@@ -13,7 +13,7 @@ import { readHandoffs, latestHandoff, handoffFile } from "../../shared/handoff.m
 import { loadProject, ledgerPath, partialProject, SetupRefused } from "../setup/index.mjs";
 import { loadPrd, WorkshopRefused, captured, mayOpen, progress, quoteTurn, readTranscript } from "../workshop/index.mjs";
 import { section } from "../workshop/sections.mjs";
-import { readDoc, readVerdict, staleness, rulingsOf, PRD_FILE, PROTOTYPE_FILE, STORIES_FILE, DESIGN_FILE, HTML_FILE, HISTORY } from "../record/index.mjs";
+import { readDoc, readVerdict, staleness, stalenessOf, pendingReactions, rulingsOf, PRD_FILE, PROTOTYPE_FILE, STORIES_FILE, DESIGN_FILE, HTML_FILE, HISTORY } from "../record/index.mjs";
 import { GATE as PROTOTYPE_GATE } from "../prototype/index.mjs";
 import { GATE as STORY_GATE, REVIEW_GATE as STORY_REVIEW } from "../stories/index.mjs";
 import { GATE as DESIGN_GATE, REVIEW_GATE as DESIGN_REVIEW } from "../design/index.mjs";
@@ -116,10 +116,25 @@ export function historyView(root, kind) {
     .sort((x, y) => y.at - x.at || (x.key < y.key ? -1 : 1));
 }
 
-/** The published prototype, if any — what the framed prototype view shows. */
+/**
+ * The prototype and the PM's reactions to it (D03): newest first, each with its proposal's
+ * status now. A reaction can be placed only on a current prototype with none pending, against
+ * the hashes on screen (`seen`); the editor's quote stands before it.
+ */
 export function prototypeView(root) {
   const doc = readDoc(root, PROTOTYPE_FILE);
-  return { present: Boolean(doc), version: doc?.meta?.version ?? null };
+  if (!doc) return { present: false };
+  const project = loadProject(root), prd = loadPrd(root);
+  const status = new Map((prd.amendments ?? []).map((a) => [a.id, a.status]));
+  return {
+    present: true, doc,
+    stale: stalenessOf({ prd, proto: doc }).prototype.stale,
+    pending: pendingReactions(prd).map((r) => r.id),
+    seen: { prd_hash: prd.meta.content_hash, prototype_hash: doc.meta.content_hash },
+    questions: (doc.open_questions ?? []).filter((q) => q.id && q.status === "open"),
+    reactions: (prd.reactions ?? []).map((r) => ({ ...r, status: r.proposal ? status.get(r.proposal) ?? null : null })).reverse(),
+    quote: quoteFor(root, project, "writer"),
+  };
 }
 
 // The ready-gate finding that says how each artifact recovers once it is stale (D05).
@@ -146,8 +161,6 @@ export function boardView(root) {
       gates: gates.map((g) => gateRow(root, g)),
     };
   });
-  const ledger = ledgerPath(root);
-  const q = (role) => quote(ledger, { half: "discovery", role, model: modelFor({ half: "discovery", role }, project.models), budget: project.budget ?? null });
   return {
     prd: { title: prd.meta.title, slug: prd.meta.slug, version: prd.meta.version, hash: prd.meta.content_hash, doc_status: prd.meta.doc_status, links: prd.meta.links ?? {} },
     line: prd.mvp?.line ?? null,
@@ -160,8 +173,14 @@ export function boardView(root) {
     amendments: (prd.amendments ?? []).map((a) => ({ ...a, radius_now: a.status === "proposed" ? radiusOf({ prd, proto: docs.prototype, stories: docs.stories, target: a.target, from: a.adds ? undefined : a.from }) : null })),
     flags: prd.flags ?? [],
     cost: costOf(root),
-    quotes: { writer: { model: modelFor({ half: "discovery", role: "writer" }, project.models), ...q("writer") }, reviewer: { model: modelFor({ half: "discovery", role: "reviewer" }, project.models), ...q("reviewer") } },
+    quotes: { writer: quoteFor(root, project, "writer"), reviewer: quoteFor(root, project, "reviewer") },
   };
+}
+
+/** A Discovery role's quote before its trigger: the model it runs and the ledger's figure for it (R1). */
+function quoteFor(root, project, role) {
+  const model = modelFor({ half: "discovery", role }, project.models);
+  return { model, ...quote(ledgerPath(root), { half: "discovery", role, model, budget: project.budget ?? null }) };
 }
 
 // ── export ──

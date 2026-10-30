@@ -125,11 +125,11 @@ await withRoot({}, async (parent) => {
     existsSync(join(root, REVIEWS, `${PROTO_GATE}.json`)) && v.verdict === "pass" && v.judged.length === 2 && v.judged[0].content_hash === prd.meta.content_hash && v.judged[1].content_hash === doc.meta.content_hash && freshVerdict(root, PROTO_GATE) !== null && eq(out.arithmetic, v), JSON.stringify(v.judged));
   check("one call, one ledger row", calls(ledgerPath(root)).length === 1);
 
-  // A rebuild: existing ids and the PM's notes ride in; a new screen may be minted; a dropped id is refused.
+  // A rebuild keeps existing ids, ignores passed notes, may mint a new screen, and refuses dropped ids.
   const q2 = scripted({ structured: { ...structured, screens: [...SCREENS, { id: "SCREEN-3", name: "Confirming an exception", surface_ref: "SURF-1", req_refs: ["REQ-1"] }] } });
   const out2 = await generate({ root, notes: "The run sheet needs the vendor on each row.", _query: q2.query });
-  check("a rebuild is told the existing screen ids and the PM's notes",
-    /## Existing screens[\s\S]*- SCREEN-1: /.test(q2.calls[0].prompt) && /## The PM's notes on the last build\n\nThe run sheet needs the vendor/.test(q2.calls[0].prompt) && out2.prototype.screens.length === 3);
+  check("a rebuild keeps existing screen ids but ignores passed PM notes",
+    /## Existing screens[\s\S]*- SCREEN-1: /.test(q2.calls[0].prompt) && !/## The PM's notes|The run sheet needs the vendor/.test(q2.calls[0].prompt) && out2.prototype.screens.length === 3);
   const q3 = scripted({ structured: { ...structured, screens: [SCREENS[0]] } });
   const dropped = await refusal(() => generate({ root, _query: q3.query }));
   check("a rebuild that drops a screen id is refused, naming the ids; the record on disk is the last accepted build", dropped instanceof Refused && dropped.code === "ids-dropped" && /SCREEN-2, SCREEN-3/.test(dropped.message) && readDoc(root, PROTOTYPE_FILE).screens.length === 3, dropped?.message);
