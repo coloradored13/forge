@@ -4,16 +4,16 @@ import { readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { suite, scripted, withRoot } from "./_harness.mjs";
 import { seedProject, seedPrototype, HTML, SCREENS } from "./_fixture.mjs";
-import { serve, esc, quoteStrip } from "../shared/console/index.mjs";
+import { serve, esc } from "../shared/console/index.mjs";
 import { routes, nav } from "../discovery/console/index.mjs";
-import { boardView } from "../discovery/console/views.mjs";
 import { react, reject, answer } from "../discovery/doors/index.mjs";
 import { loadPrd } from "../discovery/workshop/index.mjs";
 import { readDoc, saveDoc, Refused, PROTOTYPE_FILE } from "../discovery/record/index.mjs";
-import { loadProject, PROJECT_FILE } from "../discovery/setup/index.mjs";
-import { BudgetError } from "../shared/agent-call/index.mjs";
+import { loadProject, ledgerPath, PROJECT_FILE } from "../discovery/setup/index.mjs";
+import { append } from "../shared/agent-call/ledger.mjs";
+import { BudgetError, modelFor } from "../shared/agent-call/index.mjs";
 import { generate } from "../discovery/prototype/index.mjs";
-const { check, done } = suite("console reactions", 20);
+const { check, done } = suite("console reactions", 21);
 const none = { change: null, rationale: "", note: "Keep the current wording <please>." };
 const edit = { change: { criterion: "REQ-1/AC-1", statement: "An exception records a reason and timestamp." }, rationale: "Traceability.", note: "Review this change." };
 const text = 'Please show <strong>my words</strong> & "details".', by = "PM <owner>";
@@ -65,11 +65,40 @@ await test("form below frame posts text, optional open question, by and viewed h
     assert.ok(page.indexOf("</iframe>") < page.indexOf(f));
   });
 });
-await test("editor's cost quote precedes reaction button", async root => {
-  await consoleFor(root, scripted({ structured: none }), async ({ get }) => {
-    const page = await get("/prototype"), f = formAt(page, "/prototype/react"), quote = quoteStrip(boardView(root).quotes.writer);
-    assert.ok(f); assert.ok(page.includes(quote), "missing writer/editor quote");
-    assert.ok(page.indexOf(quote) < page.indexOf(f) + f.indexOf("<button"));
+// Scope the quote to the reaction controls below the frame, not another page quote.
+function reactionQuote(page) {
+  const f = formAt(page, "/prototype/react");
+  assert.ok(f, "missing reaction form");
+  const frameEnd = page.indexOf("</iframe>"), formStart = page.indexOf(f);
+  assert.ok(frameEnd >= 0 && frameEnd < formStart);
+  const quote = page.slice(frameEnd, formStart).match(/<p\b[^>]*class="quote(?: [^"]*)?"[^>]*>[^]*?<\/p>/)?.[0];
+  assert.ok(quote, "missing quote associated with the reaction form");
+  assert.match(f, /<button\b[^>]*>React<\/button>/);
+  assert.ok(page.indexOf(quote, frameEnd) < formStart + f.indexOf("<button"), "quote must precede React");
+  return quote;
+}
+await test("React quote names writer's model, not the distinct reviewer model, before its button", async root => {
+  const project = loadProject(root), reviewer = "reviewer-only-test-model";
+  const writer = modelFor({ half: "discovery", role: "writer" }, project.models);
+  assert.notEqual(writer, reviewer);
+  writeFileSync(join(root, PROJECT_FILE), JSON.stringify({ ...project, models: { ...project.models, "discovery.reviewer": reviewer } }));
+  await consoleFor(root, scripted(), async ({ get }) => {
+    const quote = reactionQuote(await get("/prototype"));
+    assert.ok(quote.includes(`<code>${esc(writer)}</code>`), "React quote must name the writer model");
+    assert.ok(!quote.includes(reviewer), "React quote must exclude the reviewer model");
+  });
+});
+await test("React quote estimates writer costs only when reviewer shares its model", async root => {
+  const project = loadProject(root), model = modelFor({ half: "discovery", role: "writer" }, project.models);
+  writeFileSync(join(root, PROJECT_FILE), JSON.stringify({ ...project, models: { ...project.models, "discovery.reviewer": model } }));
+  // The writer mean is $0.20 (two calls); reviewer-only is $0.90 and pooled is $0.43.
+  for (const [role, usd] of [["writer", 0.10], ["writer", 0.30], ["reviewer", 0.90]]) {
+    append(ledgerPath(root), { half: "discovery", stage: "react", role, model, usd, ok: true });
+  }
+  await consoleFor(root, scripted(), async ({ get }) => {
+    const quote = reactionQuote(await get("/prototype"));
+    assert.ok(quote.includes("~$0.20 a call (2 so far)"), "React estimate must use only successful writer costs");
+    assert.doesNotMatch(quote, /~\$0\.(?:90|43) a call/);
   });
 });
 await test("POST streams editor progress, persists proposal, returns to prototype and board decisions", async root => {
