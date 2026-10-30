@@ -41,9 +41,10 @@ export function fileHash(root) {
  * record saved, and the arithmetic is filed as a gate verdict beside it. A refused or failed
  * build leaves the published pair as it was. The previous record and its HTML are kept in
  * the history as a pair before the call — the HTML only while it is still the one the record
- * describes, so a hand-edited page never replaces an archived pair.
+ * describes, so a hand-edited page never replaces an archived pair. The PM's feedback reaches
+ * a build only through a reaction and the change it proposes (D03), so the builder takes no notes.
  */
-export async function generate({ root, notes, onEvent, _query, _sleep }) {
+export async function generate({ root, onEvent, _query, _sleep }) {
   const project = loadProject(root);
   const prd = loadPrd(root);
   const scope = scopeOf(prd);
@@ -58,7 +59,6 @@ export async function generate({ root, notes, onEvent, _query, _sleep }) {
   const prompt = [
     renderPrd(prd),
     priorIds.length ? `## Existing screens — keep these ids for the same screens; mint new ones only for new screens\n\n${priorIds.map((p) => `- ${p.id}: ${p.label}`).join("\n")}` : "",
-    notes?.trim() ? `## The PM's notes on the last build\n\n${notes.trim()}` : "",
     "## What to return\n\nReturn the whole page as `html`, with the record of its screens, in your structured answer. Write no file: the runner publishes the page.",
   ].filter(Boolean).join("\n\n");
 

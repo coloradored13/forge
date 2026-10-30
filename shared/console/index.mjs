@@ -143,7 +143,8 @@ function readForm(req) {
  *   { title, body, headers? }             a page (status 200 unless given)
  *   { redirect }                          303 to a view — every door POST ends here
  *   { file, type? }                       one file from the record, as it is
- *   { title, work: async (event) => href, back }   a long door: progress streamed, then on to `href`
+ *   { title, work: async (event) => href, back, refused? }   a long door: progress streamed, then on to `href`;
+ *                                         a refusal adds `refused(error)`'s HTML under its words
  * A thrown error with a `code` is a refusal (409); anything else is a 500. Both render
  * the error's own words, and Back goes to the route's `back` view, or else the page before.
  * `nav` is the half's view list; the current view is marked by path.
@@ -192,7 +193,7 @@ export function serve({ routes, nav = [], port = 0, host = "127.0.0.1", brand })
         try {
           href = await out.work((line) => res.write(esc(line) + "\n"));
         } catch (e) {
-          res.write(`</pre>${refusalHtml(e)}<p><a href="${esc(out.back ?? "/")}">Back</a></p></main></body></html>`);
+          res.write(`</pre>${refusalHtml(e)}${out.refused?.(e) ?? ""}<p><a href="${esc(out.back ?? "/")}">Back</a></p></main></body></html>`);
           return res.end();
         }
         res.write(`</pre><p>Done — <a href="${esc(href)}">continue</a>.</p><script>location.replace(${JSON.stringify(href)})</script></main></body></html>`);

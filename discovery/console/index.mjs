@@ -12,7 +12,7 @@ import { openPrd, turn, extract } from "../workshop/index.mjs";
 import { generate } from "../prototype/index.mjs";
 import { write as writeStories, review as reviewStories } from "../stories/index.mjs";
 import { write as writeDesign, review as reviewDesign, signoff } from "../design/index.mjs";
-import { answer, propose, approve, reject, agree } from "../doors/index.mjs";
+import { answer, propose, approve, reject, agree, react } from "../doors/index.mjs";
 import { exportHandoff } from "../export/index.mjs";
 import { readDoc, isSigned, renderPrd, renderPrototype, renderStories, renderDesign, HTML_FILE } from "../record/index.mjs";
 import { VIEWS, ARTIFACTS, setupView, workshopView, boardView, prototypeView, historyView, exportView } from "./views.mjs";
@@ -39,6 +39,8 @@ const STATUS = { complete: "ok", in_progress: "warn", pending: "muted" };
 const list = (xs, sep = ", ") => (xs?.length ? esc(xs.join(sep)) : `<span class="muted">none</span>`);
 const blank = (s) => (s?.trim() ? s.trim() : undefined);
 const jsonOrText = (s) => { try { return JSON.parse(s); } catch { return s; } };
+// Product changes reach a document only through a reaction or an amendment (D03); a writer's notes shape the telling.
+const notes = { name: "notes", label: "notes to the writer — wording and presentation only; product changes go through a reaction", type: "textarea", rows: 2 };
 
 // ── setup ──
 
@@ -118,9 +120,9 @@ function boardPage(v) {
   const w = quoteStrip(v.quotes.writer), r = quoteStrip(v.quotes.reviewer);
   const present = Object.fromEntries(v.artifacts.map((a) => [a.kind, a.present]));
   const doors = `<div class="cols">`
-    + `<section><h3>Prototype</h3>${w}${form({ action: "/prototype/generate", submit: present.prototype ? "Regenerate" : "Generate", fields: [{ name: "notes", label: "notes to the writer", type: "textarea", rows: 2 }] })}</section>`
-    + `<section><h3>Stories</h3>${w}${form({ action: "/doors/agree", submit: "Agree", fields: [by], note: "Agree to this PRD and the prototype built from it. Stories are written only from the revision the PM agreed." })}${form({ action: "/stories/write", submit: present.stories ? "Rewrite" : "Write", fields: [{ name: "notes", label: "notes to the writer", type: "textarea", rows: 2 }] })}${r}${form({ action: "/stories/review", submit: "Review" })}</section>`
-    + `<section><h3>Design</h3>${w}${form({ action: "/design/write", submit: present.design ? "Rewrite" : "Write", fields: [{ name: "notes", label: "notes to the writer", type: "textarea", rows: 2 }] })}${r}${form({ action: "/design/review", submit: "Review" })}`
+    + `<section><h3>Prototype</h3>${w}${form({ action: "/prototype/generate", submit: present.prototype ? "Regenerate" : "Generate" })}</section>`
+    + `<section><h3>Stories</h3>${w}${form({ action: "/doors/agree", submit: "Agree", fields: [by], note: "Agree to this PRD and the prototype built from it. Stories are written only from the revision the PM agreed." })}${form({ action: "/stories/write", submit: present.stories ? "Rewrite" : "Write", fields: [notes] })}${r}${form({ action: "/stories/review", submit: "Review" })}</section>`
+    + `<section><h3>Design</h3>${w}${form({ action: "/design/write", submit: present.design ? "Rewrite" : "Write", fields: [notes] })}${r}${form({ action: "/design/review", submit: "Review" })}`
     + form({ action: "/design/signoff", submit: "Sign", fields: [by, { name: "note", label: "note" }, { name: "override_reason", label: "override a BLOCK — reason on the record", value: "" }], note: "Signing needs a fresh reviewer verdict on this exact design. Over a BLOCK, the reason is the record." }) + `</section></div>`;
 
   const open = v.open_questions.filter((q) => q.status === "open");
@@ -171,11 +173,29 @@ function boardPage(v) {
 
 // The page allows frames only from the console, so the frame cannot navigate itself to another site.
 function prototypePage(v) {
-  const body = v.present
-    ? `<h1>Prototype <span class="muted">v${esc(v.version)}</span></h1><p><a href="/board">back to the board</a></p><iframe sandbox="allow-scripts allow-forms" src="/prototype/index.html" title="prototype" style="width:100%;height:75vh;border:1px solid var(--rule)"></iframe>`
-    : `<h1>Prototype</h1><p class="muted">No prototype is published yet — generate one on the <a href="/board">board</a>.</p>`;
-  return { title: "Prototype", headers: { "content-security-policy": "frame-src 'self'" }, body };
+  const headers = { "content-security-policy": "frame-src 'self'" };
+  if (!v.present) return { title: "Prototype", headers, body: `<h1>Prototype</h1><p class="muted">No prototype is published yet — generate one on the <a href="/board">board</a>.</p>` };
+  // A reaction the door would refuse anyway is not offered: the record says why and where to go.
+  const offer = v.stale ? `<p class="note">The prototype was built from an older PRD — rebuild it on the <a href="/board">board</a>, then react to what it shows.</p>`
+    : v.pending.length ? `<p class="note">${esc(v.pending.join(", "))} still waits on the PM — approve or reject it on the <a href="/board">board</a> before reacting again.</p>`
+    : quoteStrip(v.quote) + form({
+      action: "/prototype/react", submit: "React",
+      fields: [
+        { name: "text", label: "what the prototype gets wrong", type: "textarea", rows: 3, required: true },
+        { name: "pq", label: "answering a question the prototype asks (optional)", type: "select", options: [["", "—"], ...v.questions.map((q) => [q.id, `${q.id} ${q.question}`])] },
+        { name: "by", label: "by", required: true },
+        { name: "prd_hash", type: "hidden", value: v.seen.prd_hash },
+        { name: "prototype_hash", type: "hidden", value: v.seen.prototype_hash },
+      ],
+      note: "The editor turns your words into at most one proposed change, which you approve or reject on the board.",
+    });
+  const outcome = (r) => !r.proposal ? esc(r.note) : `${esc(r.proposal)} ${badge(r.status, r.status === "approved" ? "ok" : r.status === "proposed" ? "warn" : "muted")}${r.status === "proposed" ? ` · <a href="/board">decide on the board</a>` : ""}`;
+  const reactions = v.reactions.length ? `<h2>Reactions</h2>${table(["reaction", "by", "said", "outcome"], v.reactions.map((r) => [`${esc(r.id)}${r.pq ? ` <span class="muted">${esc(r.pq)}</span>` : ""}`, esc(r.by), esc(r.text), outcome(r)]))}` : "";
+  return { title: "Prototype", headers, body: `<h1>Prototype <span class="muted">${named("prototype", v.doc)}</span></h1><p><a href="/board">back to the board</a></p><iframe sandbox="allow-scripts allow-forms" src="/prototype/index.html" title="prototype" style="width:100%;height:75vh;border:1px solid var(--rule)"></iframe>${offer}${reactions}` };
 }
+
+// A refused reaction hands back the PM's words from the refusal itself (D03), to copy into the form again.
+const saidAgain = (e) => e?.detail?.text ? `<p class="muted">What you wrote${e.detail.pq ? `, answering ${esc(e.detail.pq)}` : ""}:</p><pre>${esc(e.detail.text)}</pre>` : "";
 
 // ── export ──
 
@@ -253,7 +273,14 @@ export function routes({ root, _query, _sleep, _exec, _fetch, _env } = {}) {
     { method: "GET", path: "/prototype/index.html", handler: ({ headers }) => headers["sec-fetch-dest"] === "iframe"
       ? { file: join(root, HTML_FILE), headers: { "content-security-policy": PROTOTYPE_CSP } }
       : { title: "Prototype", body: `<h1>Prototype</h1><p>The prototype opens in its <a href="/prototype">view</a>, framed by the console.</p>` } },
-    { method: "POST", path: "/prototype/generate", handler: ({ form: f }) => work("Prototype", "/board", async (onEvent) => { await generate({ root, notes: blank(f.notes), onEvent, ...seams }); return "/board"; }) },
+    { method: "POST", path: "/prototype/generate", handler: () => work("Prototype", "/board", async (onEvent) => { await generate({ root, onEvent, ...seams }); return "/board"; }) },
+    { method: "POST", path: "/prototype/react", handler: ({ form: f }) => ({ ...work("Reaction", "/prototype", async (onEvent) => {
+      const said = { text: f.text, pq: blank(f.pq) };
+      // The door's refusals carry the PM's words; one from beneath it (the budget, a usage gap, a failed call) is given them here.
+      await react({ root, by: f.by, ...said, seen: { prd_hash: f.prd_hash, prototype_hash: f.prototype_hash }, onEvent, ...seams })
+        .catch((e) => { throw e instanceof Error && e.detail === undefined ? Object.assign(e, { detail: said }) : e; });
+      return "/prototype";
+    }), refused: saidAgain }) },
     { method: "POST", path: "/stories/write", handler: ({ form: f }) => work("Stories", "/board", async (onEvent) => { await writeStories({ root, notes: blank(f.notes), onEvent, ...seams }); return "/board"; }) },
     { method: "POST", path: "/stories/review", handler: () => work("Story review", "/board", async (onEvent) => { await reviewStories({ root, onEvent, ...seams }); return "/board"; }) },
     { method: "POST", path: "/design/write", handler: ({ form: f }) => work("Design", "/board", async (onEvent) => { await writeDesign({ root, notes: blank(f.notes), onEvent, ...seams }); return "/board"; }) },
