@@ -23,13 +23,15 @@ import { canonicalize, resolve, stamp } from "../../shared/hash.mjs";
 import { deriveVerdict, pin, fit } from "../../shared/judge/index.mjs";
 import { record as recordSignal, funnelPath } from "../../shared/funnel.mjs";
 import { loadPrd, savePrd, prdStamp, PRD_FILE } from "../workshop/index.mjs";
-import { Refused, readDoc, saveDoc, saveVerdict, criterionAt, insideRequirements, pendingReactions, rulingsOf, renderPrd, renderPrototype, PROTOTYPE_FILE, STORIES_FILE, bumpVersion } from "../record/index.mjs";
+import { Refused, readDoc, saveDoc, saveVerdict, criterionAt, insideRequirements, pendingReactions, rulingsOf, renderPrd, renderPrototype, keep, PROTOTYPE_FILE, STORIES_FILE, bumpVersion } from "../record/index.mjs";
 
 export const AUDIT_GATE = "amendment-audit";
 const PROMPTS = join(dirname(fileURLToPath(import.meta.url)), "prompts");
 
 const nextId = (items, prefix) => `${prefix}-${Math.max(0, ...items.map((x) => Number(String(x.id).split("-")[1]) || 0)) + 1}`;
 const norm = (s) => String(s ?? "").toLowerCase().replace(/\s+/g, " ").trim();
+/** Save a PRD whose version moved, keeping the one it leaves (D05) only once the save, which validates, has succeeded. */
+const saveVersion = (root, prd) => { const outgoing = readFileSync(join(root, PRD_FILE)); savePrd(root, prd); keep(root, "prd", outgoing); };
 
 // ── R3 · answer ──
 
@@ -87,7 +89,7 @@ export function answer({ root, req, oq, pq, question, answer: text, criterion, b
     const v = validate("prototype", proto); // checked before either record moves
     if (!v.ok) throw new Refused("prototype-invalid", `answer: the prototype's record does not fit its schema — ${v.errors.slice(0, 5).join("; ")}`, v.errors);
   }
-  savePrd(root, prd);
+  saveVersion(root, prd);
   if (asked) saveDoc(root, PROTOTYPE_FILE, "prototype", proto);
   return { ruling, requirement: r.id, criterion: ac, prd };
 }
@@ -416,7 +418,7 @@ export function approve({ root, id, by, radius, _now = () => new Date() }) {
     if (!v.ok) throw new Refused("prototype-invalid", `approve: the prototype's record does not fit its schema — ${v.errors.slice(0, 5).join("; ")}`, v.errors);
   }
   prd.flags.push({ at, section: parentPtr.split("/")[1] ?? "prd", kind: "note", note: `${a.id} approved by ${by.trim()} → ${prd.meta.version}: ${a.rationale}${expected.length ? ` · radius ${expected.join(", ")}` : ""}${superseded.length ? ` · supersedes ${superseded.join(", ")}` : ""}${ruling ? ` · ${ruling.id} settles ${a.pq} as ${ruling.criterion}` : ""}` });
-  savePrd(root, prd);
+  saveVersion(root, prd);
   if (ruling) saveDoc(root, PROTOTYPE_FILE, "prototype", proto);
   return { amendment: a, prd };
 }

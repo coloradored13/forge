@@ -32,11 +32,16 @@ export const HISTORY = join("discovery", "history");
  */
 export function keepOutgoing(root, kind, file, beside) {
   if (!existsSync(join(root, file))) return null;
-  const saved = readFileSync(join(root, file));
+  const key = keep(root, kind, readFileSync(join(root, file)));
+  if (beside && existsSync(join(root, beside))) copyFileSync(join(root, beside), join(root, `${key}${extname(beside)}`));
+  return key;
+}
+
+/** Keep bytes already read, under the same key; for a writer that keeps only once its own save has succeeded (the PRD). */
+export function keep(root, kind, saved) {
   const key = join(HISTORY, `${kind}-${createHash("sha256").update(saved).digest("hex").slice(0, 12)}`);
   mkdirSync(join(root, HISTORY), { recursive: true });
   writeFileSync(join(root, `${key}.json`), saved);
-  if (beside && existsSync(join(root, beside))) copyFileSync(join(root, beside), join(root, `${key}${extname(beside)}`));
   return key;
 }
 
