@@ -227,20 +227,29 @@ function writePackage(root, { handoff, file, rendering, html }) {
  * A package judged from its own bytes (D10): the manifest's shape and format, each listed file present
  * and as hashed, nothing unlisted, the handoff readable, and every reference the prototype makes packaged.
  * It walks `dir` without following links and reads only the regular files it found, so a symlink is a
- * finding, never a way out. A bad package is findings, never a throw.
+ * finding, never a way out. A bad package is findings, never a throw — a directory or file the walk can't
+ * read included.
  */
 export function validatePackage(dir) {
   const findings = [], f = (rule, file) => findings.push({ rule, file }), done = () => ({ ok: !findings.length, findings });
-  const files = new Map();
-  (function walk(rel) {
-    for (const e of readdirSync(join(dir, rel), { withFileTypes: true })) {
+  const files = new Map(), bytes = new Map();
+  const walk = (rel) => {
+    let entries;
+    try { entries = readdirSync(join(dir, rel), { withFileTypes: true }); } catch { return f("package-unreadable", rel || "."), false; }
+    for (const e of entries) {
       const path = rel ? `${rel}/${e.name}` : e.name;
       if (e.isSymbolicLink()) f("package-path-unsafe", path);
       else if (e.isDirectory()) walk(path);
       else if (e.isFile()) files.set(path, join(dir, path));
     }
-  })("");
-  const read = (path) => readFileSync(files.get(path));
+    return true;
+  };
+  if (!walk("")) return done();
+  // Each file is read once; one that can't be read is a finding, and null.
+  const read = (path) => {
+    if (!bytes.has(path)) { try { bytes.set(path, readFileSync(files.get(path))); } catch { f("package-unreadable", path); bytes.set(path, null); } }
+    return bytes.get(path);
+  };
   let m = null;
   try { if (files.has("manifest.json")) m = JSON.parse(read("manifest.json")); } catch {}
   if (!Array.isArray(m?.files) || !m.files.every((e) => typeof e?.path === "string" && typeof e.sha256 === "string" && Number.isInteger(e.bytes))) return f("package-manifest-unreadable", "manifest.json"), done();
@@ -251,21 +260,23 @@ export function validatePackage(dir) {
     if (posix.isAbsolute(path) || path === ".." || path.startsWith("../")) { f("package-path-unsafe", e.path); continue; }
     listed.add(path);
     if (!files.has(path)) { f("package-file-missing", e.path); continue; }
-    const bytes = read(path);
-    if (sha256(bytes) !== e.sha256 || bytes.length !== e.bytes) f("package-file-modified", e.path);
+    const b = read(path);
+    if (b && (sha256(b) !== e.sha256 || b.length !== e.bytes)) f("package-file-modified", e.path);
   }
   for (const path of REQUIRED) if (!listed.has(path)) f("package-file-required", path);
   for (const path of files.keys()) if (path !== "manifest.json" && !listed.has(path)) f("package-file-unlisted", path);
-  if (files.has("handoff.json")) {
+  if (files.has("handoff.json") && read("handoff.json")) {
     let ok = false;
     try { ok = validate("handoff", JSON.parse(read("handoff.json"))).ok; } catch {}
     if (!ok) f("package-json-unreadable", "handoff.json");
   }
-  if (files.has("prototype/index.html")) {
+  if (files.has("prototype/index.html") && read("prototype/index.html")) {
     for (const ref of refsOf(read("prototype/index.html").toString())) {
       // A reference is the network's, a file in the package, or no file at all (data:, blob:, a fragment, mailto: …).
       if (NETWORK.test(ref)) { f("package-reference-external", "prototype/index.html"); continue; }
-      if (!ref || ref.startsWith("#") || /^(?!file:)[a-z][a-z0-9+.-]*:/i.test(ref)) continue;
+      // A file: URL resolves outside the package's own names, so it is never packaged.
+      if (/^file:/i.test(ref)) { f("package-reference-unresolved", "prototype/index.html"); continue; }
+      if (!ref || ref.startsWith("#") || /^[a-z][a-z0-9+.-]*:/i.test(ref)) continue;
       let to = ref.split(/[?#]/)[0];
       try { to = decodeURIComponent(to); } catch {}
       to = posix.normalize(posix.join("prototype", to));
