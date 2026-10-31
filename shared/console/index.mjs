@@ -78,7 +78,7 @@ export function findingsHtml(gates, { deferredTitle = "Deferred — noticed past
 export function quoteStrip(q) {
   const est = q.estimate?.usd == null ? `no history yet` : `~${usd(q.estimate.usd)} a call (${q.estimate.n} so far)`;
   const cap = q.budget == null ? "no cap" : `${usd(q.spent)} of ${usd(q.budget)} spent · ${usd(q.remaining)} remains`;
-  return `<p class="quote${q.over ? " over" : ""}">${q.model ? `<code>${esc(q.model)}</code> · ` : ""}${esc(est)} · ${esc(cap)}${q.over ? " · " + badge("over budget", "bad") : ""}</p>`;
+  return `<p class="quote${q.over ? " over" : ""}">${q.model ? `<code>${esc(q.model)}</code> · ` : ""}${esc(est)} · ${esc(cap)}${q.unknown ? ` · ${q.unknown} calls of unknown cost` : ""}${q.over ? " · " + badge("over budget", "bad") : ""}</p>`;
 }
 
 /** A refusal: its code and message, a plain detail as text, findings with their remedies; any other object stays unshown. */

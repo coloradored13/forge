@@ -7,7 +7,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { basename, join } from "node:path";
-import { roles, defaults, modelFor, standing, estimate, quote } from "../../shared/agent-call/index.mjs";
+import { roles, defaults, modelFor, standing, estimate, quote, rows, tally } from "../../shared/agent-call/index.mjs";
 import { verdictFreshness } from "../../shared/judge/index.mjs";
 import { readHandoffs, latestHandoff, handoffFile } from "../../shared/handoff.mjs";
 import { loadProject, ledgerPath, partialProject, SetupRefused } from "../setup/index.mjs";
@@ -175,7 +175,7 @@ export function boardView(root) {
     words: Object.fromEntries([...(prd.requirements ?? []).flatMap((r) => (r.acceptance_criteria ?? []).map((ac) => [`${r.id}/${ac.id}`, ac.statement])),
       ...(docs.stories?.stories ?? []).map((s) => [s.id, s.statement]), ...(docs.prototype?.screens ?? []).map((s) => [s.id, s.name])]),
     flags: prd.flags ?? [],
-    cost: costOf(root),
+    cost: { ...costOf(root), unknown: tally(rows(ledgerPath(root))).unknown },
     quotes: { writer: quoteFor(root, project, "writer"), reviewer: quoteFor(root, project, "reviewer") },
   };
 }
