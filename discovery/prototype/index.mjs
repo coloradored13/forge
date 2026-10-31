@@ -25,7 +25,7 @@ export const GATE = "prototype-arithmetic";
 export const ARITHMETIC = ["surface-without-screen", "screen-surface-unknown", "screen-past-line", "ref-unknown", "req-unaccounted", "uncovered-yet-covered"];
 const WRITES = new Set(["Write", "Edit", "Bash", "NotebookEdit"]);
 const MAX_HTML = 1_048_576; // UTF-8 bytes
-const NETWORK = /^(?:https?:|wss?:|ftp:|\/\/)/i;
+export const NETWORK = /^(?:https?:|wss?:|ftp:|\/\/)/i;
 
 export function loadPrototype(root) { return readDoc(root, PROTOTYPE_FILE); }
 
@@ -106,6 +106,12 @@ export function checkHtml(html) {
   if (!html.trim()) throw new Refused("no-html", "prototype: the builder returned an empty page");
   const size = Buffer.byteLength(html, "utf8");
   if (size > MAX_HTML) throw new Refused("html-too-large", `prototype: the page is ${size} bytes; the cap is ${MAX_HTML}`);
+  const external = refsOf(html).filter((r) => NETWORK.test(r));
+  if (external.length) throw new Refused("html-external", `prototype: the page reaches the network — ${external.slice(0, 5).join(", ")}; a prototype runs from disk`, external);
+}
+
+/** Every reference the page makes, from a tag's attribute, a <style> block or a style attribute — the builder's check and the package's read it alike. */
+export function refsOf(html) {
   const page = html.replace(/<!--[\s\S]*?-->/g, "");
   const refs = [], css = [...page.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style>/gi)].map((m) => m[1]);
   for (const [tag] of page.matchAll(/<[a-z][^\s>\/]*(?:[^>"']|"[^"]*"|'[^']*')*>/gi)) {
@@ -119,8 +125,7 @@ export function checkHtml(html) {
     for (const m of sheet.matchAll(/url\(\s*(?:"([^"]*)"|'([^']*)'|([^)]*))\s*\)/gi)) refs.push(m[1] ?? m[2] ?? m[3]);
     for (const m of sheet.matchAll(/@import\s+(?:"([^"]*)"|'([^']*)')/gi)) refs.push(m[1] ?? m[2]);
   }
-  const external = refs.map((r) => r.trim()).filter((r) => NETWORK.test(r));
-  if (external.length) throw new Refused("html-external", `prototype: the page reaches the network — ${external.slice(0, 5).join(", ")}; a prototype runs from disk`, external);
+  return refs.map((r) => r.trim());
 }
 
 /**

@@ -8,8 +8,8 @@
 // to a team carries the design as it stands, with its state on record.
 
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { join, posix } from "node:path";
 import { validate } from "../../shared/schema/index.mjs";
 import { verify } from "../../shared/hash.mjs";
 import { pin, deriveVerdict } from "../../shared/judge/index.mjs";
@@ -19,7 +19,7 @@ import { handoffFile, readHandoffs, latestHandoff, itemsOf, designMoved } from "
 import { loadProject, ledgerPath, exec } from "../setup/index.mjs";
 import { loadPrd, savePrd, PRD_FILE } from "../workshop/index.mjs";
 import { Refused, readDoc, saveDoc, saveVerdict, isSigned, agreementGap, pendingReactions, recoveryOf, stalenessOf, renderPrd, renderPrototype, renderStories, renderStandard, renderDesign, PROTOTYPE_FILE, STORIES_FILE, DESIGN_FILE, HTML_FILE } from "../record/index.mjs";
-import { checkPrototype } from "../prototype/index.mjs";
+import { checkPrototype, refsOf, NETWORK } from "../prototype/index.mjs";
 import { checkStories } from "../stories/index.mjs";
 import { checkDesign } from "../design/index.mjs";
 import { resolveTracker, project as projectTo, IDEA } from "./trackers.mjs";
@@ -185,6 +185,7 @@ export async function exportHandoff({ root, exit, by, tracker: trackerOpts, _now
 }
 
 export const PACKAGES = join("discovery", "packages");
+const FORMAT = "forge-handoff-package/1", REQUIRED = ["HANDOFF.md", "handoff.json", "prototype/index.html"];
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 
 /** The published HTML, if it is the prototype its record hashes; a path and a recorded hash are not the prototype. */
@@ -208,7 +209,7 @@ function writePackage(root, { handoff, file, rendering, html }) {
     mkdirSync(join(stage, "prototype"));
     for (const [path, bytes] of files) writeFileSync(join(stage, path), bytes);
     writeFileSync(join(stage, "manifest.json"), JSON.stringify({
-      format: "forge-handoff-package/1", handoff: { id: handoff.id, version: handoff.version, exit: handoff.exit },
+      format: FORMAT, handoff: { id: handoff.id, version: handoff.version, exit: handoff.exit },
       source: { prd: handoff.contract.prd, prototype: { content_hash: handoff.prototype.meta.content_hash, file_hash: handoff.prototype.file_hash } },
       files: files.map(([path, bytes]) => ({ path, sha256: sha256(bytes), bytes: bytes.length })),
       spend: tally(rows(ledgerPath(root))), omissions: ["acceptance plan", "recipient verifier"],
@@ -220,6 +221,58 @@ function writePackage(root, { handoff, file, rendering, html }) {
     rmSync(stage, { recursive: true, force: true });
     throw e;
   }
+}
+
+/**
+ * A package judged from its own bytes (D10): the manifest's shape and format, each listed file present
+ * and as hashed, nothing unlisted, the handoff readable, and every reference the prototype makes packaged.
+ * It walks `dir` without following links and reads only the regular files it found, so a symlink is a
+ * finding, never a way out. A bad package is findings, never a throw.
+ */
+export function validatePackage(dir) {
+  const findings = [], f = (rule, file) => findings.push({ rule, file }), done = () => ({ ok: !findings.length, findings });
+  const files = new Map();
+  (function walk(rel) {
+    for (const e of readdirSync(join(dir, rel), { withFileTypes: true })) {
+      const path = rel ? `${rel}/${e.name}` : e.name;
+      if (e.isSymbolicLink()) f("package-path-unsafe", path);
+      else if (e.isDirectory()) walk(path);
+      else if (e.isFile()) files.set(path, join(dir, path));
+    }
+  })("");
+  const read = (path) => readFileSync(files.get(path));
+  let m = null;
+  try { if (files.has("manifest.json")) m = JSON.parse(read("manifest.json")); } catch {}
+  if (!Array.isArray(m?.files) || !m.files.every((e) => typeof e?.path === "string" && typeof e.sha256 === "string" && Number.isInteger(e.bytes))) return f("package-manifest-unreadable", "manifest.json"), done();
+  if (m.format !== FORMAT) return f("package-format-unknown", "manifest.json"), done();
+  const listed = new Set();
+  for (const e of m.files) {
+    const path = posix.normalize(e.path);
+    if (posix.isAbsolute(path) || path === ".." || path.startsWith("../")) { f("package-path-unsafe", e.path); continue; }
+    listed.add(path);
+    if (!files.has(path)) { f("package-file-missing", e.path); continue; }
+    const bytes = read(path);
+    if (sha256(bytes) !== e.sha256 || bytes.length !== e.bytes) f("package-file-modified", e.path);
+  }
+  for (const path of REQUIRED) if (!listed.has(path)) f("package-file-required", path);
+  for (const path of files.keys()) if (path !== "manifest.json" && !listed.has(path)) f("package-file-unlisted", path);
+  if (files.has("handoff.json")) {
+    let ok = false;
+    try { ok = validate("handoff", JSON.parse(read("handoff.json"))).ok; } catch {}
+    if (!ok) f("package-json-unreadable", "handoff.json");
+  }
+  if (files.has("prototype/index.html")) {
+    for (const ref of refsOf(read("prototype/index.html").toString())) {
+      // A reference is the network's, a file in the package, or no file at all (data:, blob:, a fragment, mailto: …).
+      if (NETWORK.test(ref)) { f("package-reference-external", "prototype/index.html"); continue; }
+      if (!ref || ref.startsWith("#") || /^(?!file:)[a-z][a-z0-9+.-]*:/i.test(ref)) continue;
+      let to = ref.split(/[?#]/)[0];
+      try { to = decodeURIComponent(to); } catch {}
+      to = posix.normalize(posix.join("prototype", to));
+      if (ref.startsWith("/") || !listed.has(to) || !files.has(to)) f("package-reference-unresolved", "prototype/index.html");
+    }
+  }
+  return done();
 }
 
 /** What Discovery has cost so far, by stage — the ledger's totals, shaped for the snapshot and the board. */
