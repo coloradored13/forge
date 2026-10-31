@@ -81,7 +81,7 @@ await withRoot({}, async tmp => {
     // A standalone dot segment normalizes before matching: it safely opens the current artifact.
     const current = await get("/artifact/prototype/"), normalized = await get("/artifact/prototype/history/%2E%2E");
     check("HTTP normalized dot segment opens only the current artifact", current.status === 200 && normalized.status === 200 && normalized.text === current.text && tree(root) === before);
-    const prd = await get("/artifact/prd"); check("PRD exposes no kept-version links", prd.status === 200 && !/href="[^\"]*\/history\//.test(prd.text));
+    const prd = await get("/artifact/prd"); check("never-bumped PRD says none kept and exposes no history links", prd.status === 200 && none(prd.text) && !/href="[^\"]*\/history\//.test(prd.text));
   });
   const before = tree(root); let result;
   try { result = typeof views.historyView === "function" && views.historyView(root, "prototype"); } catch {}

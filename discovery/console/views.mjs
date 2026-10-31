@@ -108,7 +108,7 @@ function gateRow(root, gate) {
  * not history.
  */
 export function historyView(root, kind) {
-  const a = ARTIFACTS.find((x) => x.kind === kind && x.kind !== "prd"), dir = join(root, HISTORY);
+  const a = ARTIFACTS.find((x) => x.kind === kind), dir = join(root, HISTORY);
   if (!a || !existsSync(dir)) return [];
   const current = existsSync(join(root, a.file)) ? `${kind}-${createHash("sha256").update(readFileSync(join(root, a.file))).digest("hex").slice(0, 12)}` : null;
   return readdirSync(dir).filter((f) => new RegExp(`^${kind}-[0-9a-f]{12}\\.json$`).test(f)).map((f) => f.slice(0, -5)).filter((key) => key !== current)

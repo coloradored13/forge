@@ -87,7 +87,7 @@ export function answer({ root, req, oq, pq, question, answer: text, criterion, b
     const v = validate("prototype", proto); // checked before either record moves
     if (!v.ok) throw new Refused("prototype-invalid", `answer: the prototype's record does not fit its schema — ${v.errors.slice(0, 5).join("; ")}`, v.errors);
   }
-  savePrd(root, prd);
+  savePrd(root, prd, { keep: true }); // the version moved
   if (asked) saveDoc(root, PROTOTYPE_FILE, "prototype", proto);
   return { ruling, requirement: r.id, criterion: ac, prd };
 }
@@ -416,7 +416,7 @@ export function approve({ root, id, by, radius, _now = () => new Date() }) {
     if (!v.ok) throw new Refused("prototype-invalid", `approve: the prototype's record does not fit its schema — ${v.errors.slice(0, 5).join("; ")}`, v.errors);
   }
   prd.flags.push({ at, section: parentPtr.split("/")[1] ?? "prd", kind: "note", note: `${a.id} approved by ${by.trim()} → ${prd.meta.version}: ${a.rationale}${expected.length ? ` · radius ${expected.join(", ")}` : ""}${superseded.length ? ` · supersedes ${superseded.join(", ")}` : ""}${ruling ? ` · ${ruling.id} settles ${a.pq} as ${ruling.criterion}` : ""}` });
-  savePrd(root, prd);
+  savePrd(root, prd, { keep: true }); // the version moved
   if (ruling) saveDoc(root, PROTOTYPE_FILE, "prototype", proto);
   return { amendment: a, prd };
 }

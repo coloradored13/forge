@@ -258,8 +258,8 @@ export function routes({ root, _query, _sleep, _exec, _fetch, _env } = {}) {
       const a = ARTIFACTS.find((x) => x.kind === params.kind);
       const doc = a && readDoc(root, a.file);
       if (!doc) return { title: "Not found", status: 404, body: `<h1>Not found</h1><p class="muted">no ${esc(params.kind)} on the record</p>` };
-      const kept = a.kind === "prd" ? [] : historyView(root, a.kind);
-      const history = a.kind === "prd" ? "" : `<h2>Earlier versions</h2>${kept.length ? table(["kept", "written"], kept.map((h) => [`<a href="/artifact/${esc(a.kind)}/history/${esc(h.key)}">${esc(h.key)}</a>`, named(a.kind, h.doc)])) : `<p class="muted">No earlier version is kept.</p>`}`;
+      const kept = historyView(root, a.kind);
+      const history = `<h2>Earlier versions</h2>${kept.length ? table(["kept", "written"], kept.map((h) => [`<a href="/artifact/${esc(a.kind)}/history/${esc(h.key)}">${esc(h.key)}</a>`, named(a.kind, h.doc)])) : `<p class="muted">No earlier version is kept.</p>`}`;
       return { title: params.kind, body: `<h1>${esc(params.kind)} <span class="muted">${named(a.kind, doc)}</span></h1><pre>${esc(RENDER[params.kind](doc))}</pre>${history}` };
     } },
     // An earlier version reads only: a key opens only if it is in its kind's history, and a prototype's kept HTML is never shown.
