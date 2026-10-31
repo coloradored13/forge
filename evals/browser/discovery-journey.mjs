@@ -39,6 +39,7 @@ export default async function journey({ browser }) {
       await context.route("**/*", route => new URL(route.request().url()).origin === srv.url ? route.continue() : route.abort());
       const page = await context.newPage();
       await page.goto(srv.url + "/prototype");
+      assert.equal(await page.frameLocator('iframe[title="prototype"]').getByRole("button", { name: "Cancel booking", exact: true }).count(), 1);
       const reaction = page.locator('form[action="/prototype/react"]');
       await reaction.locator('[name="pq"]').selectOption("PQ-1");
       await submit(page, "/prototype/react", { text: "No cancellations after pickup.", by: "PM" }, "/prototype");
@@ -92,6 +93,14 @@ export default async function journey({ browser }) {
         await page.waitForURL(srv.url + "/board");
         await submit(page, "/prototype/generate");
         assert.doesNotMatch(await artifact.innerText(), /stale/);
+        await page.getByRole("link", { name: "open", exact: true }).press("Enter");
+        await page.waitForURL(srv.url + "/prototype");
+        const frame = page.frameLocator('iframe[title="prototype"]');
+        await frame.getByText("No cancellation after pickup.", { exact: true }).waitFor({ state: "visible" });
+        assert.match(await frame.locator("body").innerText(), /No cancellation after pickup\./);
+        assert.equal(await frame.getByRole("button", { name: "Cancel booking", exact: true }).count(), 0);
+        await page.getByRole("link", { name: "back to the board" }).press("Enter");
+        await page.waitForURL(srv.url + "/board");
         await submit(page, "/doors/agree", { by: "PM" });
         assert.equal(agreementGap(loadPrd(root), readDoc(root, PROTOTYPE_FILE)), null);
         await submit(page, "/stories/write");

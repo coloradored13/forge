@@ -9,10 +9,10 @@ import { readDoc, saveDoc, PROTOTYPE_FILE } from "../discovery/record/index.mjs"
 import { serve } from "../shared/console/index.mjs";
 import { routes, nav } from "../discovery/console/index.mjs";
 
-const { check, done } = suite("discovery-proposal-display", 5);
+const { check, done } = suite("discovery-proposal-display", 6);
 const markup = '<img src=x onerror="alert(1)"> & \'quoted\'';
 const escape = s => s.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
-for (const kind of ["addition", "rewording", "fallback", "labels", "escaping"]) {
+for (const kind of ["addition", "rewording", "fallback", "replacement", "labels", "escaping"]) {
   try {
     await withRoot({}, async parent => {
       const { root, backlog } = await setup(parent);
@@ -22,8 +22,8 @@ for (const kind of ["addition", "rewording", "fallback", "labels", "escaping"]) 
       savePrd(root, prd);
       const newWords = "Cancellation is unavailable after pickup. " + markup;
       const criterion = { id: "AC-3", statement: newWords };
-      const target = kind === "fallback" ? "/requirements/0/statement" : ["addition", "labels"].includes(kind) ? "/requirements/0/acceptance_criteria/-" : "/requirements/0/acceptance_criteria/0/statement";
-      const to = ["addition", "labels"].includes(kind) ? criterion : newWords;
+      const target = kind === "replacement" ? "/requirements/0/acceptance_criteria/0" : kind === "fallback" ? "/requirements/0/statement" : ["addition", "labels"].includes(kind) ? "/requirements/0/acceptance_criteria/-" : "/requirements/0/acceptance_criteria/0/statement";
+      const to = kind === "replacement" ? { id: "AC-99", statement: old } : ["addition", "labels"].includes(kind) ? criterion : newWords;
       const { amendment } = propose({ root, target, to, rationale: "Policy " + markup, by: "PM " + markup });
       // Labels must read the currently affected records, not text captured at mint.
       backlog.stories[0].statement = "As a member, I want to cancel my current booking, so that equipment is available. " + markup;
@@ -49,6 +49,14 @@ for (const kind of ["addition", "rewording", "fallback", "labels", "escaping"]) 
         if (kind === "fallback") {
           assert.ok(cells[1].includes(escape(JSON.stringify(to))), "non-criterion retains JSON value");
           assert.ok(cells[1].includes(escape(JSON.stringify(prd.requirements[0].statement))), "non-criterion retains old JSON value");
+        }
+        if (kind === "replacement") {
+          // Identical wording must not hide a whole-object identity change. Scope to
+          // the target cell: AC-1 also appears elsewhere in the affected radius.
+          assert.equal(to.statement, amendment.from.statement);
+          assert.equal(amendment.from.id, "AC-1");
+          assert.ok(cells[1].includes(escape(JSON.stringify(amendment.from))), "old criterion ID and statement remain visible");
+          assert.ok(cells[1].includes(escape(JSON.stringify(to))), "replacement criterion ID and statement remain visible");
         }
         if (kind === "labels") {
           const expected = { "REQ-1/AC-1": old, "REQ-1/AC-2": prd.requirements[0].acceptance_criteria[1].statement, "STORY-1": backlog.stories[0].statement, "SCREEN-1": proto.screens[0].name };
