@@ -160,7 +160,7 @@ function boardPage(v) {
     note: "A proposal is audited at mint: its radius and any vocabulary it introduces are on the record before anyone approves it.",
   });
 
-  const cost = `<p class="quote">${usd(v.cost.usd)} · ${v.cost.calls} calls</p>` + table(["stage", "calls", "usd"], Object.entries(v.cost.by_stage).map(([k, c]) => [esc(k), c.calls, usd(c.usd)]));
+  const cost = `<p class="quote">${usd(v.cost.usd)} · ${v.cost.calls} calls${v.cost.unknown ? ` · ${v.cost.unknown} calls of unknown cost` : ""}</p>` + table(["stage", "calls", "usd"], Object.entries(v.cost.by_stage).map(([k, c]) => [esc(k), c.calls, usd(c.usd)]));
 
   return { title: "Board", body: `<h1>${esc(v.prd.title)} <span class="muted">v${esc(v.prd.version)} · <code>${esc(short(v.prd.hash))}</code> · ${esc(v.prd.doc_status)}</span></h1>${v.line ? `<p>MVP line: ${esc(v.line)}</p>` : `<p class="muted">the MVP line is not drawn</p>`}`
     + `<h2>Artifacts</h2>${table(["artifact", "version", "state", "gates", ""], v.artifacts.map(artifactRow))}`
