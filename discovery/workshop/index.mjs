@@ -77,7 +77,9 @@ export function prdStamp(root) {
  * With `base`, the file must still be the bytes the caller read; a late write never replaces a
  * PRD that moved while the model worked (D09's basic guard). With `keep`, for a door that moves
  * the version, the outgoing file is kept as history (D05) once the new one has validated and
- * before anything is written: a refusal keeps nothing, and a failed copy changes nothing.
+ * before anything is written: a refusal keeps nothing, and a failed copy changes nothing. A disk
+ * error writing the PRD itself after its copy leaves that copy, as the other writers' order does:
+ * hidden while it matches the current file, listed once the PRD changes at the same version.
  */
 export function savePrd(root, prd, { base, keep = false } = {}) {
   if (base !== undefined && prdStamp(root) !== base) throw new Refused("prd-changed", "workshop: the PRD changed while this step was working — nothing was saved; run it again on the current PRD");
