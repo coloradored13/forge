@@ -144,8 +144,9 @@ function boardPage(v) {
   const amendRow = (a) => {
     const rad = a.radius_now ?? a.radius;
     const radius = [...rad.criteria, ...rad.stories, ...rad.screens], said = (id) => (v.words[id] ? `${id}: ${v.words[id]}` : id);
-    // A criterion change reads as its statement; any other target keeps its JSON.
-    const crit = /^\/requirements\/\d+\/acceptance_criteria\/(\d+|-)(\/statement)?$/.test(a.target);
+    // A new criterion or a reworded statement reads as words; any other change keeps its JSON, so a
+    // whole-criterion replacement still shows an ID change.
+    const crit = /^\/requirements\/\d+\/acceptance_criteria\/\d+(\/statement)?$/.test(a.target) && (a.adds || a.target.endsWith("/statement"));
     const say = (x) => esc(crit && typeof (x?.statement ?? x) === "string" ? x?.statement ?? x : JSON.stringify(x));
     const decide = a.status !== "proposed" ? `${badge(a.status, a.status === "approved" ? "ok" : "muted")}${a.decided ? `<br><span class="muted">${esc(a.decided.by)} · ${when(a.decided.at)}${a.decided.note ? ` · ${esc(a.decided.note)}` : ""}</span>` : ""}`
       : form({ action: "/doors/approve", submit: "Approve", fields: [{ name: "id", type: "hidden", value: a.id }, ...radius.map((id) => ({ name: "radius", label: `touches ${said(id)}`, type: "checkbox", value: id })), by], note: radius.length ? "Approving acknowledges every item the change touches, as they stand now." : "Nothing else is touched." })
