@@ -7,17 +7,18 @@
 // snapshot, never a chain link. What goes to Delivery carries a signed design; what goes
 // to a team carries the design as it stands, with its state on record.
 
-import { writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { validate } from "../../shared/schema/index.mjs";
 import { verify } from "../../shared/hash.mjs";
 import { pin, deriveVerdict } from "../../shared/judge/index.mjs";
 import { checkScope, lineDrawn } from "../../shared/scope.mjs";
-import { totals } from "../../shared/agent-call/ledger.mjs";
+import { totals, rows, tally } from "../../shared/agent-call/ledger.mjs";
 import { handoffFile, readHandoffs, latestHandoff, itemsOf, designMoved } from "../../shared/handoff.mjs";
 import { loadProject, ledgerPath, exec } from "../setup/index.mjs";
 import { loadPrd, savePrd, PRD_FILE } from "../workshop/index.mjs";
-import { Refused, readDoc, saveDoc, saveVerdict, isSigned, agreementGap, pendingReactions, recoveryOf, stalenessOf, renderPrd, renderPrototype, renderStories, renderStandard, renderDesign, PROTOTYPE_FILE, STORIES_FILE, DESIGN_FILE } from "../record/index.mjs";
+import { Refused, readDoc, saveDoc, saveVerdict, isSigned, agreementGap, pendingReactions, recoveryOf, stalenessOf, renderPrd, renderPrototype, renderStories, renderStandard, renderDesign, PROTOTYPE_FILE, STORIES_FILE, DESIGN_FILE, HTML_FILE } from "../record/index.mjs";
 import { checkPrototype } from "../prototype/index.mjs";
 import { checkStories } from "../stories/index.mjs";
 import { checkDesign } from "../design/index.mjs";
@@ -151,6 +152,8 @@ export async function exportHandoff({ root, exit, by, tracker: trackerOpts, _now
   if (toTeam && tracker?.kind === "jira" && !(_env.JIRA_EMAIL && _env.JIRA_API_TOKEN)) throw new Refused("no-credentials", "export: JIRA_EMAIL and JIRA_API_TOKEN must be in the environment; they are never written to a record");
   if (!lineDrawn(prd)) throw new Refused("no-line", "export: nothing leaves before the MVP line is drawn");
   const proto = readDoc(root, PROTOTYPE_FILE), stories = readDoc(root, STORIES_FILE), design = readDoc(root, DESIGN_FILE);
+  // The package carries the prototype the agreement covers: these bytes, read once, before anything is written (D10).
+  const html = proto ? publishedHtml(root, proto) : null;
   const ready = exitReadiness({ prd, proto, stories, design, exit });
   // The gate is filed once the door reaches it, past the prototype and the backlog.
   if (proto && stories) saveVerdict(root, ready.gate);
@@ -172,11 +175,51 @@ export async function exportHandoff({ root, exit, by, tracker: trackerOpts, _now
 
   const projected = toTeam && tracker ? await projectTo({ handoff, previous: basis, prd, save, _fetch, _env, _exec, root }) : null;
 
+  writePackage(root, { handoff, file, rendering, html });
+
   if (tracker?.kind === "jira" && tracker.keys[IDEA]) prd.meta.links = { ...(prd.meta.links ?? {}), jira_idea: tracker.keys[IDEA] };
   const where = projected ? ` · ${trackerName(tracker)}: ${projected.created.length} created, ${projected.updated.length} updated, ${projected.unchanged.length} unchanged` : toTeam ? " · files only" : "";
   prd.flags.push({ at: handoff.exported_at, section: "export", kind: "note", note: `handoff v${version} exported (${exit}) by ${handoff.by}${where}` });
   savePrd(root, prd);
   return { handoff, file, rendering, verdict, tracker: projected };
+}
+
+export const PACKAGES = join("discovery", "packages");
+const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
+
+/** The published HTML, if it is the prototype its record hashes; a path and a recorded hash are not the prototype. */
+function publishedHtml(root, proto) {
+  const path = join(root, HTML_FILE), bytes = existsSync(path) ? readFileSync(path) : null;
+  if (bytes && sha256(bytes) === proto.file_hash) return bytes;
+  throw new Refused("prototype-html-moved", `export: the published prototype ${bytes ? "is not the HTML its record hashes" : "is missing"} — rebuild it, then export`);
+}
+
+/**
+ * The handoff as one directory a recipient can take away (D10): the legacy files' bytes as the export
+ * left them, the prototype's, and a manifest of their hashes. Staged and renamed into place, so it is
+ * whole or absent, and never replaces one already there. The legacy handoff is on the record before it.
+ */
+function writePackage(root, { handoff, file, rendering, html }) {
+  const dir = join(root, PACKAGES), final = join(dir, `handoff-v${handoff.version}`);
+  mkdirSync(dir, { recursive: true });
+  const stage = mkdtempSync(join(dir, `.handoff-v${handoff.version}-`));
+  try {
+    const files = [["HANDOFF.md", readFileSync(join(root, rendering))], ["handoff.json", readFileSync(join(root, file))], ["prototype/index.html", html]];
+    mkdirSync(join(stage, "prototype"));
+    for (const [path, bytes] of files) writeFileSync(join(stage, path), bytes);
+    writeFileSync(join(stage, "manifest.json"), JSON.stringify({
+      format: "forge-handoff-package/1", handoff: { id: handoff.id, version: handoff.version, exit: handoff.exit },
+      source: { prd: handoff.contract.prd, prototype: { content_hash: handoff.prototype.meta.content_hash, file_hash: handoff.prototype.file_hash } },
+      files: files.map(([path, bytes]) => ({ path, sha256: sha256(bytes), bytes: bytes.length })),
+      spend: tally(rows(ledgerPath(root))), omissions: ["acceptance plan", "recipient verifier"],
+    }, null, 2) + "\n");
+    // A rename replaces an empty directory, so one already there is refused first.
+    if (existsSync(final)) throw new Refused("package-exists", `export: ${join(PACKAGES, `handoff-v${handoff.version}`)} already exists — a package is never replaced`);
+    renameSync(stage, final);
+  } catch (e) {
+    rmSync(stage, { recursive: true, force: true });
+    throw e;
+  }
 }
 
 /** What Discovery has cost so far, by stage — the ledger's totals, shaped for the snapshot and the board. */
