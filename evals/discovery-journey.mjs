@@ -4,44 +4,24 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { suite, scripted, withRoot } from "./_harness.mjs";
-import { project, cancel, seedStories } from "./_fixture.mjs";
 import * as doors from "../discovery/doors/index.mjs";
 import { loadPrd } from "../discovery/workshop/index.mjs";
-import { Refused, readDoc, agreementGap, PRD_FILE, PROTOTYPE_FILE, STORIES_FILE } from "../discovery/record/index.mjs";
-import { generate } from "../discovery/prototype/index.mjs";
+import { Refused, readDoc, agreementGap, PRD_FILE, PROTOTYPE_FILE, STORIES_FILE, HTML_FILE } from "../discovery/record/index.mjs";
 import { write } from "../discovery/stories/index.mjs";
 import { exportHandoff } from "../discovery/export/index.mjs";
 import { validate } from "../shared/schema/index.mjs";
 
+import { QUESTION, DECISION, accepted, build, setup } from "./_bookings.mjs";
+
 const { check, done } = suite("discovery-journey · D03 bookings", 2);
-const QUESTION = "Can a member cancel a booking after pickup?", DECISION = "Cancellation is unavailable after pickup.";
 const bytes = (root, file) => readFileSync(join(root, file), "utf8");
-const accepted = (prd) => ({ requirements: prd.requirements, hash: prd.meta.content_hash, version: prd.meta.version, agreements: prd.agreements });
 const noService = () => { throw new Error("unexpected external service"); };
-async function build(root) {
-  const q = scripted({ structured: { html: "<!doctype html><title>Booking</title><button>Cancel booking</button>\n", screens: [{ id: "SCREEN-1", name: "Booking", surface_ref: "SURF-1", req_refs: ["REQ-1"] }],
-    uncovered: [], notes: "Confirm cancellation policy.", open_questions: [{ question: QUESTION, blocking: true }] } });
-  await generate({ root, _query: q.query });
-  assert.equal(q.calls.length, 1); return q;
-}
-async function setup(parent) {
-  const root = await project(parent, [cancel("REQ-1")]);
-  const other = doors.answer({ root, req: "REQ-1", question: "Does cancellation notify the member?", answer: "Show confirmation.", by: "Earlier PM" }).ruling;
-  await build(root); doors.agree({ root, by: "PM" });
-  const backlog = { epics: [{ id: "EPIC-1", req_ref: "REQ-1", title: "Cancel a booking" }],
-    stories: [{ id: "STORY-1", epic: "EPIC-1", statement: "As a member, I want to cancel my booking, so that others can reserve the equipment.",
-      req_refs: ["REQ-1"], screen_refs: ["SCREEN-1"], scenarios: [
-        { name: "Release reservation", gherkin: "Given my cancellable booking\nWhen I cancel it\nThen its reservation is released", proves: ["REQ-1/AC-1"] },
-        { name: "Confirm cancellation", gherkin: "Given my cancellable booking\nWhen I cancel it\nThen confirmation is shown", proves: [other.criterion] },
-      ] }], notes: "", open_questions: [] };
-  seedStories(root, backlog); // The blocking PQ prevents write(); seed bookings, never the dock defaults.
-  return { root, other, backlog };
-}
 
 for (const decision of ["approve", "reject"]) {
   try {
     await withRoot({}, async (parent) => {
       const { root, other, backlog } = await setup(parent), before = loadPrd(root), proto = readDoc(root, PROTOTYPE_FILE);
+      const htmlBytes = readFileSync(join(root, HTML_FILE));
       const protoBytes = bytes(root, PROTOTYPE_FILE), storyBytes = bytes(root, STORIES_FILE);
       const editor = scripted({ structured: { change: { requirement: "REQ-1", statement: DECISION }, rationale: "Pickup ends cancellation.", note: "Review the policy." } });
       assert.equal(typeof doors.react, "function");
@@ -50,7 +30,7 @@ for (const decision of ["approve", "reject"]) {
       const proposed = loadPrd(root);
       assert.equal(editor.calls.length, 1); assert.equal(proposed.amendments.length, 1); assert.equal(a.origin, "reaction");
       assert.equal(a.pq, "PQ-1"); assert.equal(a.reaction, proposed.reactions[0].id); assert.equal(a.to.id, "AC-3");
-      assert.deepEqual(accepted(proposed), accepted(before)); assert.equal(bytes(root, PROTOTYPE_FILE), protoBytes);
+      assert.deepEqual(accepted(proposed), accepted(before)); assert.equal(bytes(root, PROTOTYPE_FILE), protoBytes); assert.deepEqual(readFileSync(join(root, HTML_FILE)), htmlBytes);
       const writer = scripted({ structured: backlog }), proposedBytes = bytes(root, PRD_FILE);
       await assert.rejects(() => write({ root, _query: writer.query }), (e) => e instanceof Refused && e.code === "reaction-pending");
       assert.equal(writer.calls.length, 0); assert.equal(bytes(root, PRD_FILE), proposedBytes); assert.equal(bytes(root, STORIES_FILE), storyBytes);
@@ -59,7 +39,7 @@ for (const decision of ["approve", "reject"]) {
         const rejected = loadPrd(root);
         assert.deepEqual(accepted(rejected), accepted(before)); assert.deepEqual(rejected.rulings, before.rulings);
         assert.equal(rejected.amendments[0].status, "rejected"); assert.notEqual(bytes(root, PRD_FILE), proposedBytes);
-        assert.equal(bytes(root, PROTOTYPE_FILE), protoBytes); assert.equal(readDoc(root, PROTOTYPE_FILE).open_questions[0].status, "open");
+        assert.equal(bytes(root, PROTOTYPE_FILE), protoBytes); assert.deepEqual(readFileSync(join(root, HTML_FILE)), htmlBytes); assert.equal(readDoc(root, PROTOTYPE_FILE).open_questions[0].status, "open");
         await assert.rejects(() => write({ root, _query: writer.query }), (e) => e instanceof Refused && e.code === "blocking-question");
         assert.equal(writer.calls.length, 0); assert.equal(bytes(root, STORIES_FILE), storyBytes); return;
       }

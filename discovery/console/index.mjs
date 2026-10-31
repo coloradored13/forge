@@ -36,7 +36,6 @@ const named = (kind, doc) => `${kind === "prd" ? `v${esc(doc.meta.version)}` : `
 // the exception: Chromium applies neither CSP nor the sandbox to it, a recorded limit.
 const PROTOTYPE_CSP = "sandbox allow-scripts allow-forms; default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; connect-src 'none'; form-action 'none'; frame-ancestors 'self'";
 const STATUS = { complete: "ok", in_progress: "warn", pending: "muted" };
-const list = (xs, sep = ", ") => (xs?.length ? esc(xs.join(sep)) : `<span class="muted">none</span>`);
 const blank = (s) => (s?.trim() ? s.trim() : undefined);
 const jsonOrText = (s) => { try { return JSON.parse(s); } catch { return s; } };
 // Product changes reach a document only through a reaction or an amendment (D03); a writer's notes shape the telling.
@@ -144,11 +143,15 @@ function boardPage(v) {
 
   const amendRow = (a) => {
     const rad = a.radius_now ?? a.radius;
-    const radius = [...rad.criteria, ...rad.stories, ...rad.screens];
+    const radius = [...rad.criteria, ...rad.stories, ...rad.screens], said = (id) => (v.words[id] ? `${id}: ${v.words[id]}` : id);
+    // A new criterion or a reworded statement reads as words; any other change keeps its JSON, so a
+    // whole-criterion replacement still shows an ID change.
+    const crit = /^\/requirements\/\d+\/acceptance_criteria\/\d+(\/statement)?$/.test(a.target) && (a.adds || a.target.endsWith("/statement"));
+    const say = (x) => esc(crit && typeof (x?.statement ?? x) === "string" ? x?.statement ?? x : JSON.stringify(x));
     const decide = a.status !== "proposed" ? `${badge(a.status, a.status === "approved" ? "ok" : "muted")}${a.decided ? `<br><span class="muted">${esc(a.decided.by)} · ${when(a.decided.at)}${a.decided.note ? ` · ${esc(a.decided.note)}` : ""}</span>` : ""}`
-      : form({ action: "/doors/approve", submit: "Approve", fields: [{ name: "id", type: "hidden", value: a.id }, ...radius.map((id) => ({ name: "radius", label: `touches ${id}`, type: "checkbox", value: id })), by], note: radius.length ? "Approving acknowledges every item the change touches, as they stand now." : "Nothing else is touched." })
+      : form({ action: "/doors/approve", submit: "Approve", fields: [{ name: "id", type: "hidden", value: a.id }, ...radius.map((id) => ({ name: "radius", label: `touches ${said(id)}`, type: "checkbox", value: id })), by], note: radius.length ? "Approving acknowledges every item the change touches, as they stand now." : "Nothing else is touched." })
         + form({ action: "/doors/reject", submit: "Reject", fields: [{ name: "id", type: "hidden", value: a.id }, { name: "reason", label: "reason", required: true }, by] });
-    return [`${esc(a.id)}<br><span class="muted">${esc(a.origin)} · ${esc(a.by)} · ${when(a.at)}</span>`, `<code>${esc(a.target)}</code>${a.material ? " " + badge("material", "warn") : ""}<br><span class="muted">${a.adds ? "adds" : `from ${esc(JSON.stringify(a.from))}`}</span><br>to ${esc(JSON.stringify(a.to))}`, esc(a.rationale), `${list(radius)}${rad.terms.length ? `<br><span class="muted">terms: ${esc(rad.terms.join(", "))}</span>` : ""}${a.introduces?.length ? `<br><span class="muted">introduces: ${esc(a.introduces.join(", "))}</span>` : ""}`, decide];
+    return [`${esc(a.id)}<br><span class="muted">${esc(a.origin)} · ${esc(a.by)} · ${when(a.at)}</span>`, `<code>${esc(a.target)}</code>${a.material ? " " + badge("material", "warn") : ""}<br><span class="muted">${a.adds ? "adds" : `from ${say(a.from)}`}</span><br>to ${say(a.to)}`, esc(a.rationale), `${radius.map((id) => esc(said(id))).join("<br>") || `<span class="muted">none</span>`}${rad.terms.length ? `<br><span class="muted">terms: ${esc(rad.terms.join(", "))}</span>` : ""}${a.introduces?.length ? `<br><span class="muted">introduces: ${esc(a.introduces.join(", "))}</span>` : ""}`, decide];
   };
   const amendments = table(["amendment", "target", "rationale", "radius", "decision"], v.amendments.map(amendRow));
   const proposeForm = form({

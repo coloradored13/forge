@@ -298,9 +298,12 @@ await withRoot({}, async (tmp) => {
     const amd = boardView(root).amendments.at(-1);
     const radius = amd ? [...amd.radius_now.criteria, ...amd.radius_now.stories, ...amd.radius_now.screens] : [];
     check("proposing through the console is the propose door: the amendment on the record, its radius recomputed against the record as it stands", proposed.status === 303 && amd?.status === "proposed" && radius.length >= 3, `${proposed.status} ${JSON.stringify(amd?.radius_now)}`);
+    // Descriptive labels may extend the exact item ID; the label/control association
+    // and the full set of submitted radius IDs remain mandatory. Text is checked by
+    // discovery-proposal-display against the current records.
     const boxes = [...(await get("/board")).text.matchAll(/<label class="check" for="([^"]+)"><input type="checkbox" id="([^"]+)" name="radius" value="([^"]+)"><span>touches ([^<]+)<\/span><\/label>/g)];
     check("the board wears the radius as checkboxes — each box before its own label, each with its own id, so the label toggles the box it names",
-      boxes.length === radius.length && boxes.every((m) => m[1] === m[2] && m[3] === m[4]) && new Set(boxes.map((m) => m[2])).size === radius.length && same(boxes.map((m) => m[3]), radius), `${boxes.length}/${radius.length} ${JSON.stringify(boxes.map((m) => m[3]))}`);
+      boxes.length === radius.length && boxes.every((m) => m[1] === m[2] && (m[4] === m[3] || (m[4].startsWith(`${m[3]}: `) && m[4].slice(m[3].length + 2).trim().length > 0))) && new Set(boxes.map((m) => m[2])).size === radius.length && same(boxes.map((m) => m[3]), radius), `${boxes.length}/${radius.length} ${JSON.stringify(boxes.map((m) => m[3]))}`);
     const partial = await post("/doors/approve", { id: amd.id, by: "Brad", radius: radius[0] });
     check("one box ticked arrives as one value and the door refuses it — the radius is acknowledged whole or not at all", partial.status === 409 && partial.text.includes("radius-unacknowledged") && loadPrd(root).amendments.at(-1).status === "proposed", `${partial.status} ${partial.text.slice(0, 200)}`);
     const whole = new URLSearchParams({ id: amd.id, by: "Brad" }); for (const r of radius) whole.append("radius", r);

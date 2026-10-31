@@ -171,6 +171,9 @@ export function boardView(root) {
     rulings: rulingsOf(prd),
     // A proposal shows the radius as it stands now — what approving it acknowledges — never the one minted then.
     amendments: (prd.amendments ?? []).map((a) => ({ ...a, radius_now: a.status === "proposed" ? radiusOf({ prd, proto: docs.prototype, stories: docs.stories, target: a.target, from: a.adds ? undefined : a.from }) : null })),
+    // What each radius id names as the records stand now: the PM acknowledges items, not ids (D03).
+    words: Object.fromEntries([...(prd.requirements ?? []).flatMap((r) => (r.acceptance_criteria ?? []).map((ac) => [`${r.id}/${ac.id}`, ac.statement])),
+      ...(docs.stories?.stories ?? []).map((s) => [s.id, s.statement]), ...(docs.prototype?.screens ?? []).map((s) => [s.id, s.name])]),
     flags: prd.flags ?? [],
     cost: costOf(root),
     quotes: { writer: quoteFor(root, project, "writer"), reviewer: quoteFor(root, project, "reviewer") },
