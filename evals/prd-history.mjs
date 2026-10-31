@@ -10,7 +10,7 @@ import { loadPrd, PRD_FILE } from "../discovery/workshop/index.mjs";
 import { keepOutgoing, renderPrd, PROTOTYPE_FILE } from "../discovery/record/index.mjs";
 import { serve, esc } from "../shared/console/index.mjs";
 import { routes, nav } from "../discovery/console/index.mjs";
-const { check, done } = suite("PRD history", 20);
+const { check, done } = suite("PRD history", 21);
 const hash = b => createHash("sha256").update(b).digest("hex");
 const bytes = (root, file = PRD_FILE) => readFileSync(join(root, file));
 const keyOf = b => `prd-${hash(b).slice(0, 12)}`;
@@ -61,6 +61,9 @@ await withRoot({}, async tmp => {
     const before = snapshot(root), old = await get(`/artifact/prd/history/${firstKey}`);
     check("older page uses renderPrd and preserves the original criterion", old.status === 200 && old.text.includes(esc(renderPrd(firstDoc))) && old.text.includes(firstDoc.requirements[0].acceptance_criteria[0].statement) && !old.text.includes(a.to));
     check("opening listed PRD is read-only with no forms or record writes", old.status === 200 && !/<form\b|\baction\s*=/i.test(old.text) && snapshot(root) === before && bytes(root).equals(current));
+    // Version order must not substitute for the history files' modification times.
+    for (const [i, key] of [firstKey, secondKey].entries()) if (existsSync(join(root, `discovery/history/${key}.json`))) utimesSync(join(root, `discovery/history/${key}.json`), 3001 - i, 3001 - i);
+    check("older version with newer mtime lists first regardless of version or hash", same(links((await get("/artifact/prd")).text), [firstKey, secondKey]));
     for (const key of [firstKey, secondKey]) if (existsSync(join(root, `discovery/history/${key}.json`))) utimesSync(join(root, `discovery/history/${key}.json`), 2000, 2000);
     check("equal history mtimes sort by ascending key", same(links((await get("/artifact/prd")).text), [firstKey, secondKey].sort()));
     // A physically present current copy is still unlisted and cannot be opened by guessing its key.
