@@ -25,9 +25,12 @@ export function rows(path) {
   return out;
 }
 
-/** Calls, spend and the count still open, over any set of rows — the one arithmetic every cost strip shows. */
+/** A call whose cost is not known: still open, or closed without the SDK reporting one. */
+const unknown = (r) => r.ok === null || r.usd_unknown === true;
+
+/** Calls, spend, the count still open and the count of unknown cost, over any set of rows — the one arithmetic every cost strip shows. */
 export function tally(list) {
-  return { calls: list.length, usd: list.reduce((n, r) => n + (r.usd ?? 0), 0), unfinished: list.filter((r) => r.ok === null).length };
+  return { calls: list.length, usd: list.reduce((n, r) => n + (r.usd ?? 0), 0), unfinished: list.filter((r) => r.ok === null).length, unknown: list.filter(unknown).length };
 }
 
 export function append(path, row) {
@@ -46,9 +49,10 @@ export function totals(path, by = ["half", "stage", "role"]) {
   const out = {};
   for (const r of rows(path)) {
     const key = by.map((k) => r[k] ?? "?").join(" · ");
-    const t = (out[key] ??= { calls: 0, unfinished: 0, usd: 0, ms: 0, tokens: { input: 0, output: 0, cache_read: 0, cache_create: 0 } });
+    const t = (out[key] ??= { calls: 0, unfinished: 0, unknown: 0, usd: 0, ms: 0, tokens: { input: 0, output: 0, cache_read: 0, cache_create: 0 } });
     t.calls++;
     if (r.ok === null) t.unfinished++;
+    if (unknown(r)) t.unknown++;
     t.usd += r.usd ?? 0;
     t.ms += r.ms ?? 0;
     for (const k of Object.keys(t.tokens)) t.tokens[k] += r.tokens?.[k] ?? 0;
@@ -62,7 +66,7 @@ export function totals(path, by = ["half", "stage", "role"]) {
  * from a rate card would be shown with the same confidence as a measured one.
  */
 export function estimate(path, { half, role, model }) {
-  const like = rows(path).filter((r) => r.ok && r.half === half && r.role === role && (!model || r.model === model));
+  const like = rows(path).filter((r) => r.ok && !unknown(r) && r.half === half && r.role === role && (!model || r.model === model));
   if (!like.length) return { usd: null, n: 0, basis: "none" };
   return { usd: like.reduce((n, r) => n + r.usd, 0) / like.length, n: like.length, basis: "history" };
 }
@@ -70,7 +74,7 @@ export function estimate(path, { half, role, model }) {
 /** Where the spend stands against the cap. `budget` null means uncapped. */
 export function standing(path, budget = null) {
   const used = spent(path);
-  return { spent: used, budget, remaining: budget == null ? null : Math.max(0, budget - used), over: budget != null && used >= budget };
+  return { spent: used, unknown: rows(path).filter(unknown).length, budget, remaining: budget == null ? null : Math.max(0, budget - used), over: budget != null && used >= budget };
 }
 
 /** The strip a door shows before a trigger: what one more call is likely to cost, and where the spend stands. */
