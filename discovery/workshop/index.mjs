@@ -21,7 +21,7 @@ import { loadProject, ledgerPath } from "../setup/index.mjs";
 import { SECTIONS, LINE_SECTION, section, indexOf } from "./sections.mjs";
 import { repoBrief } from "./brief.mjs";
 import { holdRulings, AUDIT_GATE } from "../doors/index.mjs";
-import { saveVerdict } from "../record/index.mjs";
+import { saveVerdict, keepOutgoing } from "../record/index.mjs";
 import { Refused } from "../../shared/refused.mjs";
 
 export const PRD_FILE = join("discovery", "prd.json");
@@ -75,13 +75,16 @@ export function prdStamp(root) {
 /**
  * Stamp, validate, write. An invalid document is never written — the refusal names the fields.
  * With `base`, the file must still be the bytes the caller read; a late write never replaces a
- * PRD that moved while the model worked (D09's basic guard).
+ * PRD that moved while the model worked (D09's basic guard). With `keep`, for a door that moves
+ * the version, the outgoing file is kept as history (D05) once the new one has validated and
+ * before anything is written: a refusal keeps nothing, and a failed copy changes nothing.
  */
-export function savePrd(root, prd, { base } = {}) {
+export function savePrd(root, prd, { base, keep = false } = {}) {
   if (base !== undefined && prdStamp(root) !== base) throw new Refused("prd-changed", "workshop: the PRD changed while this step was working — nothing was saved; run it again on the current PRD");
   stamp(prd);
   const v = validate("prd", prd);
   if (!v.ok) throw new WorkshopRefused("prd-invalid", `workshop: the PRD does not fit its schema — ${v.errors.slice(0, 5).join("; ")}`, v.errors);
+  if (keep) keepOutgoing(root, "prd", PRD_FILE);
   mkdirSync(dirname(prdPath(root)), { recursive: true });
   writeFileSync(prdPath(root), JSON.stringify(prd, null, 2) + "\n");
   return prd;
