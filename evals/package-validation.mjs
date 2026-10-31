@@ -97,7 +97,7 @@ function watchOutside(outside) {
   const guard = path => {
     if (typeof path === "number") return;
     let target; try { target = realpath(path instanceof URL ? fileURLToPath(path) : path); } catch { return; }
-    const rel = relative(outside, target);
+    const rel = relative(realpath(outside), target);
     if (rel === "" || (rel !== ".." && !rel.startsWith("../") && !isAbsolute(rel))) { attempts.push(target); throw new Error("outside sentinel read attempted"); }
   };
   for (const [object, names] of [[fs, ["readFileSync", "readFile", "openSync", "open", "createReadStream", "readdirSync", "readdir", "opendirSync", "opendir"]], [fsp, ["readFile", "open", "readdir", "opendir"]]]) for (const name of names) {
