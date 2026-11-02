@@ -163,7 +163,7 @@ export function quoteTurn({ root, key }) {
   section(key);
   const project = loadProject(root);
   const model = modelFor({ half: "discovery", role: "workshop" }, project.models);
-  return { section: key, model, ...quote(ledgerPath(root), { half: "discovery", role: "workshop", model, budget: project.budget }) };
+  return { section: key, model, ...quote(ledgerPath(root), { half: "discovery", role: "workshop", model, stage: "workshop", budget: project.budget }) };
 }
 
 export function parseReply(text) {

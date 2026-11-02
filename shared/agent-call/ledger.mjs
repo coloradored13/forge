@@ -62,11 +62,12 @@ export function totals(path, by = ["half", "stage", "role"]) {
 
 /**
  * What the next call of this kind will probably cost: the mean of prior calls with the
- * same half, role and model. No history is reported as no history — a number invented
+ * same half, role and model, and the same stage when one is named, so a prototype build is
+ * not priced from extractions. No history is reported as no history — a number invented
  * from a rate card would be shown with the same confidence as a measured one.
  */
-export function estimate(path, { half, role, model }) {
-  const like = rows(path).filter((r) => r.ok && !unknown(r) && r.half === half && r.role === role && (!model || r.model === model));
+export function estimate(path, { half, role, model, stage }) {
+  const like = rows(path).filter((r) => r.ok && !unknown(r) && r.half === half && r.role === role && (!model || r.model === model) && (!stage || r.stage === stage));
   if (!like.length) return { usd: null, n: 0, basis: "none" };
   return { usd: like.reduce((n, r) => n + r.usd, 0) / like.length, n: like.length, basis: "history" };
 }
@@ -78,6 +79,6 @@ export function standing(path, budget = null) {
 }
 
 /** The strip a door shows before a trigger: what one more call is likely to cost, and where the spend stands. */
-export function quote(path, { half, role, model, budget = null }) {
-  return { estimate: estimate(path, { half, role, model }), ...standing(path, budget) };
+export function quote(path, { half, role, model, stage, budget = null }) {
+  return { estimate: estimate(path, { half, role, model, stage }), ...standing(path, budget) };
 }
