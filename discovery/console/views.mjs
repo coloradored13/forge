@@ -73,7 +73,7 @@ export function setupView(root) {
 
 // ── workshop ──
 
-/** One section at a time: the sections in their order, the current one's transcript, the quote before the next turn, what is captured. */
+/** One section at a time: the sections in their order, the current one's transcript, the quotes before the next turn and its extraction, what is captured. */
 export function workshopView(root, key) {
   const project = loadProject(root);
   const prd = tryPrd(root);
@@ -87,6 +87,7 @@ export function workshopView(root, key) {
     current: { ...p.sections.find((s) => s.key === current), why: gate.ok ? null : gate.message },
     transcript: readTranscript(root, current),
     quote: quoteTurn({ root, key: current }),
+    extract_quote: quoteFor(root, project, "writer", "workshop"),
     captured: captured(prd),
     flags: prd.flags ?? [],
   };
@@ -133,14 +134,14 @@ export function prototypeView(root) {
     seen: { prd_hash: prd.meta.content_hash, prototype_hash: doc.meta.content_hash },
     questions: (doc.open_questions ?? []).filter((q) => q.id && q.status === "open"),
     reactions: (prd.reactions ?? []).map((r) => ({ ...r, status: r.proposal ? status.get(r.proposal) ?? null : null })).reverse(),
-    quote: quoteFor(root, project, "writer"),
+    quote: quoteFor(root, project, "writer", "reaction"),
   };
 }
 
 // The ready-gate finding that says how each artifact recovers once it is stale (D05).
 const RECOVERY = { prototype: ["no-agreement", "agreement-stale"], stories: ["stories-stale"], design: ["design-stale"] };
 
-/** The artifacts with their stale badges, recovery and gates, the doors' state, the ledger's cost, and the quotes before the writer and the reviewer. */
+/** The artifacts with their stale badges, recovery and gates, the doors' state, the ledger's cost, and the quote before each writer and reviewer, by stage. */
 export function boardView(root) {
   const project = loadProject(root);
   const prd = loadPrd(root);
@@ -176,14 +177,15 @@ export function boardView(root) {
       ...(docs.stories?.stories ?? []).map((s) => [s.id, s.statement]), ...(docs.prototype?.screens ?? []).map((s) => [s.id, s.name])]),
     flags: prd.flags ?? [],
     cost: { ...costOf(root), unknown: tally(rows(ledgerPath(root))).unknown },
-    quotes: { writer: quoteFor(root, project, "writer"), reviewer: quoteFor(root, project, "reviewer") },
+    quotes: { prototype: { writer: quoteFor(root, project, "writer", "prototype") },
+      ...Object.fromEntries(["stories", "design"].map((stage) => [stage, { writer: quoteFor(root, project, "writer", stage), reviewer: quoteFor(root, project, "reviewer", stage) }])) },
   };
 }
 
-/** A Discovery role's quote before its trigger: the model it runs and the ledger's figure for it (R1). */
-function quoteFor(root, project, role) {
+/** A Discovery call's quote before its trigger: the model its role runs and the ledger's figure for that stage and role (R1). */
+function quoteFor(root, project, role, stage) {
   const model = modelFor({ half: "discovery", role }, project.models);
-  return { model, ...quote(ledgerPath(root), { half: "discovery", role, model, budget: project.budget ?? null }) };
+  return { model, ...quote(ledgerPath(root), { half: "discovery", role, model, stage, budget: project.budget ?? null }) };
 }
 
 // ── export ──
