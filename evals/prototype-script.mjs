@@ -11,7 +11,7 @@ import { Refused, HTML_FILE, PROTOTYPE_FILE, REVIEWS, readVerdict } from "../dis
 import { ledgerPath } from "../discovery/setup/index.mjs";
 import { rows } from "../shared/agent-call/ledger.mjs";
 
-const { check, done } = suite("prototype-script · DH1b 6 parse-only publication", 138);
+const { check, done } = suite("prototype-script · DH1b 6 parse-only publication", 176);
 const build = (html) => ({ html, screens: structuredClone(SCREENS), uncovered: ["REQ-4"], notes: "Script gate fixture", open_questions: [] });
 const bytes = (root, file) => existsSync(join(root, file)) ? readFileSync(join(root, file)) : null;
 const same = (a, b) => a === null ? b === null : b !== null && a.equals(b);
@@ -34,6 +34,9 @@ const invalid = [
   ["unquoted handler", '<button onclick=if(>Broken</button>', /onclick/i],
   ["handler after bare attribute", '<button disabled onclick="if (">Broken</button>', /onclick/i],
   ["self-closing handler", '<img onerror="if ("/>', /onerror/i],
+  ["handler still invalid after entity decoding", '<button onclick="return &quot;unterminated;">Broken</button>', /onclick/i],
+  ["inline script tag handler", '<script onload="if (">const ready = true;</script>', /onload/i],
+  ["src script tag handler", '<script src="local.js" onerror="if ("></script>', /onerror/i],
 ];
 
 for (const [name, fragment, location] of invalid) {
@@ -76,6 +79,10 @@ const valid = [
   ["parseable runtime failure is outside the gate", '<script>throw new Error("must never execute while publishing");</script>'],
   ["handler text inside a double-quoted title", `<button title=" onclick='if('">OK</button>`],
   ["handler text inside a single-quoted title before a real valid handler", `<button title=' onclick="if("' onclick="return false;">OK</button>`],
+  ["handler with named quote entities", '<button onclick="say(&quot;hi&quot;);">OK</button>'],
+  ["handler with encoded logical AND", '<button onclick="return ready &amp;&amp; enabled;">OK</button>'],
+  ["handler with numeric quote entities", '<button onclick="say(&#39;hi&#39;);">OK</button>'],
+  ["valid script tag handler function body", '<script onload="return false;">const ready = true;</script>'],
 ];
 for (const [name, fragment] of valid) {
   await withRoot({}, async (parent) => {
