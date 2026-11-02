@@ -7,9 +7,11 @@
 // prototype: the PM is the loop here.
 
 import { createHash } from "node:crypto";
+import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { Script, compileFunction } from "node:vm";
 import { skeleton, outputContract, validate, validateAgainst } from "../../shared/schema/index.mjs";
 import { stamp } from "../../shared/hash.mjs";
 import { identity, mechanics, assemble } from "../../shared/prompt/index.mjs";
@@ -98,9 +100,9 @@ export async function generate({ root, onEvent, _query, _sleep }) {
 
 /**
  * The page the builder returned, checked before it is published: present, within the size
- * cap, and with no network reference in a tag's attribute, a <style> block or a style
- * attribute. Text, comments and data-* attributes that merely mention an address are not
- * references.
+ * cap, with no network reference in a tag's attribute, a <style> block or a style
+ * attribute, and with every inline script parsing. Text, comments and data-* attributes
+ * that merely mention an address are not references.
  */
 export function checkHtml(html) {
   if (!html.trim()) throw new Refused("no-html", "prototype: the builder returned an empty page");
@@ -108,6 +110,48 @@ export function checkHtml(html) {
   if (size > MAX_HTML) throw new Refused("html-too-large", `prototype: the page is ${size} bytes; the cap is ${MAX_HTML}`);
   const external = refsOf(html).filter((r) => NETWORK.test(r));
   if (external.length) throw new Refused("html-external", `prototype: the page reaches the network — ${external.slice(0, 5).join(", ")}; a prototype runs from disk`, external);
+  const broken = scriptError(html);
+  if (broken) throw new Refused("html-script-invalid", `prototype: ${broken}; the page was not published`);
+}
+
+// The types a browser runs as a classic script: none, empty, or one of HTML's JavaScript MIME types.
+const CLASSIC = /^(?:|(?:text|application)\/(?:x-)?(?:java|ecma)script|text\/javascript1\.[0-5]|text\/(?:jscript|livescript))$/i;
+const ENTITY = { quot: '"', apos: "'", amp: "&", lt: "<", gt: ">" };
+const decode = (s) => s.replace(/&(?:#(\d+)|#x([0-9a-f]+)|(quot|apos|amp|lt|gt));/gi, (_, d, x, name) => {
+  const n = d ? Number(d) : x ? parseInt(x, 16) : null;
+  return n === null ? ENTITY[name.toLowerCase()] : n <= 0x10ffff ? String.fromCodePoint(n) : "�";
+});
+// A tag's attributes in order as [name, value], each value consumed whole, so text inside one value is never read as another attribute.
+const attrsOf = (tag) => [...tag.replace(/^<[^\s>\/]*/, "").matchAll(/([^\s"'>\/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]*)))?/g)]
+  .map((a) => [a[1].toLowerCase(), a[2] ?? a[3] ?? a[4] ?? ""]);
+const parses = (compile) => { try { compile(); return null; } catch (e) { return `${e.name}: ${e.message}`; } };
+// Node has no in-process module parse without a flag, so its own checker reads the module. Nothing runs.
+const moduleParses = (src) => {
+  const r = spawnSync(process.execPath, ["--input-type=module", "--check"], { input: src, encoding: "utf8" });
+  return r.status === 0 ? null : r.stderr?.match(/^\w*Error: .*$/m)?.[0] ?? `the module check failed (${r.error?.message ?? `exit ${r.status}`})`;
+};
+
+/**
+ * The first inline script that does not parse, in words, or null. Parsed, never run: each
+ * `<script>` without a `src` whose type a browser runs (a module as a module) and each `on…`
+ * handler attribute as a function body. Comments and other types (JSON, templates) are skipped.
+ */
+export function scriptError(html) {
+  let n = 0;
+  for (const m of html.matchAll(/<!--[\s\S]*?-->|<script\b((?:[^>"']|"[^"]*"|'[^']*')*)>([\s\S]*?)<\/script\s*>|<[a-z][^\s>\/]*(?:[^>"']|"[^"]*"|'[^']*')*>/gi)) {
+    if (m[0].startsWith("<!--")) continue;
+    const tag = m[2] === undefined ? m[0] : `<script${m[1]}>`, attrs = attrsOf(tag);
+    for (const [name, value] of attrs.filter(([name]) => /^on[a-z]+$/.test(name))) {
+      const why = parses(() => compileFunction(decode(value), ["event"]));
+      if (why) return `the ${name} handler on <${tag.slice(1).split(/[\s>\/]/)[0].toLowerCase()}> does not parse — ${why}`;
+    }
+    if (m[2] === undefined || attrs.some(([name]) => name === "src")) continue;
+    n += 1;
+    const type = (attrs.find(([name]) => name === "type")?.[1] ?? "").trim();
+    const why = type.toLowerCase() === "module" ? moduleParses(m[2]) : CLASSIC.test(type) ? parses(() => new Script(m[2])) : null;
+    if (why) return `script ${n} on the page${type ? ` (type ${type})` : ""} does not parse — ${why}`;
+  }
+  return null;
 }
 
 /** Every reference the page makes, from a tag's attribute, a <style> block or a style attribute — the builder's check and the package's read it alike. */

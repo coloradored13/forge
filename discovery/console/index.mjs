@@ -97,7 +97,8 @@ function workshopPage(v, key) {
     ? `<p class="refusal">${esc(c.why)}</p>`
     : quoteStrip(v.quote)
       + form({ action: `/workshop/${c.key}/turn`, submit: "Say it", fields: [{ name: "text", label: "your turn", type: "textarea", rows: 4, required: true }] })
-      + form({ action: `/workshop/${c.key}/extract`, submit: "Extract", note: `Reads this section's transcript into the PRD's fields; the section's status moves with it. Same model, same quote.` });
+      + quoteStrip(v.extract_quote)
+      + form({ action: `/workshop/${c.key}/extract`, submit: "Extract", note: `Reads this section's transcript into the PRD's fields. The section stays open until the workshop says it is complete.` });
   return { title: `Workshop · ${c.label}`, body: `<h1>${esc(v.prd.title)} <span class="muted">v${esc(v.prd.version)} · ${esc(v.prd.doc_status)}${v.line_drawn ? " · line drawn" : ""}</span></h1>${sections}`
     + `<h2>${esc(c.label)}</h2>${transcript}${doors}`
     + `<h2>Captured so far</h2><pre>${esc(v.captured)}</pre>`
@@ -116,12 +117,12 @@ function artifactRow(a) {
 
 function boardPage(v) {
   const by = { name: "by", label: "by", required: true };
-  const w = quoteStrip(v.quotes.writer), r = quoteStrip(v.quotes.reviewer);
+  const q = v.quotes;
   const present = Object.fromEntries(v.artifacts.map((a) => [a.kind, a.present]));
   const doors = `<div class="cols">`
-    + `<section><h3>Prototype</h3>${w}${form({ action: "/prototype/generate", submit: present.prototype ? "Regenerate" : "Generate" })}</section>`
-    + `<section><h3>Stories</h3>${w}${form({ action: "/doors/agree", submit: "Agree", fields: [by], note: "Agree to this PRD and the prototype built from it. Stories are written only from the revision the PM agreed." })}${form({ action: "/stories/write", submit: present.stories ? "Rewrite" : "Write", fields: [notes] })}${r}${form({ action: "/stories/review", submit: "Review" })}</section>`
-    + `<section><h3>Design</h3>${w}${form({ action: "/design/write", submit: present.design ? "Rewrite" : "Write", fields: [notes] })}${r}${form({ action: "/design/review", submit: "Review" })}`
+    + `<section><h3>Prototype</h3>${quoteStrip(q.prototype.writer)}${form({ action: "/prototype/generate", submit: present.prototype ? "Regenerate" : "Generate" })}</section>`
+    + `<section><h3>Stories</h3>${quoteStrip(q.stories.writer)}${form({ action: "/doors/agree", submit: "Agree", fields: [by], note: "Agree to this PRD and the prototype built from it. Stories are written only from the revision the PM agreed." })}${form({ action: "/stories/write", submit: present.stories ? "Rewrite" : "Write", fields: [notes] })}${quoteStrip(q.stories.reviewer)}${form({ action: "/stories/review", submit: "Review" })}</section>`
+    + `<section><h3>Design</h3>${quoteStrip(q.design.writer)}${form({ action: "/design/write", submit: present.design ? "Rewrite" : "Write", fields: [notes] })}${quoteStrip(q.design.reviewer)}${form({ action: "/design/review", submit: "Review" })}`
     + form({ action: "/design/signoff", submit: "Sign", fields: [by, { name: "note", label: "note" }, { name: "override_reason", label: "override a BLOCK — reason on the record", value: "" }], note: "Signing needs a fresh reviewer verdict on this exact design. Over a BLOCK, the reason is the record." }) + `</section></div>`;
 
   const open = v.open_questions.filter((q) => q.status === "open");
