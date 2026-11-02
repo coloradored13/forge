@@ -242,7 +242,7 @@ await withRoot({}, async (tmp) => {
     b0.artifacts.map((a) => a.kind).join() === "prd,prototype,stories,design" && b0.artifacts.every((a) => a.present) && !art(b0, "prototype").stale && !art(b0, "stories").stale && art(b0, "design").signed === false, JSON.stringify(b0.artifacts.map((a) => [a.kind, a.present, a.stale])));
   check("no verdict has been filed, so every gate reads absent — never inferred from anything but the record", b0.gates.every((g) => g.verdict === null && g.fresh === null) && b0.gates.some((g) => g.gate === DESIGN_REVIEW), JSON.stringify(b0.gates));
   check("the doors' state is the PRD's: two open questions, no rulings, no amendments", b0.open_questions.length === 2 && b0.rulings.length === 0 && b0.amendments.length === 0);
-  check("the board quotes the writer and the reviewer before either is triggered", b0.quotes.writer.model === defaults()["discovery.writer"] && b0.quotes.reviewer.model === "claude-sonnet-5" && b0.quotes.reviewer.budget === 20);
+  check("the board quotes the writer and the reviewer before either is triggered", b0.quotes.stories.writer.model === defaults()["discovery.writer"] && b0.quotes.stories.reviewer.model === "claude-sonnet-5" && b0.quotes.stories.reviewer.budget === 20);
 
   await reviewDesign({ root, _query: scripted({ structured: { findings: [], deferred: [], checked: 2, skipped: 0 }, usd: 0.4 }).query });
   const b1 = boardView(root);

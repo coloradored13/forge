@@ -93,7 +93,7 @@ await test("React quote estimates writer costs only when reviewer shares its mod
   writeFileSync(join(root, PROJECT_FILE), JSON.stringify({ ...project, models: { ...project.models, "discovery.reviewer": model } }));
   // The writer mean is $0.20 (two calls); reviewer-only is $0.90 and pooled is $0.43.
   for (const [role, usd] of [["writer", 0.10], ["writer", 0.30], ["reviewer", 0.90]]) {
-    append(ledgerPath(root), { half: "discovery", stage: "react", role, model, usd, ok: true });
+    append(ledgerPath(root), { half: "discovery", stage: "reaction", role, model, usd, ok: true });
   }
   await consoleFor(root, scripted(), async ({ get }) => {
     const quote = reactionQuote(await get("/prototype"));
