@@ -11,7 +11,7 @@ import { Refused, HTML_FILE, PROTOTYPE_FILE, REVIEWS, readVerdict } from "../dis
 import { ledgerPath } from "../discovery/setup/index.mjs";
 import { rows } from "../shared/agent-call/ledger.mjs";
 
-const { check, done } = suite("prototype-script · DH1b 6 parse-only publication", 84);
+const { check, done } = suite("prototype-script · DH1b 6 parse-only publication", 138);
 const build = (html) => ({ html, screens: structuredClone(SCREENS), uncovered: ["REQ-4"], notes: "Script gate fixture", open_questions: [] });
 const bytes = (root, file) => existsSync(join(root, file)) ? readFileSync(join(root, file)) : null;
 const same = (a, b) => a === null ? b === null : b !== null && a.equals(b);
@@ -27,6 +27,13 @@ const invalid = [
   ["module", '<script type="module">export const value = ;</script>', /script|module/i],
   ["handler", '<button onclick="if (">Broken</button>', /onclick/i],
   ["second script", `<script>const fine = 1;</script><script>${broken}</script>`, /script/i],
+  // Attribute-looking text inside a value must not hide an inline classic script.
+  ["src text inside a quoted value", '<script data-note=" src=local.js">if(</script>', /script/i],
+  ["type text inside a quoted value", '<script data-note=" type=application/json">if(</script>', /script/i],
+  // Consuming whole values must still find actual handlers in these tag forms.
+  ["unquoted handler", '<button onclick=if(>Broken</button>', /onclick/i],
+  ["handler after bare attribute", '<button disabled onclick="if (">Broken</button>', /onclick/i],
+  ["self-closing handler", '<img onerror="if ("/>', /onerror/i],
 ];
 
 for (const [name, fragment, location] of invalid) {
@@ -67,6 +74,8 @@ const valid = [
   ["external local script body is not inline JavaScript", `<script src="local.js">${broken}</script>`],
   // If validation executes this classic script it throws. Parsing alone must publish it.
   ["parseable runtime failure is outside the gate", '<script>throw new Error("must never execute while publishing");</script>'],
+  ["handler text inside a double-quoted title", `<button title=" onclick='if('">OK</button>`],
+  ["handler text inside a single-quoted title before a real valid handler", `<button title=' onclick="if("' onclick="return false;">OK</button>`],
 ];
 for (const [name, fragment] of valid) {
   await withRoot({}, async (parent) => {
