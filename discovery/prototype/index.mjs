@@ -121,6 +121,9 @@ const decode = (s) => s.replace(/&(?:#(\d+)|#x([0-9a-f]+)|(quot|apos|amp|lt|gt))
   const n = d ? Number(d) : x ? parseInt(x, 16) : null;
   return n === null ? ENTITY[name.toLowerCase()] : n <= 0x10ffff ? String.fromCodePoint(n) : "�";
 });
+// A tag's attributes in order as [name, value], each value consumed whole, so text inside one value is never read as another attribute.
+const attrsOf = (tag) => [...tag.replace(/^<[^\s>\/]*/, "").matchAll(/([^\s"'>\/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]*)))?/g)]
+  .map((a) => [a[1].toLowerCase(), a[2] ?? a[3] ?? a[4] ?? ""]);
 const parses = (compile) => { try { compile(); return null; } catch (e) { return `${e.name}: ${e.message}`; } };
 // Node has no in-process module parse without a flag, so its own checker reads the module. Nothing runs.
 const moduleParses = (src) => {
@@ -137,14 +140,14 @@ export function scriptError(html) {
   let n = 0;
   for (const m of html.matchAll(/<!--[\s\S]*?-->|<script\b((?:[^>"']|"[^"]*"|'[^']*')*)>([\s\S]*?)<\/script\s*>|<[a-z][^\s>\/]*(?:[^>"']|"[^"]*"|'[^']*')*>/gi)) {
     if (m[0].startsWith("<!--")) continue;
-    const tag = m[2] === undefined ? m[0] : `<script${m[1]}>`;
-    for (const h of tag.matchAll(/\s(on[a-z]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/gi)) {
-      const why = parses(() => compileFunction(decode(h[2] ?? h[3] ?? h[4]), ["event"]));
-      if (why) return `the ${h[1].toLowerCase()} handler on <${tag.slice(1).split(/[\s>\/]/)[0].toLowerCase()}> does not parse — ${why}`;
+    const tag = m[2] === undefined ? m[0] : `<script${m[1]}>`, attrs = attrsOf(tag);
+    for (const [name, value] of attrs.filter(([name]) => /^on[a-z]+$/.test(name))) {
+      const why = parses(() => compileFunction(decode(value), ["event"]));
+      if (why) return `the ${name} handler on <${tag.slice(1).split(/[\s>\/]/)[0].toLowerCase()}> does not parse — ${why}`;
     }
-    if (m[2] === undefined || /\ssrc\s*=/i.test(m[1])) continue;
+    if (m[2] === undefined || attrs.some(([name]) => name === "src")) continue;
     n += 1;
-    const type = (m[1].match(/\stype\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i)?.slice(1).find((v) => v !== undefined) ?? "").trim();
+    const type = (attrs.find(([name]) => name === "type")?.[1] ?? "").trim();
     const why = type.toLowerCase() === "module" ? moduleParses(m[2]) : CLASSIC.test(type) ? parses(() => new Script(m[2])) : null;
     if (why) return `script ${n} on the page${type ? ` (type ${type})` : ""} does not parse — ${why}`;
   }
